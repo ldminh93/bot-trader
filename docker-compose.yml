@@ -25,12 +25,12 @@ services:
     build: ./backend
     command: >
       sh -c "python manage.py migrate &&
-             daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+             daphne -b 0.0.0.0 -p 8080 config.asgi:application"
     env_file: .env
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,16 +65,16 @@ services:
     build: ./frontend
     env_file: .env
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
-      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080/api}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080/ws}
+      PORT: ${PORT:-3333}
     volumes:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "3000:3000"
+      - "3333:3333"
     depends_on:
       - backend
 
 volumes:
   postgres_data:
-

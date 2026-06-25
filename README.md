@@ -50,9 +50,9 @@ docker compose exec backend python manage.py createsuperuser
 
 Open:
 
-- Frontend: http://localhost:3000
-- Django admin: http://localhost:8000/admin/
-- API status: http://localhost:8000/api/status
+- Frontend: http://localhost:3333
+- Django admin: http://localhost:8080/admin/
+- API status: http://localhost:8080/api/status
 
 Register a user, sign in, select a symbol, and press **Start bot**. The Celery beat scheduler evaluates active bots every five seconds. Public Binance failures automatically use deterministic mock market data so the paper workflow remains usable.
 
@@ -65,7 +65,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
 python backend/manage.py migrate
-python backend/manage.py runserver
+python backend/manage.py runserver 0.0.0.0:8080
 ```
 
 In separate terminals:
@@ -110,8 +110,8 @@ worker, and Celery beat process after changing trading environment flags.
 
 Frontend:
 
-- `NEXT_PUBLIC_API_URL=http://localhost:8000/api`
-- `NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws`
+- `NEXT_PUBLIC_API_URL=http://localhost:8080/api`
+- `NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws`
 
 ## API
 

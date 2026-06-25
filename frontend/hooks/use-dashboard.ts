@@ -149,7 +149,7 @@ export function useDashboard(symbol: string | null) {
       const token = getToken();
       if (!token) return;
       socket?.close();
-      const base = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
+      const base = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8080/ws";
       socket = new WebSocket(`${base}/bot/?token=${token}`);
       socket.onmessage = (message) => {
         const event = JSON.parse(message.data) as { event: string; payload: MarketSnapshot | Trade | BotLog };
