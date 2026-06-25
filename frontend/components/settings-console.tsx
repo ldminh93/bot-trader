@@ -78,7 +78,7 @@ export function SettingsConsole() {
       });
       setConfig(added);
       setNewSymbol("");
-      setMessage(`${added.symbol} added and scanning started.`);
+      setMessage(`${added.symbol} added. Start scanning when you're ready.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to add coin");
     } finally {
@@ -168,11 +168,11 @@ export function SettingsConsole() {
                 required
               />
               <Button disabled={busy || !newSymbol.trim()}>
-                <Plus size={17} />Add and scan
+                <Plus size={17} />Add coin
               </Button>
             </form>
             <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-              New coins copy the selected coin&apos;s strategy settings and begin scanning immediately.
+              New coins copy the selected coin&apos;s strategy settings and stay paused until you click Scan.
             </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {configs.map((item) => (

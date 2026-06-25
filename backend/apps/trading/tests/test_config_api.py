@@ -43,6 +43,36 @@ def test_config_api_lists_and_adds_multiple_scanner_coins():
 
 
 @pytest.mark.django_db
+def test_config_api_adds_new_coin_paused_by_default():
+    user = get_user_model().objects.create_user(
+        "paused-default@example.com",
+        password="secure-pass",
+    )
+    source = TradingBotConfig.objects.create(
+        user=user,
+        symbol="BTCUSDT",
+        leverage=25,
+        timeframe_signal="5m",
+        is_running=True,
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+
+    created = client.post(
+        "/api/bot/config",
+        {
+            "symbol": "ethusdt",
+            "copy_from_symbol": source.symbol,
+        },
+        format="json",
+    )
+
+    assert created.status_code == 201
+    assert created.data["symbol"] == "ETHUSDT"
+    assert created.data["is_running"] is False
+
+
+@pytest.mark.django_db
 def test_config_api_accepts_one_character_base_symbol():
     user = get_user_model().objects.create_user(
         "short-symbol@example.com",

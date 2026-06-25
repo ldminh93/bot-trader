@@ -102,7 +102,7 @@ export const api = {
       body: JSON.stringify({
         symbol,
         copy_from_symbol: copyFromSymbol,
-        start_scanning: true,
+        start_scanning: false,
       }),
     }),
   removeConfig: (symbol: string) =>

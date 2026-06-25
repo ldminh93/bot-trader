@@ -77,7 +77,7 @@ class BotConfigView(APIView):
             live_mode_requested=True,
         ).exists()
         defaults["live_mode_requested"] = account_live_mode
-        defaults["is_running"] = bool(request.data.get("start_scanning", True))
+        defaults["is_running"] = bool(request.data.get("start_scanning", False))
         config = TradingBotConfig.objects.create(
             user=request.user,
             symbol=symbol,
