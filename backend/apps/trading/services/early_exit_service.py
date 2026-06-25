@@ -39,6 +39,13 @@ def evaluate_early_exit(
     ]
     if len(closed_candles) < 100:
         return EarlyExitDecision(False, [])
+    opened_at = getattr(trade, "opened_at", None)
+    if opened_at is not None:
+        latest_closed_timestamp = max(
+            int(candle.get("close_timestamp", 0)) for candle in closed_candles
+        )
+        if latest_closed_timestamp <= int(opened_at.timestamp() * 1000):
+            return EarlyExitDecision(False, [])
 
     indicators = calculate_indicators(closed_candles)
     metrics = client.market_metrics(trade.symbol, "15m")

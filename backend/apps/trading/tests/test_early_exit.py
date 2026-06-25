@@ -99,6 +99,36 @@ def test_short_early_exit_requires_three_conditions(fetch_klines, market_metrics
     assert "CVD is rising" in decision.conditions
 
 
+@patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
+@patch("apps.trading.services.early_exit_service.BinanceService.fetch_klines")
+def test_early_exit_waits_for_new_closed_candle_after_entry(fetch_klines, market_metrics):
+    candles = rising_candles()
+    fetch_klines.return_value = candles
+    market_metrics.return_value = {
+        "open_interest_change_available": True,
+        "open_interest_change_percent": -1.2,
+        "funding_rate": 0.0,
+    }
+    latest_closed_at = max(
+        timezone.datetime.fromtimestamp(
+            int(candle["close_timestamp"]) / 1000,
+            tz=timezone.utc,
+        )
+        for candle in candles
+    )
+    trade = SimpleNamespace(
+        side=Trade.Side.SHORT,
+        symbol="BTCUSDT",
+        opened_at=latest_closed_at,
+    )
+    config = SimpleNamespace(adx_min=20)
+
+    decision = evaluate_early_exit(trade, config, long_score=20, short_score=10)
+
+    assert decision.should_close is False
+    assert decision.conditions == []
+
+
 @pytest.mark.django_db
 def test_opposite_entry_waits_for_newly_closed_candle():
     user = get_user_model().objects.create_user(
