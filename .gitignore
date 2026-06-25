@@ -11,4 +11,4 @@ dist/
 *.log
 .DS_Store
 postgres_data/
-
+db.sqlite3
