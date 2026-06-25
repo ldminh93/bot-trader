@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0d0f;
+  --surface: #111418;
+  --surface-raised: #171b20;
+  --line: #282e35;
+  --line-strong: #3b434d;
+  --text: #f2f3ee;
+  --muted: #929aa4;
+  --accent: #f0b90b;
+  --accent-ink: #171300;
+  --positive: #43c987;
+  --negative: #f06464;
+  --warning: #eaa64b;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--line);
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 60% -20%, rgb(240 185 11 / 0.05), transparent 34rem),
+    var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+  font-feature-settings: "tnum" 1, "ss01" 1;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+::selection {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.font-mono,
+[data-number] {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.scrollbar-thin {
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
