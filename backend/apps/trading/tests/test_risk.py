@@ -87,3 +87,22 @@ def test_trade_is_skipped_when_ma_stop_exceeds_margin_loss_cap():
             ma99=90,
             leverage=10,
         )
+
+
+def test_trade_uses_custom_margin_loss_cap():
+    plan = calculate_risk_plan(
+        "LONG",
+        100,
+        10_000,
+        1,
+        2,
+        104,
+        96,
+        ma7=99,
+        ma25=95,
+        ma99=90,
+        leverage=10,
+        max_margin_loss_percent=25,
+    )
+
+    assert plan.stop_loss == 89.5

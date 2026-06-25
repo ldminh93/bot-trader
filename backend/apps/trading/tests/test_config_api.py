@@ -134,6 +134,27 @@ def test_max_open_positions_is_shared_across_coin_configs():
 
 
 @pytest.mark.django_db
+def test_config_api_updates_margin_loss_cap():
+    user = get_user_model().objects.create_user(
+        "margin-cap@example.com",
+        password="secure-pass",
+    )
+    btc = TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.put(
+        "/api/bot/config",
+        {"symbol": btc.symbol, "max_margin_loss_percent": "25.5"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    btc.refresh_from_db()
+    assert str(btc.max_margin_loss_percent) == "25.50"
+
+
+@pytest.mark.django_db
 def test_live_mode_is_shared_across_coin_configs(settings):
     settings.ENABLE_LIVE_TRADING = True
     user = get_user_model().objects.create_user(

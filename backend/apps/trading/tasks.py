@@ -192,6 +192,7 @@ def process_config(config: TradingBotConfig) -> None:
             config.leverage,
             float(config.atr_multiplier_sl),
             float(config.atr_multiplier_tp),
+            float(config.max_margin_loss_percent),
         )
     except RiskLimitExceeded as exc:
         create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")

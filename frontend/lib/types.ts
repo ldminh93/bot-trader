@@ -7,6 +7,7 @@ export interface BotConfig {
   margin_type: "isolated" | "cross";
   risk_per_trade_percent: string;
   max_daily_loss_percent: string;
+  max_margin_loss_percent: string;
   max_open_positions: number;
   adx_min: string;
   atr_multiplier_sl: string;

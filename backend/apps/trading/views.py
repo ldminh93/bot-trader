@@ -59,6 +59,7 @@ class BotConfigView(APIView):
                 "margin_type",
                 "risk_per_trade_percent",
                 "max_daily_loss_percent",
+                "max_margin_loss_percent",
                 "max_open_positions",
                 "adx_min",
                 "atr_multiplier_sl",

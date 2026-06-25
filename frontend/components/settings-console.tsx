@@ -284,13 +284,27 @@ export function SettingsConsole() {
               <Field label="Max daily loss (%)">
                 <input className={inputClass} type="number" min="0.5" max="20" step="0.1" value={config.max_daily_loss_percent} onChange={(event) => setConfig({ ...config, max_daily_loss_percent: event.target.value })} />
               </Field>
+              <Field label="Margin loss cap (%)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="0.1"
+                  value={config.max_margin_loss_percent}
+                  onChange={(event) => setConfig({ ...config, max_margin_loss_percent: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Skip entries when the technical stop would lose more than this percent of position margin.
+                </span>
+              </Field>
               <Field label="ADX minimum">
                 <input className={inputClass} type="number" min="5" max="60" value={config.adx_min} onChange={(event) => setConfig({ ...config, adx_min: event.target.value })} />
               </Field>
               <Field label="SL ATR buffer">
                 <input className={inputClass} type="number" min="0" max="2" step="0.05" value={config.atr_multiplier_sl} onChange={(event) => setConfig({ ...config, atr_multiplier_sl: event.target.value })} />
                 <span className="font-normal leading-5 text-[var(--muted)]">
-                  Added beyond the lowest MA for LONG or highest MA for SHORT. Entries above 20% margin risk are skipped.
+                  Added beyond the lowest MA for LONG or highest MA for SHORT. Entries above your margin loss cap are skipped.
                 </span>
               </Field>
               <Field label="TP3 risk multiple">

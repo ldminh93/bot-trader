@@ -27,6 +27,7 @@ class TradingBotConfig(models.Model):
     margin_type = models.CharField(max_length=12, choices=MarginType.choices, default=MarginType.ISOLATED)
     risk_per_trade_percent = models.DecimalField(max_digits=5, decimal_places=2, default=1)
     max_daily_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=3)
+    max_margin_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=20)
     max_open_positions = models.PositiveSmallIntegerField(default=5)
     adx_min = models.DecimalField(max_digits=6, decimal_places=2, default=20)
     atr_multiplier_sl = models.DecimalField(max_digits=6, decimal_places=2, default=0.25)
