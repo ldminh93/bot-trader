@@ -1,6 +1,5 @@
 import type { BotConfig, BotLog, MarketSnapshot, Trade, TradeStats } from "./types";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api";
+import { getApiBaseUrl } from "./runtime-config";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
@@ -21,7 +20,8 @@ async function refreshAccessToken(): Promise<string | null> {
   if (!refresh) return null;
 
   if (!refreshPromise) {
-    refreshPromise = fetch(`${API_URL}/auth/refresh`, {
+    const apiUrl = getApiBaseUrl();
+    refreshPromise = fetch(`${apiUrl}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh }),
@@ -49,8 +49,9 @@ async function request<T>(
   options: RequestInit = {},
   allowRefresh = true,
 ): Promise<T> {
+  const apiUrl = getApiBaseUrl();
   const token = getToken();
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${apiUrl}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
