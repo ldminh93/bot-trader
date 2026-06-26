@@ -88,8 +88,8 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         return value
 
     def validate_max_margin_loss_percent(self, value):
-        if value < 1 or value > 100:
-            raise serializers.ValidationError("Margin loss cap must be between 1% and 100%")
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Margin loss cap must be between 0% and 100%")
         return value
 
 

@@ -40,7 +40,7 @@ def calculate_risk_plan(
         or leverage <= 0
         or atr_buffer_multiplier < 0
         or take_profit_r_multiple <= 0
-        or max_margin_loss_percent <= 0
+        or max_margin_loss_percent < 0
     ):
         raise ValueError("Risk-plan inputs must be positive")
     moving_averages = [
@@ -67,7 +67,7 @@ def calculate_risk_plan(
     if risk_per_unit <= 0:
         raise ValueError("Invalid stop loss relative to entry")
     margin_loss_percent = risk_per_unit / entry_price * leverage * 100
-    if margin_loss_percent > max_margin_loss_percent:
+    if max_margin_loss_percent > 0 and margin_loss_percent > max_margin_loss_percent:
         raise RiskLimitExceeded(
             f"Technical stop implies {margin_loss_percent:.1f}% margin loss, "
             f"above the {max_margin_loss_percent:.1f}% cap"

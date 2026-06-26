@@ -101,8 +101,27 @@ def test_trade_uses_custom_margin_loss_cap():
         ma7=99,
         ma25=95,
         ma99=90,
-        leverage=10,
+        leverage=2,
         max_margin_loss_percent=25,
+    )
+
+    assert plan.stop_loss == 89.5
+
+
+def test_trade_can_disable_margin_loss_cap():
+    plan = calculate_risk_plan(
+        "LONG",
+        100,
+        10_000,
+        1,
+        2,
+        104,
+        96,
+        ma7=99,
+        ma25=95,
+        ma99=90,
+        leverage=10,
+        max_margin_loss_percent=0,
     )
 
     assert plan.stop_loss == 89.5
