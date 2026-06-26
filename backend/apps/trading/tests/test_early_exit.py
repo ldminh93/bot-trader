@@ -99,6 +99,42 @@ def test_short_early_exit_requires_three_conditions(fetch_klines, market_metrics
     assert "CVD is rising" in decision.conditions
 
 
+@patch("apps.trading.services.early_exit_service.calculate_indicators")
+@patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
+@patch("apps.trading.services.early_exit_service.BinanceService.fetch_klines")
+def test_short_early_exit_can_close_on_two_adverse_conditions(
+    fetch_klines,
+    market_metrics,
+    calculate_indicators,
+):
+    fetch_klines.return_value = rising_candles()
+    calculate_indicators.return_value = SimpleNamespace(
+        price=101.0,
+        ma25=100.0,
+        adx=25.0,
+        candles=[
+            {"delta": -1.0, "cvd": 5.0, "close": 100.0},
+            {"delta": 1.0, "cvd": 4.0, "close": 100.0},
+            {"delta": -1.0, "cvd": 3.0, "close": 100.0},
+            {"delta": -1.0, "cvd": 2.0, "close": 101.0},
+        ],
+    )
+    market_metrics.return_value = {
+        "open_interest_change_available": False,
+        "open_interest_change_percent": 0.0,
+        "funding_rate": 0.0,
+    }
+    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT")
+    config = SimpleNamespace(adx_min=20)
+
+    decision = evaluate_early_exit(trade, config, long_score=70, short_score=10)
+
+    assert decision.should_close is True
+    assert len(decision.conditions) == 2
+    assert "15m close is above MA25" in decision.conditions
+    assert "LONG score is at least 70" in decision.conditions
+
+
 @patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
 @patch("apps.trading.services.early_exit_service.BinanceService.fetch_klines")
 def test_early_exit_waits_for_new_closed_candle_after_entry(fetch_klines, market_metrics):

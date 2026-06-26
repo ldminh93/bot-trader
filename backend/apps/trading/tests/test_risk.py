@@ -69,24 +69,24 @@ def test_long_uses_lowest_ma_support_with_atr_buffer():
     assert plan.risk_per_unit == 2
 
 
-def test_trade_is_skipped_when_ma_stop_exceeds_margin_loss_cap():
-    with pytest.raises(
-        RiskLimitExceeded,
-        match="above the 20.0% cap",
-    ):
-        calculate_risk_plan(
-            "LONG",
-            100,
-            10_000,
-            1,
-            2,
-            104,
-            96,
-            ma7=99,
-            ma25=95,
-            ma99=90,
-            leverage=10,
-        )
+def test_trade_ignores_margin_loss_cap_when_stop_is_wide():
+    plan = calculate_risk_plan(
+        "LONG",
+        100,
+        10_000,
+        1,
+        2,
+        104,
+        96,
+        ma7=99,
+        ma25=95,
+        ma99=90,
+        leverage=10,
+    )
+
+    assert plan.stop_loss == 89.5
+    assert plan.risk_per_unit == 10.5
+    assert plan.quantity == pytest.approx(9.52380952)
 
 
 def test_trade_uses_custom_margin_loss_cap():
