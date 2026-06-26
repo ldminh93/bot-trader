@@ -1,7 +1,10 @@
 from dataclasses import replace
 
 from apps.trading.services.indicator_service import calculate_indicators
-from apps.trading.services.signal_service import entry_location_block_reason, score_signal
+from apps.trading.services.signal_service import (
+    entry_location_block_reason,
+    score_signal,
+)
 from apps.trading.services.trend_service import TrendState
 
 from .test_indicators import make_candles
@@ -41,6 +44,33 @@ def test_early_long_uses_half_risk():
     assert signal.signal == "LONG"
     assert signal.risk_multiplier == 0.5
     assert signal.long_score == 129
+
+
+def test_early_uptrend_allows_faster_entry_below_confirmed_threshold():
+    indicators = entry_ready_indicators()
+    signal = score_signal(
+        replace(
+            indicators,
+            price=101.5,
+            ma99=105.0,
+            volume=100.0,
+            volume_ma20=200.0,
+            candles=[
+                {"ma7": 98, "ma25": 97, "ma99": 105, "delta": 1, "cvd": 10, "close": 98},
+                {"ma7": 99, "ma25": 97.2, "ma99": 105, "delta": -1, "cvd": 11, "close": 99},
+                {"ma7": 100, "ma25": 97.4, "ma99": 105, "delta": 1, "cvd": 10, "close": 100},
+                {"ma7": 101, "ma25": 97.6, "ma99": 105, "delta": -1, "cvd": 11, "close": 101},
+                {"ma7": 102, "ma25": 97.8, "ma99": 105, "delta": 1, "cvd": 10, "close": 102},
+            ],
+        ),
+        trend_state=TrendState.EARLY_UPTREND,
+        open_interest_change_percent=0.0,
+        funding_rate=0.001,
+        top_ratio_direction=0.0,
+    )
+    assert signal.signal == "LONG"
+    assert signal.risk_multiplier == 0.5
+    assert signal.long_score == 63
 
 
 def test_sideway_state_blocks_high_score():

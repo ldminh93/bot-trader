@@ -12,6 +12,8 @@ from .trend_service import (
 )
 
 MAX_ENTRY_DISTANCE_ATR = 1.0
+EARLY_ENTRY_SCORE_THRESHOLD = 60
+CONFIRMED_ENTRY_SCORE_THRESHOLD = 75
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,22 @@ def entry_location_block_reason(
             )
         return None
     return f"Unsupported entry side: {side}"
+
+
+def entry_score_threshold_for_state(state: TrendState) -> int:
+    if state in {
+        TrendState.EARLY_UPTREND,
+        TrendState.WEAK_UPTREND,
+        TrendState.EARLY_DOWNTREND,
+        TrendState.WEAK_DOWNTREND,
+    }:
+        return EARLY_ENTRY_SCORE_THRESHOLD
+    if state in {
+        TrendState.CONFIRMED_UPTREND,
+        TrendState.CONFIRMED_DOWNTREND,
+    }:
+        return CONFIRMED_ENTRY_SCORE_THRESHOLD
+    return CONFIRMED_ENTRY_SCORE_THRESHOLD
 
 
 def score_signal(
@@ -184,6 +202,7 @@ def score_signal(
             state.value,
             0.0,
         )
+    long_threshold = entry_score_threshold_for_state(state)
     if (
         enable_long
         and state
@@ -192,7 +211,7 @@ def score_signal(
             TrendState.EARLY_UPTREND,
             TrendState.CONFIRMED_UPTREND,
         }
-        and long_score >= 75
+        and long_score >= long_threshold
     ):
         location_reason = entry_location_block_reason(
             "LONG",
@@ -221,7 +240,7 @@ def score_signal(
     if (
         enable_short
         and state in {TrendState.EARLY_DOWNTREND, TrendState.CONFIRMED_DOWNTREND}
-        and short_score >= 75
+        and short_score >= entry_score_threshold_for_state(state)
     ):
         location_reason = entry_location_block_reason(
             "SHORT",
@@ -250,11 +269,12 @@ def score_signal(
 
     preferred_score = long_score if "UPTREND" in state.value else short_score
     direction = "LONG" if "UPTREND" in state.value else "SHORT"
+    threshold = entry_score_threshold_for_state(state)
     return SignalResult(
         "NO_TRADE",
         long_score,
         short_score,
-        [f"{direction} score {preferred_score} is below the 75 entry threshold"],
+        [f"{direction} score {preferred_score} is below the {threshold} entry threshold"],
         state.value,
         multiplier,
     )
