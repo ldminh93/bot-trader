@@ -1,4 +1,4 @@
-import type { BotConfig, BotLog, MarketSnapshot, Trade, TradeStats } from "./types";
+import type { BacktestResult, BotConfig, BotLog, MarketSnapshot, Trade, TradeStats } from "./types";
 import { getApiBaseUrl } from "./runtime-config";
 
 export function getToken() {
@@ -114,6 +114,10 @@ export const api = {
     request<BotConfig>("/bot/start", { method: "POST", body: JSON.stringify({ symbol }) }),
   stop: (symbol: string) =>
     request<BotConfig>("/bot/stop", { method: "POST", body: JSON.stringify({ symbol }) }),
+  closePosition: (symbol: string) =>
+    request<Trade>("/bot/close-position", { method: "POST", body: JSON.stringify({ symbol }) }),
+  backtest: (symbol: string, limit = 320) =>
+    request<BacktestResult>("/bot/backtest", { method: "POST", body: JSON.stringify({ symbol, limit }) }),
   snapshot: (symbol: string) => request<MarketSnapshot>(`/market/snapshot?symbol=${symbol}`),
   trades: (symbol?: string) => request<Trade[]>(`/trades${symbol ? `?symbol=${symbol}` : ""}`),
   stats: () => request<TradeStats>("/trades/stats"),

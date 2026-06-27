@@ -25,7 +25,7 @@ def test_confirmed_long_score_reaches_entry_threshold():
         top_ratio_direction=0.04,
     )
     assert signal.signal == "LONG"
-    assert signal.long_score >= 75
+    assert signal.long_score >= 85
     assert signal.risk_multiplier == 1.0
 
 
@@ -56,7 +56,7 @@ def test_sideway_state_blocks_high_score():
     assert signal.risk_multiplier == 0
 
 
-def test_weak_uptrend_allows_long_with_half_risk():
+def test_weak_uptrend_no_longer_allows_new_entry():
     indicators = entry_ready_indicators()
     signal = score_signal(
         indicators,
@@ -65,9 +65,10 @@ def test_weak_uptrend_allows_long_with_half_risk():
         funding_rate=0.0001,
         top_ratio_direction=0.04,
     )
-    assert signal.signal == "LONG"
+    assert signal.signal == "NO_TRADE"
     assert signal.risk_multiplier == 0.5
     assert signal.long_score == 107
+    assert "below the 85 entry threshold" in signal.reasons[0]
 
 
 def test_overextended_long_is_blocked_even_with_high_score():

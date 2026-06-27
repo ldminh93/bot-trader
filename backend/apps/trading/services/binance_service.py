@@ -159,6 +159,22 @@ class BinanceService:
             "source": "binance",
         }
 
+    def open_interest_history(self, symbol: str, period: str, limit: int = 200) -> list[dict]:
+        try:
+            rows = self._get(
+                "/futures/data/openInterestHist",
+                {"symbol": symbol.upper(), "period": period, "limit": limit},
+            )
+            return [
+                {
+                    "timestamp": int(row["timestamp"]),
+                    "open_interest": float(row["sumOpenInterest"]),
+                }
+                for row in rows
+            ]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            return []
+
     def symbol_rules(self, symbol: str) -> SymbolRules:
         data = self._get("/fapi/v1/exchangeInfo")
         item = next(entry for entry in data["symbols"] if entry["symbol"] == symbol.upper())

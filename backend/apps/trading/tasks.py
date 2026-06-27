@@ -228,6 +228,7 @@ def process_config(config: TradingBotConfig) -> None:
             take_profit_2=plan.take_profit_2,
             take_profit_3=plan.take_profit_3,
             open_reason=", ".join(signal.reasons),
+            setup_tags=snapshot.payload.get("setup_tags", []),
             is_paper=False,
         )
     else:
@@ -238,6 +239,7 @@ def process_config(config: TradingBotConfig) -> None:
             price,
             plan,
             ", ".join(signal.reasons),
+            snapshot.payload.get("setup_tags", []),
         )
     sizing_message = (
         f"{position_margin:.2f} USDT margin "

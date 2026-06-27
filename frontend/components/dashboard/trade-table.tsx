@@ -25,6 +25,7 @@ export function TradeTable({ trades, limit }: { trades: Trade[]; limit?: number 
             <th className="px-3 py-3">Exit</th>
             <th className="px-3 py-3">PnL</th>
             <th className="px-3 py-3">Margin ROI</th>
+            <th className="px-3 py-3">Setup tags</th>
             <th className="px-3 py-3">Status</th>
             <th className="px-4 py-3 text-right">Opened</th>
           </tr>
@@ -43,6 +44,9 @@ export function TradeTable({ trades, limit }: { trades: Trade[]; limit?: number 
                 {formatNumber(Number(trade.realized_pnl) + Number(trade.unrealized_pnl))}
               </td>
               <td className={`px-3 py-3 font-mono ${pnlColor(trade.pnl_percent)}`}>{formatNumber(trade.pnl_percent)}%</td>
+              <td className="px-3 py-3 text-[10px] text-[var(--muted)]">
+                {(trade.setup_tags ?? []).slice(0, 3).join(", ") || "-"}
+              </td>
               <td className="px-3 py-3 text-[var(--muted)]">{trade.status}</td>
               <td className="px-4 py-3 text-right text-[var(--muted)]">
                 {new Date(trade.opened_at).toLocaleString()}

@@ -92,6 +92,11 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Margin loss cap must be between 1% and 100%")
         return value
 
+    def validate_entry_score_threshold(self, value: int) -> int:
+        if value < 60 or value > 150:
+            raise serializers.ValidationError("Entry score threshold must be between 60 and 150")
+        return value
+
 
 class MarketSnapshotSerializer(serializers.ModelSerializer):
     class Meta:

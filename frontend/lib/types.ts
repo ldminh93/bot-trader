@@ -8,6 +8,7 @@ export interface BotConfig {
   risk_per_trade_percent: string;
   max_daily_loss_percent: string;
   max_margin_loss_percent: string;
+  entry_score_threshold: number;
   max_open_positions: number;
   adx_min: string;
   atr_multiplier_sl: string;
@@ -16,6 +17,9 @@ export interface BotConfig {
   trailing_atr_multiplier: string;
   enable_long: boolean;
   enable_short: boolean;
+  require_trend_alignment: boolean;
+  require_open_interest_confirmation: boolean;
+  require_volume_confirmation: boolean;
   is_running: boolean;
   live_mode_requested: boolean;
   live_trading_available: boolean;
@@ -109,9 +113,40 @@ export interface Trade {
   pnl_percent: string;
   open_reason: string;
   close_reason: string;
+  setup_tags: string[];
   is_paper: boolean;
   opened_at: string;
   closed_at: string | null;
+}
+
+export interface AnalyticsBucket {
+  label: string;
+  trades: number;
+  win_rate: number;
+  realized_pnl: number;
+  average_realized_pnl: number;
+}
+
+export interface BacktestTrade {
+  side: "LONG" | "SHORT";
+  entry_price: number;
+  exit_price: number;
+  realized_pnl: number;
+  pnl_percent: number;
+  opened_at_ms: number;
+  closed_at_ms: number;
+  close_reason: string;
+  setup_tags: string[];
+}
+
+export interface BacktestResult {
+  summary: {
+    trades: number;
+    win_rate: number;
+    realized_pnl: number;
+    total_profit: number;
+  };
+  trades: BacktestTrade[];
 }
 
 export interface BotLog {
@@ -130,4 +165,11 @@ export interface TradeStats {
   win_rate: number;
   average_pnl_percent: number;
   daily: { day: string; pnl: number }[];
+  analytics: {
+    by_symbol: AnalyticsBucket[];
+    by_side: AnalyticsBucket[];
+    by_hour: AnalyticsBucket[];
+    by_close_reason: AnalyticsBucket[];
+    by_setup_tag: AnalyticsBucket[];
+  };
 }

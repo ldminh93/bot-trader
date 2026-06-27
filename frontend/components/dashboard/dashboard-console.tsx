@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { api } from "@/lib/api";
-import type { BotConfig, TrendState } from "@/lib/types";
+import type { AnalyticsBucket, BacktestResult, BotConfig, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
 const SIGNAL_TIMEFRAMES = ["1m", "5m", "15m"];
@@ -74,6 +74,7 @@ export function DashboardConsole() {
   const [symbol, setSymbol] = useState<string | null>(null);
   const [scannerConfigs, setScannerConfigs] = useState<BotConfig[]>([]);
   const [busy, setBusy] = useState(false);
+  const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const { config, setConfig, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
   const openPosition = trades.find((trade) => trade.status === "OPEN");
   const liveModeEnabled = Boolean(config?.live_mode_requested && config.live_trading_available);
@@ -124,6 +125,27 @@ export function DashboardConsole() {
     setBusy(true);
     try {
       setConfig(await api.saveConfig({ symbol, leverage }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function closePosition() {
+    if (!symbol || !openPosition) return;
+    setBusy(true);
+    try {
+      await api.closePosition(symbol);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runBacktest() {
+    if (!symbol) return;
+    setBusy(true);
+    try {
+      setBacktest(await api.backtest(symbol));
     } finally {
       setBusy(false);
     }
@@ -314,30 +336,38 @@ export function DashboardConsole() {
                   ) : undefined}
                 />
                 {openPosition ? (
-                  <div className="grid grid-cols-2">
-                    <Metric label="Entry" value={formatNumber(openPosition.entry_price, 4)} />
-                    <Metric label="Quantity" value={formatNumber(openPosition.remaining_quantity, 5)} />
-                    <Metric label="Leverage" value={`x${openPosition.leverage}`} detail={config?.margin_type.toUpperCase()} />
-                    <Metric
-                      label="Estimated margin"
-                      value={`${formatNumber(
-                        Number(openPosition.entry_price)
-                          * Number(openPosition.remaining_quantity)
-                          / openPosition.leverage,
-                      )} USDT`}
-                      detail={`Notional ${formatNumber(
-                        Number(openPosition.entry_price) * Number(openPosition.remaining_quantity),
-                      )} USDT`}
-                    />
-                    <Metric label="Stop loss" value={formatNumber(openPosition.stop_loss, 4)} />
-                    <Metric label="TP1 / TP2" value={`${formatNumber(openPosition.take_profit_1, 3)} / ${formatNumber(openPosition.take_profit_2, 3)}`} />
-                    <Metric label="Unrealized PnL" value={`${formatNumber(openPosition.unrealized_pnl)} USDT`} tone={pnlColor(openPosition.unrealized_pnl)} />
-                    <Metric
-                      label="Margin ROI"
-                      value={`${formatNumber(openPosition.pnl_percent)}%`}
-                      detail="Net PnL after fees"
-                      tone={pnlColor(openPosition.pnl_percent)}
-                    />
+                  <div>
+                    <div className="grid grid-cols-2">
+                      <Metric label="Entry" value={formatNumber(openPosition.entry_price, 4)} />
+                      <Metric label="Quantity" value={formatNumber(openPosition.remaining_quantity, 5)} />
+                      <Metric label="Leverage" value={`x${openPosition.leverage}`} detail={config?.margin_type.toUpperCase()} />
+                      <Metric
+                        label="Estimated margin"
+                        value={`${formatNumber(
+                          Number(openPosition.entry_price)
+                            * Number(openPosition.remaining_quantity)
+                            / openPosition.leverage,
+                        )} USDT`}
+                        detail={`Notional ${formatNumber(
+                          Number(openPosition.entry_price) * Number(openPosition.remaining_quantity),
+                        )} USDT`}
+                      />
+                      <Metric label="Stop loss" value={formatNumber(openPosition.stop_loss, 4)} />
+                      <Metric label="TP1 / TP2" value={`${formatNumber(openPosition.take_profit_1, 3)} / ${formatNumber(openPosition.take_profit_2, 3)}`} />
+                      <Metric label="Unrealized PnL" value={`${formatNumber(openPosition.unrealized_pnl)} USDT`} tone={pnlColor(openPosition.unrealized_pnl)} />
+                      <Metric
+                        label="Margin ROI"
+                        value={`${formatNumber(openPosition.pnl_percent)}%`}
+                        detail="Net PnL after fees"
+                        tone={pnlColor(openPosition.pnl_percent)}
+                      />
+                    </div>
+                    <div className="flex gap-2 border-t border-[var(--line)] p-4">
+                      <Button variant="danger" disabled={busy} onClick={closePosition}>
+                        <Stop size={16} weight="fill" />
+                        Close position
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="grid min-h-48 place-items-center px-6 text-center">
@@ -377,6 +407,71 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
+            <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+              <Panel>
+                <PanelHeader
+                  title="Analytics"
+                  action={<span className="text-[10px] text-[var(--muted)]">Journal, setup tags, and timing breakdowns</span>}
+                />
+                <div className="grid gap-4 p-4 md:grid-cols-2">
+                  <AnalyticsBlock title="By symbol" rows={stats.analytics.by_symbol} />
+                  <AnalyticsBlock title="By setup tag" rows={stats.analytics.by_setup_tag} />
+                  <AnalyticsBlock title="By side" rows={stats.analytics.by_side} />
+                  <AnalyticsBlock title="By open hour" rows={stats.analytics.by_hour} />
+                  <AnalyticsBlock title="By close reason" rows={stats.analytics.by_close_reason} />
+                </div>
+              </Panel>
+
+              <Panel>
+                <PanelHeader
+                  title="Backtest"
+                  action={(
+                    <Button type="button" size="sm" variant="secondary" disabled={!symbol || busy} onClick={runBacktest}>
+                      Run backtest
+                    </Button>
+                  )}
+                />
+                <div className="grid gap-4 p-4">
+                  {backtest ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius)] bg-[var(--line)] sm:grid-cols-4">
+                        <div className="bg-[var(--background)] p-4">
+                          <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Trades</p>
+                          <p className="mt-1 font-mono text-xl font-bold">{backtest.summary.trades}</p>
+                        </div>
+                        <div className="bg-[var(--background)] p-4">
+                          <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Win rate</p>
+                          <p className="mt-1 font-mono text-xl font-bold">{formatNumber(backtest.summary.win_rate)}%</p>
+                        </div>
+                        <div className="bg-[var(--background)] p-4">
+                          <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Realized</p>
+                          <p className={`mt-1 font-mono text-xl font-bold ${pnlColor(backtest.summary.realized_pnl)}`}>{formatNumber(backtest.summary.realized_pnl)}</p>
+                        </div>
+                        <div className="bg-[var(--background)] p-4">
+                          <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Total profit</p>
+                          <p className={`mt-1 font-mono text-xl font-bold ${pnlColor(backtest.summary.total_profit)}`}>{formatNumber(backtest.summary.total_profit)}</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        {backtest.trades.slice().reverse().slice(0, 8).map((trade, index) => (
+                          <div key={`${trade.opened_at_ms}-${index}`} className="rounded-[var(--radius)] border border-[var(--line)] p-3 text-xs">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className={trade.side === "LONG" ? "font-bold text-[var(--positive)]" : "font-bold text-[var(--negative)]"}>{trade.side}</span>
+                              <span className={pnlColor(trade.realized_pnl)}>{formatNumber(trade.realized_pnl)} USDT</span>
+                            </div>
+                            <p className="mt-1 text-[var(--muted)]">{trade.close_reason}</p>
+                            <p className="mt-1 text-[var(--muted)]">{trade.setup_tags.slice(0, 3).join(", ")}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyChart label="Run a lightweight historical replay for the selected symbol." />
+                  )}
+                </div>
+              </Panel>
+            </div>
+
             <Panel>
               <PanelHeader title="Recent trades" />
               <TradeTable trades={trades} limit={8} />
@@ -385,6 +480,26 @@ export function DashboardConsole() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function AnalyticsBlock({ title, rows }: { title: string; rows: AnalyticsBucket[] }) {
+  return (
+    <div className="rounded-[var(--radius)] border border-[var(--line)]">
+      <div className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+        {title}
+      </div>
+      <div className="grid">
+        {(rows.length ? rows.slice(0, 5) : [{ label: "No data", trades: 0, win_rate: 0, realized_pnl: 0, average_realized_pnl: 0 }]).map((row) => (
+          <div key={row.label} className="grid grid-cols-[1.5fr_0.6fr_0.7fr_0.8fr] gap-2 border-b border-[var(--line)] px-3 py-2 text-xs last:border-0">
+            <span className="truncate">{row.label}</span>
+            <span className="font-mono text-[var(--muted)]">{row.trades}</span>
+            <span className="font-mono">{formatNumber(row.win_rate)}%</span>
+            <span className={`font-mono ${pnlColor(row.realized_pnl)}`}>{formatNumber(row.realized_pnl)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    BacktestView,
+    BotClosePositionView,
     BotConfigView,
     BotStartView,
     BotStopView,
@@ -17,6 +19,8 @@ urlpatterns = [
     path("bot/config", BotConfigView.as_view()),
     path("bot/start", BotStartView.as_view()),
     path("bot/stop", BotStopView.as_view()),
+    path("bot/close-position", BotClosePositionView.as_view()),
+    path("bot/backtest", BacktestView.as_view()),
     path("market/snapshot", MarketSnapshotView.as_view()),
     path("trades", TradesView.as_view()),
     path("trades/stats", TradeStatsView.as_view()),

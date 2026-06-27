@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import Avg, Count, Sum
@@ -16,9 +17,13 @@ from .serializers import (
     TradeSerializer,
     TradingBotConfigSerializer,
 )
+from .services.analytics_service import build_trade_analytics
+from .services.backtest_service import run_backtest
 from .services.binance_service import BinanceService
 from .services.credential_service import decrypt_secret, encrypt_secret
+from .services.live_trading_service import LiveTradingService
 from .services.market_snapshot_service import collect_market_snapshot
+from .services.paper_trading_service import PaperTradingService
 
 
 def get_config(user, symbol: str | None = None) -> TradingBotConfig:
@@ -60,6 +65,7 @@ class BotConfigView(APIView):
                 "risk_per_trade_percent",
                 "max_daily_loss_percent",
                 "max_margin_loss_percent",
+                "entry_score_threshold",
                 "max_open_positions",
                 "adx_min",
                 "atr_multiplier_sl",
@@ -68,6 +74,9 @@ class BotConfigView(APIView):
                 "trailing_atr_multiplier",
                 "enable_long",
                 "enable_short",
+                "require_trend_alignment",
+                "require_open_interest_confirmation",
+                "require_volume_confirmation",
                 "live_mode_requested",
                 "paper_balance",
                 "position_margin_usdt",
@@ -149,6 +158,49 @@ class BotStopView(APIView):
         config.save(update_fields=["is_running", "updated_at"])
         BotLog.objects.create(user=request.user, symbol=config.symbol, message="Bot stopped.")
         return Response(TradingBotConfigSerializer(config).data)
+
+
+class BotClosePositionView(APIView):
+    def post(self, request):
+        config = get_config(request.user, request.data.get("symbol"))
+        trade = Trade.objects.filter(
+            user=request.user,
+            symbol=config.symbol,
+            status=Trade.Status.OPEN,
+        ).first()
+        if not trade:
+            return Response({"detail": "No open position found."}, status=status.HTTP_404_NOT_FOUND)
+
+        metrics = BinanceService().market_metrics(config.symbol, config.timeframe_signal)
+        price = metrics["price"]
+        if trade.is_paper:
+            PaperTradingService.close_trade(
+                trade,
+                Decimal(str(price)),
+                "Position closed from dashboard",
+            )
+        else:
+            credential = getattr(config.user, "binance_credential", None)
+            service = LiveTradingService(credential, config)
+            if service.client.position_amount(config.symbol) > 0:
+                service.close_trade(
+                    trade,
+                    Decimal(str(price)),
+                    "Position closed from dashboard",
+                )
+            else:
+                service.client.cancel_all_algo_orders(config.symbol)
+                PaperTradingService.close_trade(
+                    trade,
+                    Decimal(str(price)),
+                    "Position synced closed from dashboard",
+                )
+        BotLog.objects.create(
+            user=request.user,
+            symbol=config.symbol,
+            message="Position close requested from dashboard.",
+        )
+        return Response(TradeSerializer(trade).data)
 
 
 class MarketSnapshotView(APIView):
@@ -240,8 +292,16 @@ class TradeStatsView(APIView):
                 "win_rate": (wins / total * 100) if total else 0,
                 "average_pnl_percent": totals["average_pnl_percent"] or 0,
                 "daily": daily,
+                "analytics": build_trade_analytics(request.user),
             }
         )
+
+
+class BacktestView(APIView):
+    def post(self, request):
+        config = get_config(request.user, request.data.get("symbol"))
+        limit = int(request.data.get("limit", 320))
+        return Response(run_backtest(config, limit=max(180, min(limit, 500))))
 
 
 class LogsView(APIView):

@@ -22,6 +22,13 @@ const EMPTY_STATS: TradeStats = {
   win_rate: 0,
   average_pnl_percent: 0,
   daily: [],
+  analytics: {
+    by_symbol: [],
+    by_side: [],
+    by_hour: [],
+    by_close_reason: [],
+    by_setup_tag: [],
+  },
 };
 
 function normalizeTrendState(

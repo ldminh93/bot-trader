@@ -284,6 +284,20 @@ export function SettingsConsole() {
               <Field label="Max daily loss (%)">
                 <input className={inputClass} type="number" min="0.5" max="20" step="0.1" value={config.max_daily_loss_percent} onChange={(event) => setConfig({ ...config, max_daily_loss_percent: event.target.value })} />
               </Field>
+              <Field label="Entry score threshold">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="60"
+                  max="150"
+                  step="1"
+                  value={config.entry_score_threshold}
+                  onChange={(event) => setConfig({ ...config, entry_score_threshold: Number(event.target.value) })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Higher values mean fewer but stricter entries.
+                </span>
+              </Field>
               <Field label="Margin loss cap (%)">
                 <input
                   className={inputClass}
@@ -320,6 +334,23 @@ export function SettingsConsole() {
                 <Toggle label="Allow long" checked={config.enable_long} onChange={(value) => setConfig({ ...config, enable_long: value })} />
                 <Toggle label="Allow short" checked={config.enable_short} onChange={(value) => setConfig({ ...config, enable_short: value })} />
                 <Toggle label="Trailing stop" checked={config.use_trailing_stop} onChange={(value) => setConfig({ ...config, use_trailing_stop: value })} />
+              </div>
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+                <Toggle
+                  label="Trend alignment"
+                  checked={config.require_trend_alignment}
+                  onChange={(value) => setConfig({ ...config, require_trend_alignment: value })}
+                />
+                <Toggle
+                  label="Require OI"
+                  checked={config.require_open_interest_confirmation}
+                  onChange={(value) => setConfig({ ...config, require_open_interest_confirmation: value })}
+                />
+                <Toggle
+                  label="Require volume"
+                  checked={config.require_volume_confirmation}
+                  onChange={(value) => setConfig({ ...config, require_volume_confirmation: value })}
+                />
               </div>
               <div className="sm:col-span-2">
                 <Toggle

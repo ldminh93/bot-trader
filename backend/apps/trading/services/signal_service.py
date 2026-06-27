@@ -12,6 +12,7 @@ from .trend_service import (
 )
 
 MAX_ENTRY_DISTANCE_ATR = 1.0
+DEFAULT_ENTRY_SCORE_THRESHOLD = 85
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,7 @@ def score_signal(
     top_ratio_direction: float,
     enable_long: bool = True,
     enable_short: bool = True,
+    entry_score_threshold: int = DEFAULT_ENTRY_SCORE_THRESHOLD,
 ) -> SignalResult:
     state = TrendState(trend_state)
     long_score = 0
@@ -186,13 +188,8 @@ def score_signal(
         )
     if (
         enable_long
-        and state
-        in {
-            TrendState.WEAK_UPTREND,
-            TrendState.EARLY_UPTREND,
-            TrendState.CONFIRMED_UPTREND,
-        }
-        and long_score >= 75
+        and state in {TrendState.EARLY_UPTREND, TrendState.CONFIRMED_UPTREND}
+        and long_score >= entry_score_threshold
     ):
         location_reason = entry_location_block_reason(
             "LONG",
@@ -221,7 +218,7 @@ def score_signal(
     if (
         enable_short
         and state in {TrendState.EARLY_DOWNTREND, TrendState.CONFIRMED_DOWNTREND}
-        and short_score >= 75
+        and short_score >= entry_score_threshold
     ):
         location_reason = entry_location_block_reason(
             "SHORT",
@@ -254,7 +251,7 @@ def score_signal(
         "NO_TRADE",
         long_score,
         short_score,
-        [f"{direction} score {preferred_score} is below the 75 entry threshold"],
+        [f"{direction} score {preferred_score} is below the {entry_score_threshold} entry threshold"],
         state.value,
         multiplier,
     )
