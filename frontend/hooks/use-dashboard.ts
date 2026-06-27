@@ -29,6 +29,7 @@ const EMPTY_STATS: TradeStats = {
     by_close_reason: [],
     by_setup_tag: [],
   },
+  block_reasons: [],
 };
 
 function normalizeTrendState(

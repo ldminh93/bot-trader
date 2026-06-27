@@ -2,7 +2,7 @@ import re
 
 from rest_framework import serializers
 
-from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig
+from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig, UserDiscordAlertConfig
 
 
 class TradingBotConfigSerializer(serializers.ModelSerializer):
@@ -121,3 +121,23 @@ class CredentialSerializer(serializers.Serializer):
     api_key = serializers.CharField(max_length=255, write_only=True)
     api_secret = serializers.CharField(max_length=255, write_only=True)
     is_active = serializers.BooleanField(default=True)
+
+
+class DiscordAlertConfigSerializer(serializers.ModelSerializer):
+    webhook_url = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    webhook_configured = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserDiscordAlertConfig
+        fields = (
+            "is_enabled",
+            "notify_info",
+            "notify_warning",
+            "notify_error",
+            "webhook_url",
+            "webhook_configured",
+        )
+        read_only_fields = ("webhook_configured",)
+
+    def get_webhook_configured(self, obj) -> bool:
+        return bool(obj.webhook_url_encrypted)

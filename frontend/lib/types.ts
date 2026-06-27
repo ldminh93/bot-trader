@@ -173,6 +173,47 @@ export interface AnalyticsBucket {
   average_realized_pnl: number;
 }
 
+export interface BlockReasonStat {
+  reason: string;
+  count: number;
+  symbols: string[];
+  last_seen: string;
+}
+
+export interface LiveSyncRow {
+  symbol: string;
+  is_running: boolean;
+  live_mode_requested: boolean;
+  bot_open: boolean;
+  bot_trade_id: number | null;
+  bot_is_paper: boolean | null;
+  exchange_open: boolean;
+  exchange_quantity: string;
+  status: "synced" | "mismatch" | "paper_open" | "unknown" | "not_checked";
+  detail: string;
+}
+
+export interface LiveSyncHealth {
+  enabled: boolean;
+  credential_ready: boolean;
+  mismatches: number;
+  rows: LiveSyncRow[];
+}
+
+export interface KillSwitchResult {
+  stopped: number;
+  closed: string[];
+  errors: { symbol: string; detail: string }[];
+}
+
+export interface DiscordAlertConfig {
+  is_enabled: boolean;
+  notify_info: boolean;
+  notify_warning: boolean;
+  notify_error: boolean;
+  webhook_configured: boolean;
+}
+
 export interface BacktestTrade {
   side: "LONG" | "SHORT";
   entry_price: number;
@@ -218,4 +259,5 @@ export interface TradeStats {
     by_close_reason: AnalyticsBucket[];
     by_setup_tag: AnalyticsBucket[];
   };
+  block_reasons: BlockReasonStat[];
 }

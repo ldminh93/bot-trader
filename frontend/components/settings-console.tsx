@@ -7,7 +7,7 @@ import { PageFrame } from "@/components/page-frame";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api, getToken } from "@/lib/api";
-import type { BotConfig } from "@/lib/types";
+import type { BotConfig, DiscordAlertConfig } from "@/lib/types";
 
 const inputClass =
   "h-10 w-full rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]";
@@ -19,6 +19,8 @@ export function SettingsConsole() {
   const [busy, setBusy] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
+  const [discordConfig, setDiscordConfig] = useState<DiscordAlertConfig | null>(null);
+  const [discordWebhook, setDiscordWebhook] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -33,6 +35,9 @@ export function SettingsConsole() {
         setConfig(items[0] ?? null);
       })
       .catch((reason) => setError(reason.message));
+    api.discordAlerts()
+      .then(setDiscordConfig)
+      .catch(() => undefined);
   }, []);
 
   function updateStoredConfig(nextConfig: BotConfig) {
@@ -140,6 +145,33 @@ export function SettingsConsole() {
       setMessage(result.message);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Connection test failed");
+    }
+  }
+
+  async function saveDiscordAlerts(event: FormEvent) {
+    event.preventDefault();
+    if (!discordConfig) return;
+    setError("");
+    try {
+      const saved = await api.saveDiscordAlerts({
+        ...discordConfig,
+        ...(discordWebhook.trim() ? { webhook_url: discordWebhook.trim() } : {}),
+      });
+      setDiscordConfig(saved);
+      setDiscordWebhook("");
+      setMessage("Discord alert settings saved.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save Discord alerts");
+    }
+  }
+
+  async function testDiscordAlerts() {
+    setError("");
+    try {
+      const result = await api.testDiscordAlerts();
+      setMessage(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Discord alert test failed");
     }
   }
 
@@ -416,6 +448,53 @@ export function SettingsConsole() {
                 {config ? ` ${config.live_trading_message}` : ""}
               </p>
             </div>
+          </Panel>
+          <Panel>
+            <PanelHeader title="Discord alerts" />
+            <form onSubmit={saveDiscordAlerts} className="grid gap-4 p-4">
+              <Field label="Webhook URL">
+                <input
+                  className={inputClass}
+                  type="password"
+                  autoComplete="off"
+                  placeholder={discordConfig?.webhook_configured ? "Configured. Leave blank to keep current webhook." : "Discord webhook URL"}
+                  value={discordWebhook}
+                  onChange={(event) => setDiscordWebhook(event.target.value)}
+                />
+              </Field>
+              {discordConfig && (
+                <>
+                  <Toggle
+                    label="Enable Discord alerts"
+                    checked={discordConfig.is_enabled}
+                    onChange={(value) => setDiscordConfig({ ...discordConfig, is_enabled: value })}
+                  />
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Toggle
+                      label="Info"
+                      checked={discordConfig.notify_info}
+                      onChange={(value) => setDiscordConfig({ ...discordConfig, notify_info: value })}
+                    />
+                    <Toggle
+                      label="Warning"
+                      checked={discordConfig.notify_warning}
+                      onChange={(value) => setDiscordConfig({ ...discordConfig, notify_warning: value })}
+                    />
+                    <Toggle
+                      label="Error"
+                      checked={discordConfig.notify_error}
+                      onChange={(value) => setDiscordConfig({ ...discordConfig, notify_error: value })}
+                    />
+                  </div>
+                </>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={!discordConfig}>Save alerts</Button>
+                <Button type="button" variant="secondary" disabled={!discordConfig?.webhook_configured} onClick={testDiscordAlerts}>
+                  Test Discord
+                </Button>
+              </div>
+            </form>
           </Panel>
         </div>
       </div>

@@ -20,6 +20,7 @@ from .services.market_snapshot_service import collect_market_snapshot
 from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
 from .services.signal_service import entry_location_block_reason
 from .services.websocket_service import broadcast_user_update
+from .services.discord_alert_service import send_discord_alert
 
 logger = logging.getLogger(__name__)
 redis_client = Redis.from_url(settings.REDIS_URL)
@@ -32,6 +33,7 @@ def create_log(config: TradingBotConfig, level: str, message: str) -> BotLog:
         message=message,
     )
     broadcast_user_update(config.user_id, "log", BotLogSerializer(log).data)
+    send_discord_alert(config.user, config.symbol, level, message)
     return log
 
 

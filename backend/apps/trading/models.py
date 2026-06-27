@@ -14,6 +14,17 @@ class UserBinanceCredential(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class UserDiscordAlertConfig(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="discord_alert_config")
+    webhook_url_encrypted = models.TextField(blank=True)
+    is_enabled = models.BooleanField(default=False)
+    notify_info = models.BooleanField(default=True)
+    notify_warning = models.BooleanField(default=True)
+    notify_error = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class TradingBotConfig(models.Model):
     class MarginType(models.TextChoices):
         ISOLATED = "isolated", "Isolated"

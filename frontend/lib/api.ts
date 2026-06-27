@@ -1,4 +1,14 @@
-import type { BacktestResult, BotConfig, BotLog, MarketSnapshot, Trade, TradeStats } from "./types";
+import type {
+  BacktestResult,
+  BotConfig,
+  BotLog,
+  DiscordAlertConfig,
+  KillSwitchResult,
+  LiveSyncHealth,
+  MarketSnapshot,
+  Trade,
+  TradeStats,
+} from "./types";
 import { getApiBaseUrl } from "./runtime-config";
 
 export function getToken() {
@@ -116,6 +126,8 @@ export const api = {
     request<BotConfig>("/bot/stop", { method: "POST", body: JSON.stringify({ symbol }) }),
   closePosition: (symbol: string) =>
     request<Trade>("/bot/close-position", { method: "POST", body: JSON.stringify({ symbol }) }),
+  liveSync: () => request<LiveSyncHealth>("/bot/live-sync"),
+  killSwitch: () => request<KillSwitchResult>("/bot/kill-switch", { method: "POST" }),
   backtest: (symbol: string, limit = 320) =>
     request<BacktestResult>("/bot/backtest", { method: "POST", body: JSON.stringify({ symbol, limit }) }),
   snapshot: (symbol: string) => request<MarketSnapshot>(`/market/snapshot?symbol=${symbol}`),
@@ -128,4 +140,8 @@ export const api = {
       body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret, is_active: true }),
     }),
   testConnection: () => request<{ connected: boolean; message: string }>("/binance/connection-test"),
+  discordAlerts: () => request<DiscordAlertConfig>("/alerts/discord"),
+  saveDiscordAlerts: (body: Partial<DiscordAlertConfig> & { webhook_url?: string }) =>
+    request<DiscordAlertConfig>("/alerts/discord", { method: "PUT", body: JSON.stringify(body) }),
+  testDiscordAlerts: () => request<{ message: string }>("/alerts/discord", { method: "POST" }),
 };

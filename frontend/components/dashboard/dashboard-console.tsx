@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { api } from "@/lib/api";
-import type { AnalyticsBucket, BacktestResult, BotConfig, TrendState } from "@/lib/types";
+import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
 const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
@@ -75,6 +75,7 @@ export function DashboardConsole() {
   const [scannerConfigs, setScannerConfigs] = useState<BotConfig[]>([]);
   const [busy, setBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
+  const [liveSync, setLiveSync] = useState<LiveSyncHealth | null>(null);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
   const openPosition = trades.find((trade) => trade.status === "OPEN");
   const liveModeEnabled = Boolean(config?.live_mode_requested && config.live_trading_available);
@@ -98,6 +99,20 @@ export function DashboardConsole() {
     window.addEventListener("focus", refreshScannerConfigs);
     return () => window.removeEventListener("focus", refreshScannerConfigs);
   }, [refreshScannerConfigs]);
+
+  const refreshLiveSync = useCallback(async () => {
+    try {
+      setLiveSync(await api.liveSync());
+    } catch {
+      setLiveSync(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshLiveSync();
+    const timer = window.setInterval(refreshLiveSync, 20_000);
+    return () => window.clearInterval(timer);
+  }, [refreshLiveSync]);
 
   async function toggleBot() {
     if (!config || !symbol) return;
@@ -148,6 +163,18 @@ export function DashboardConsole() {
     setBusy(true);
     try {
       setBacktest(await api.backtest(symbol));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runKillSwitch() {
+    const confirmed = window.confirm("Stop all bots and close every open position?");
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await api.killSwitch();
+      await Promise.all([refresh(), refreshScannerConfigs(), refreshLiveSync()]);
     } finally {
       setBusy(false);
     }
@@ -473,6 +500,37 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
+            <Panel>
+              <PanelHeader
+                title="Live sync health"
+                action={(
+                  <Button type="button" size="sm" variant="danger" disabled={busy} onClick={runKillSwitch}>
+                    <Stop size={15} weight="fill" />
+                    Kill switch
+                  </Button>
+                )}
+              />
+              <div className="grid grid-cols-2 border-b border-[var(--line)] sm:grid-cols-4">
+                <Metric label="Live checks" value={liveSync?.enabled ? "Enabled" : "Disabled"} />
+                <Metric label="Credential" value={liveSync?.credential_ready ? "Ready" : "Not ready"} />
+                <Metric label="Mismatches" value={String(liveSync?.mismatches ?? 0)} tone={(liveSync?.mismatches ?? 0) > 0 ? "text-[var(--negative)]" : "text-[var(--positive)]"} />
+                <Metric label="Symbols checked" value={String(liveSync?.rows.length ?? 0)} />
+              </div>
+              <div className="max-h-72 overflow-y-auto p-2 scrollbar-thin">
+                {(liveSync?.rows.length ? liveSync.rows : []).slice(0, 12).map((row) => (
+                  <div key={row.symbol} className="grid gap-2 rounded-md px-2 py-2 text-xs hover:bg-[var(--surface-raised)] md:grid-cols-[90px_90px_90px_1fr]">
+                    <span className="font-mono font-bold">{row.symbol}</span>
+                    <span className={row.status === "mismatch" ? "font-bold text-[var(--negative)]" : row.status === "synced" ? "font-bold text-[var(--positive)]" : "text-[var(--muted)]"}>
+                      {row.status.replaceAll("_", " ")}
+                    </span>
+                    <span className="font-mono text-[var(--muted)]">ex {formatNumber(row.exchange_quantity, 5)}</span>
+                    <span className="text-[var(--muted)]">{row.detail}</span>
+                  </div>
+                ))}
+                {!liveSync?.rows.length && <EmptyChart label="Live sync health will appear here." />}
+              </div>
+            </Panel>
+
             <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
               <Panel>
                 <PanelHeader
@@ -485,6 +543,7 @@ export function DashboardConsole() {
                   <AnalyticsBlock title="By side" rows={stats.analytics.by_side} />
                   <AnalyticsBlock title="By open hour" rows={stats.analytics.by_hour} />
                   <AnalyticsBlock title="By close reason" rows={stats.analytics.by_close_reason} />
+                  <BlockReasonBlock rows={stats.block_reasons} />
                 </div>
               </Panel>
 
@@ -562,6 +621,25 @@ function AnalyticsBlock({ title, rows }: { title: string; rows: AnalyticsBucket[
             <span className="font-mono text-[var(--muted)]">{row.trades}</span>
             <span className="font-mono">{formatNumber(row.win_rate)}%</span>
             <span className={`font-mono ${pnlColor(row.realized_pnl)}`}>{formatNumber(row.realized_pnl)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BlockReasonBlock({ rows }: { rows: { reason: string; count: number; symbols: string[]; last_seen: string }[] }) {
+  return (
+    <div className="rounded-[var(--radius)] border border-[var(--line)] md:col-span-2">
+      <div className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+        Block reasons
+      </div>
+      <div className="grid">
+        {(rows.length ? rows.slice(0, 8) : [{ reason: "No block data", count: 0, symbols: [], last_seen: "" }]).map((row) => (
+          <div key={row.reason} className="grid gap-2 border-b border-[var(--line)] px-3 py-2 text-xs last:border-0 md:grid-cols-[1fr_70px_140px]">
+            <span className="leading-5">{row.reason}</span>
+            <span className="font-mono text-[var(--muted)]">{row.count}</span>
+            <span className="truncate text-[var(--muted)]">{row.symbols.join(", ") || "-"}</span>
           </div>
         ))}
       </div>

@@ -9,10 +9,11 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig, UserBinanceCredential
+from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig, UserBinanceCredential, UserDiscordAlertConfig
 from .serializers import (
     BotLogSerializer,
     CredentialSerializer,
+    DiscordAlertConfigSerializer,
     MarketSnapshotSerializer,
     TradeSerializer,
     TradingBotConfigSerializer,
@@ -21,9 +22,17 @@ from .services.analytics_service import build_trade_analytics
 from .services.backtest_service import run_backtest
 from .services.binance_service import BinanceService
 from .services.credential_service import decrypt_secret, encrypt_secret
+from .services.discord_alert_service import send_discord_alert
+from .services.health_service import build_live_sync_health
 from .services.live_trading_service import LiveTradingService
 from .services.market_snapshot_service import collect_market_snapshot
 from .services.paper_trading_service import PaperTradingService
+
+
+def create_bot_log(user, symbol: str, level: str, message: str) -> BotLog:
+    log = BotLog.objects.create(user=user, symbol=symbol, level=level, message=message)
+    send_discord_alert(user, symbol, level, message)
+    return log
 
 
 def get_config(user, symbol: str | None = None) -> TradingBotConfig:
@@ -95,9 +104,10 @@ class BotConfigView(APIView):
             symbol=symbol,
             **defaults,
         )
-        BotLog.objects.create(
+        create_bot_log(
             user=request.user,
             symbol=symbol,
+            level=BotLog.Level.INFO,
             message="Coin added to scanner." if config.is_running else "Coin configuration added.",
         )
         return Response(
@@ -136,9 +146,10 @@ class BotConfigView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
         config.delete()
-        BotLog.objects.create(
+        create_bot_log(
             user=request.user,
             symbol=symbol,
+            level=BotLog.Level.INFO,
             message="Coin removed from scanner.",
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -149,7 +160,7 @@ class BotStartView(APIView):
         config = get_config(request.user, request.data.get("symbol"))
         config.is_running = True
         config.save(update_fields=["is_running", "updated_at"])
-        BotLog.objects.create(user=request.user, symbol=config.symbol, message="Bot started.")
+        create_bot_log(request.user, config.symbol, BotLog.Level.INFO, "Bot started.")
         return Response(TradingBotConfigSerializer(config).data)
 
 
@@ -158,7 +169,7 @@ class BotStopView(APIView):
         config = get_config(request.user, request.data.get("symbol"))
         config.is_running = False
         config.save(update_fields=["is_running", "updated_at"])
-        BotLog.objects.create(user=request.user, symbol=config.symbol, message="Bot stopped.")
+        create_bot_log(request.user, config.symbol, BotLog.Level.INFO, "Bot stopped.")
         return Response(TradingBotConfigSerializer(config).data)
 
 
@@ -197,12 +208,53 @@ class BotClosePositionView(APIView):
                     Decimal(str(price)),
                     "Position synced closed from dashboard",
                 )
-        BotLog.objects.create(
+        create_bot_log(
             user=request.user,
             symbol=config.symbol,
+            level=BotLog.Level.WARNING,
             message="Position close requested from dashboard.",
         )
         return Response(TradeSerializer(trade).data)
+
+
+class BotLiveSyncView(APIView):
+    def get(self, request):
+        return Response(build_live_sync_health(request.user))
+
+
+class BotKillSwitchView(APIView):
+    def post(self, request):
+        configs = list(TradingBotConfig.objects.filter(user=request.user))
+        TradingBotConfig.objects.filter(user=request.user).update(is_running=False)
+        closed = []
+        errors = []
+        for trade in Trade.objects.filter(user=request.user, status=Trade.Status.OPEN):
+            config = next((item for item in configs if item.symbol == trade.symbol), None) or get_config(request.user, trade.symbol)
+            try:
+                metrics = BinanceService().market_metrics(trade.symbol, config.timeframe_signal)
+                price = Decimal(str(metrics["price"]))
+                if trade.is_paper:
+                    PaperTradingService.close_trade(trade, price, "Kill switch closed paper position")
+                else:
+                    credential = getattr(request.user, "binance_credential", None)
+                    config.live_mode_requested = True
+                    service = LiveTradingService(credential, config)
+                    if service.client.position_amount(trade.symbol) > 0:
+                        service.close_trade(trade, price, "Kill switch closed live position")
+                    else:
+                        service.client.cancel_all_algo_orders(trade.symbol)
+                        PaperTradingService.close_trade(trade, price, "Kill switch synced already-closed live position")
+                closed.append(trade.symbol)
+            except Exception as exc:
+                errors.append({"symbol": trade.symbol, "detail": str(exc)})
+                create_bot_log(request.user, trade.symbol, BotLog.Level.ERROR, f"Kill switch failed to close position: {exc}")
+        create_bot_log(
+            request.user,
+            "ALL",
+            BotLog.Level.WARNING,
+            f"Kill switch executed. Stopped {len(configs)} bots and closed {len(closed)} open positions.",
+        )
+        return Response({"stopped": len(configs), "closed": closed, "errors": errors})
 
 
 class MarketSnapshotView(APIView):
@@ -312,6 +364,7 @@ class TradeStatsView(APIView):
                 "average_pnl_percent": totals["average_pnl_percent"] or 0,
                 "daily": daily,
                 "analytics": build_trade_analytics(request.user),
+                "block_reasons": build_block_reason_stats(request.user),
             }
         )
 
@@ -327,6 +380,58 @@ class LogsView(APIView):
     def get(self, request):
         logs = BotLog.objects.filter(user=request.user)
         return Response(BotLogSerializer(logs[:200], many=True).data)
+
+
+def build_block_reason_stats(user) -> list[dict]:
+    symbols = list(TradingBotConfig.objects.filter(user=user).values_list("symbol", flat=True))
+    since = timezone.now() - timedelta(days=7)
+    snapshots = MarketSnapshot.objects.filter(symbol__in=symbols, created_at__gte=since).only("payload", "symbol", "created_at")[:1000]
+    buckets: dict[str, dict] = {}
+    for snapshot in snapshots:
+        payload = snapshot.payload or {}
+        if payload.get("signal") != "NO_TRADE":
+            continue
+        for reason in payload.get("reasons", [])[:4]:
+            label = str(reason)[:120]
+            item = buckets.setdefault(label, {"reason": label, "count": 0, "symbols": set(), "last_seen": snapshot.created_at})
+            item["count"] += 1
+            item["symbols"].add(snapshot.symbol)
+            if snapshot.created_at > item["last_seen"]:
+                item["last_seen"] = snapshot.created_at
+    rows = sorted(buckets.values(), key=lambda item: item["count"], reverse=True)[:15]
+    return [
+        {
+            "reason": item["reason"],
+            "count": item["count"],
+            "symbols": sorted(item["symbols"])[:8],
+            "last_seen": item["last_seen"].isoformat(),
+        }
+        for item in rows
+    ]
+
+
+class DiscordAlertConfigView(APIView):
+    def get(self, request):
+        config, _ = UserDiscordAlertConfig.objects.get_or_create(user=request.user)
+        return Response(DiscordAlertConfigSerializer(config).data)
+
+    def put(self, request):
+        config, _ = UserDiscordAlertConfig.objects.get_or_create(user=request.user)
+        serializer = DiscordAlertConfigSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        webhook_url = serializer.validated_data.pop("webhook_url", None)
+        saved = serializer.save()
+        if webhook_url is not None:
+            saved.webhook_url_encrypted = encrypt_secret(webhook_url.strip()) if webhook_url.strip() else ""
+            saved.save(update_fields=["webhook_url_encrypted", "updated_at"])
+        return Response(DiscordAlertConfigSerializer(saved).data)
+
+    def post(self, request):
+        config, _ = UserDiscordAlertConfig.objects.get_or_create(user=request.user)
+        if not config.webhook_url_encrypted:
+            return Response({"detail": "Discord webhook is not configured."}, status=status.HTTP_400_BAD_REQUEST)
+        send_discord_alert(request.user, "SYSTEM", BotLog.Level.INFO, "Discord alert test from Bot Trader.", force=True)
+        return Response({"message": "Discord test alert sent."})
 
 
 class CredentialView(APIView):
