@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from apps.trading.models import MarketSnapshot, TradingBotConfig
 
 from .binance_service import BinanceService
+from .execution_profile_service import build_execution_profile
 from .indicator_service import IndicatorResult, calculate_indicators
 from .signal_service import SignalResult, score_signal
 from .trend_service import detect_trend_state, explain_trend_state
@@ -77,7 +78,7 @@ def evaluate_market_conditions(
     trend_candles: list[dict],
     metrics: dict,
     oi_series: list[float] | None = None,
-) -> tuple[IndicatorResult, SignalResult, list[str], object, object, list[str]]:
+) -> tuple[IndicatorResult, SignalResult, list[str], object, object, list[str], dict]:
     signal_indicators = calculate_indicators(signal_candles)
     trend_indicators = calculate_indicators(trend_candles)
     oi_values = oi_series or _oi_series(config, metrics)
@@ -140,7 +141,36 @@ def evaluate_market_conditions(
         signal_indicators,
         config,
     )
-    return signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags
+    higher_trend_reasons = explain_trend_state(
+        trend_indicators,
+        float(config.adx_min),
+        oi_values,
+        higher_trend_state,
+    )
+    execution = build_execution_profile(
+        config,
+        signal,
+        signal_indicators,
+        metrics,
+        trend_state,
+        higher_trend_state,
+    )
+    context = {
+        "trend_reasons": trend_reasons,
+        "higher_trend_reasons": higher_trend_reasons,
+        "execution": {
+            "regime": execution.regime,
+            "regime_label": execution.regime_label,
+            "regime_notes": execution.regime_notes,
+            "confidence_score": execution.confidence_score,
+            "leverage_factor": execution.leverage_factor,
+            "effective_leverage": execution.effective_leverage,
+            "tp_r_multiple": execution.tp_r_multiple,
+            "alignment_score": execution.alignment_score,
+        },
+        "alignment": execution.alignment_score,
+    }
+    return signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context
 
 
 def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
@@ -148,7 +178,7 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal)
     trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend)
     metrics = client.market_metrics(config.symbol, config.timeframe_signal)
-    signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags = evaluate_market_conditions(
+    signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context = evaluate_market_conditions(
         config,
         signal_candles,
         trend_candles,
@@ -182,6 +212,20 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
             "short_score": signal.short_score,
             "risk_multiplier": signal.risk_multiplier,
             "reasons": decision_reasons,
+            "trend_reasons": context["trend_reasons"],
+            "higher_timeframe_bias": {
+                "signal_state": trend_state.value,
+                "higher_state": higher_trend_state.value,
+                "alignment": context["alignment"],
+                "reasons": context["higher_trend_reasons"],
+            },
+            "regime": context["execution"]["regime"],
+            "regime_label": context["execution"]["regime_label"],
+            "regime_notes": context["execution"]["regime_notes"],
+            "confidence_score": context["execution"]["confidence_score"],
+            "effective_leverage": context["execution"]["effective_leverage"],
+            "leverage_factor": context["execution"]["leverage_factor"],
+            "tp_r_multiple": context["execution"]["tp_r_multiple"],
             "setup_tags": tags,
             "open_interest_change_available": metrics["open_interest_change_available"],
             "statistics_period": metrics["statistics_period"],

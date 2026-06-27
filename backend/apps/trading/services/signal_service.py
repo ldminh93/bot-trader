@@ -64,19 +64,7 @@ def entry_location_block_reason(
 
 
 def entry_score_threshold_for_state(state: TrendState) -> int:
-    if state in {
-        TrendState.EARLY_UPTREND,
-        TrendState.WEAK_UPTREND,
-        TrendState.EARLY_DOWNTREND,
-        TrendState.WEAK_DOWNTREND,
-    }:
-        return EARLY_ENTRY_SCORE_THRESHOLD
-    if state in {
-        TrendState.CONFIRMED_UPTREND,
-        TrendState.CONFIRMED_DOWNTREND,
-    }:
-        return CONFIRMED_ENTRY_SCORE_THRESHOLD
-    return CONFIRMED_ENTRY_SCORE_THRESHOLD
+    return DEFAULT_ENTRY_SCORE_THRESHOLD
 
 
 def score_signal(
@@ -202,7 +190,6 @@ def score_signal(
             state.value,
             0.0,
         )
-    long_threshold = entry_score_threshold_for_state(state)
     if (
         enable_long
         and state in {TrendState.EARLY_UPTREND, TrendState.CONFIRMED_UPTREND}
@@ -264,7 +251,6 @@ def score_signal(
 
     preferred_score = long_score if "UPTREND" in state.value else short_score
     direction = "LONG" if "UPTREND" in state.value else "SHORT"
-    threshold = entry_score_threshold_for_state(state)
     return SignalResult(
         "NO_TRADE",
         long_score,

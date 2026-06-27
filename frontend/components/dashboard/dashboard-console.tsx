@@ -313,6 +313,51 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
+            <Panel>
+              <PanelHeader
+                title="Higher-timeframe bias"
+                action={snapshot?.payload.higher_timeframe_bias ? (
+                  <span className={`rounded-md px-2 py-1 text-[10px] font-bold ${snapshot.payload.higher_timeframe_bias.alignment === "aligned" ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "bg-[var(--warning)]/15 text-[var(--warning)]"}`}>
+                    {snapshot.payload.higher_timeframe_bias.alignment}
+                  </span>
+                ) : undefined}
+              />
+              <div className="grid gap-4 p-4 md:grid-cols-4">
+                <Metric label="Signal trend" value={snapshot?.payload.higher_timeframe_bias?.signal_state.replaceAll("_", " ") ?? "-"} />
+                <Metric label={`${config?.timeframe_trend ?? "1h"} trend`} value={snapshot?.payload.higher_timeframe_bias?.higher_state.replaceAll("_", " ") ?? "-"} />
+                <Metric label="Regime" value={snapshot?.payload.regime_label ?? "-"} detail={(snapshot?.payload.regime ?? "").replaceAll("_", " ")} />
+                <Metric
+                  label="Execution profile"
+                  value={`x${snapshot?.payload.effective_leverage ?? config?.leverage ?? 0} / ${formatNumber(snapshot?.payload.tp_r_multiple ?? 0, 2)}R`}
+                  detail={`confidence ${snapshot?.payload.confidence_score ?? 0}`}
+                />
+              </div>
+              <div className="grid gap-4 border-t border-[var(--line)] p-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold">Higher-timeframe reasons</p>
+                  <ul className="mt-2 grid gap-2">
+                    {(snapshot?.payload.higher_timeframe_bias?.reasons?.length ? snapshot.payload.higher_timeframe_bias.reasons : ["Waiting for current higher-timeframe analysis"]).map((reason) => (
+                      <li key={reason} className="flex items-start gap-2 text-xs leading-5 text-[var(--muted)]">
+                        <span className="mt-2 size-1 shrink-0 rounded-full bg-[var(--accent)]" />
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold">Regime notes</p>
+                  <ul className="mt-2 grid gap-2">
+                    {(snapshot?.payload.regime_notes?.length ? snapshot.payload.regime_notes : ["Execution profile notes will appear here."]).map((reason) => (
+                      <li key={reason} className="flex items-start gap-2 text-xs leading-5 text-[var(--muted)]">
+                        <span className="mt-2 size-1 shrink-0 rounded-full bg-[var(--accent)]" />
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </Panel>
+
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_0.9fr]">
               <Panel className="min-w-0">
                 <PanelHeader title="Order flow" />

@@ -181,7 +181,7 @@ def run_backtest(config, limit: int = 320) -> dict:
             "top_ratio_direction": 0.0,
             "source": "backtest",
         }
-        indicators, signal, _reasons, _trend_state, _higher_state, tags = evaluate_market_conditions(
+        indicators, signal, _reasons, _trend_state, _higher_state, tags, context = evaluate_market_conditions(
             config,
             signal_slice,
             trend_slice,
@@ -238,6 +238,7 @@ def run_backtest(config, limit: int = 320) -> dict:
             if config.position_margin_usdt is not None
             else None
         )
+        execution = context["execution"]
         try:
             plan = calculate_risk_plan(
                 signal.signal,
@@ -251,9 +252,9 @@ def run_backtest(config, limit: int = 320) -> dict:
                 indicators.ma25,
                 indicators.ma99,
                 position_margin,
-                config.leverage,
+                int(execution["effective_leverage"]),
                 float(config.atr_multiplier_sl),
-                float(config.atr_multiplier_tp),
+                float(execution["tp_r_multiple"]),
                 float(config.max_margin_loss_percent),
             )
         except (RiskLimitExceeded, ValueError):
@@ -265,7 +266,7 @@ def run_backtest(config, limit: int = 320) -> dict:
             entry_price=current_price,
             quantity=quantity,
             remaining_quantity=quantity,
-            leverage=config.leverage,
+            leverage=int(execution["effective_leverage"]),
             stop_loss=Decimal(str(plan.stop_loss)),
             take_profit_1=Decimal(str(plan.take_profit_1)),
             take_profit_2=Decimal(str(plan.take_profit_2)),
@@ -276,7 +277,7 @@ def run_backtest(config, limit: int = 320) -> dict:
             tp2_hit=False,
             breakeven_moved=False,
             opened_at_ms=current_ts,
-            setup_tags=tags,
+            setup_tags=tags + [f"regime:{execution['regime'].lower()}", f"confidence:{execution['confidence_score']}"],
             open_reason=", ".join(signal.reasons),
         )
 

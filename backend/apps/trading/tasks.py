@@ -135,6 +135,9 @@ def process_config(config: TradingBotConfig) -> None:
         return
 
     price = metrics["price"]
+    execution_payload = snapshot.payload
+    effective_leverage = int(execution_payload.get("effective_leverage") or config.leverage)
+    tp_r_multiple = float(execution_payload.get("tp_r_multiple") or config.atr_multiplier_tp)
     location_reason = entry_location_block_reason(
         signal.signal,
         price,
@@ -189,14 +192,49 @@ def process_config(config: TradingBotConfig) -> None:
             signal_indicators.ma25,
             signal_indicators.ma99,
             position_margin,
-            config.leverage,
+            effective_leverage,
             float(config.atr_multiplier_sl),
-            float(config.atr_multiplier_tp),
+            tp_r_multiple,
             float(config.max_margin_loss_percent),
         )
     except RiskLimitExceeded as exc:
         create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")
         return
+    replay_payload = {
+        "entry_timeframe": config.timeframe_signal,
+        "trend_timeframe": config.timeframe_trend,
+        "candles": snapshot.payload.get("candles", []),
+        "signal": snapshot.payload.get("signal", signal.signal),
+        "trend_state": snapshot.payload.get("trend_state"),
+        "higher_timeframe_bias": snapshot.payload.get("higher_timeframe_bias", {}),
+        "reasons": snapshot.payload.get("reasons", signal.reasons),
+        "trend_reasons": snapshot.payload.get("trend_reasons", []),
+        "regime": snapshot.payload.get("regime"),
+        "regime_label": snapshot.payload.get("regime_label"),
+        "regime_notes": snapshot.payload.get("regime_notes", []),
+        "confidence_score": snapshot.payload.get("confidence_score", 0),
+        "effective_leverage": effective_leverage,
+        "tp_r_multiple": tp_r_multiple,
+        "metrics": {
+            "price": metrics["price"],
+            "adx": signal_indicators.adx,
+            "atr": signal_indicators.atr,
+            "volume": signal_indicators.volume,
+            "volume_ma20": signal_indicators.volume_ma20,
+            "open_interest": metrics["open_interest"],
+            "open_interest_change_percent": metrics["open_interest_change_percent"],
+            "funding_rate": metrics["funding_rate"],
+        },
+    }
+    trade_setup_tags = list(
+        dict.fromkeys(
+            [
+                *snapshot.payload.get("setup_tags", []),
+                f"regime:{str(snapshot.payload.get('regime', 'manual')).lower()}",
+                f"confidence:{snapshot.payload.get('confidence_score', 0)}",
+            ]
+        )
+    )
     if live_service:
         try:
             order = live_service.place_entry(
@@ -209,6 +247,7 @@ def process_config(config: TradingBotConfig) -> None:
                     plan.take_profit_2,
                     plan.take_profit_3,
                 ),
+                effective_leverage,
             )
         except ExistingExchangePosition as exc:
             create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")
@@ -222,13 +261,14 @@ def process_config(config: TradingBotConfig) -> None:
             entry_price=executed_price,
             quantity=executed_quantity,
             remaining_quantity=executed_quantity,
-            leverage=config.leverage,
+            leverage=effective_leverage,
             stop_loss=plan.stop_loss,
             take_profit_1=plan.take_profit_1,
             take_profit_2=plan.take_profit_2,
             take_profit_3=plan.take_profit_3,
             open_reason=", ".join(signal.reasons),
-            setup_tags=snapshot.payload.get("setup_tags", []),
+            setup_tags=trade_setup_tags,
+            replay_payload=replay_payload,
             is_paper=False,
         )
     else:
@@ -239,7 +279,9 @@ def process_config(config: TradingBotConfig) -> None:
             price,
             plan,
             ", ".join(signal.reasons),
-            snapshot.payload.get("setup_tags", []),
+            trade_setup_tags,
+            effective_leverage,
+            replay_payload,
         )
     sizing_message = (
         f"{position_margin:.2f} USDT margin "
@@ -251,7 +293,8 @@ def process_config(config: TradingBotConfig) -> None:
         config,
         BotLog.Level.INFO,
         f"{'Live' if use_live else 'Paper'} {signal.signal} opened at {price:.6f} "
-        f"with {sizing_message}.",
+        f"with {sizing_message}, x{effective_leverage}, {snapshot.payload.get('regime_label', 'Manual')} regime, "
+        f"TP {tp_r_multiple:.2f}R, confidence {snapshot.payload.get('confidence_score', 0)}.",
     )
     broadcast_user_update(config.user_id, "position", TradeSerializer(trade).data)
 

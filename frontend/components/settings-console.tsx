@@ -352,6 +352,18 @@ export function SettingsConsole() {
                   onChange={(value) => setConfig({ ...config, require_volume_confirmation: value })}
                 />
               </div>
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+                <Toggle
+                  label="Auto regime mode"
+                  checked={config.auto_regime_enabled}
+                  onChange={(value) => setConfig({ ...config, auto_regime_enabled: value })}
+                />
+                <Toggle
+                  label="Confidence leverage"
+                  checked={config.confidence_leverage_enabled}
+                  onChange={(value) => setConfig({ ...config, confidence_leverage_enabled: value })}
+                />
+              </div>
               <div className="sm:col-span-2">
                 <Toggle
                   label="Live trading for all scanner coins"

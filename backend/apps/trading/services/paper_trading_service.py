@@ -9,7 +9,17 @@ TAKER_FEE_RATE = Decimal("0.0005")
 
 class PaperTradingService:
     @staticmethod
-    def open_trade(user, config, side: str, price: float, plan, reason: str, setup_tags: list[str] | None = None) -> Trade:
+    def open_trade(
+        user,
+        config,
+        side: str,
+        price: float,
+        plan,
+        reason: str,
+        setup_tags: list[str] | None = None,
+        leverage: int | None = None,
+        replay_payload: dict | None = None,
+    ) -> Trade:
         quantity = Decimal(str(plan.quantity))
         entry = Decimal(str(price))
         fee = entry * quantity * TAKER_FEE_RATE
@@ -20,7 +30,7 @@ class PaperTradingService:
             entry_price=entry,
             quantity=quantity,
             remaining_quantity=quantity,
-            leverage=config.leverage,
+            leverage=leverage or config.leverage,
             stop_loss=Decimal(str(plan.stop_loss)),
             take_profit_1=Decimal(str(plan.take_profit_1)),
             take_profit_2=Decimal(str(plan.take_profit_2)),
@@ -29,6 +39,7 @@ class PaperTradingService:
             realized_pnl=-fee,
             open_reason=reason,
             setup_tags=setup_tags or [],
+            replay_payload=replay_payload or {},
             is_paper=True,
         )
 

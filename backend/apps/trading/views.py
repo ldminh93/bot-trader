@@ -77,6 +77,8 @@ class BotConfigView(APIView):
                 "require_trend_alignment",
                 "require_open_interest_confirmation",
                 "require_volume_confirmation",
+                "auto_regime_enabled",
+                "confidence_leverage_enabled",
                 "live_mode_requested",
                 "paper_balance",
                 "position_margin_usdt",
@@ -235,6 +237,23 @@ class MarketSnapshotView(APIView):
         payload.setdefault("short_score", 0)
         payload.setdefault("risk_multiplier", 0)
         payload.setdefault("reasons", ["Waiting for a current strategy snapshot"])
+        payload.setdefault("trend_reasons", [])
+        payload.setdefault(
+            "higher_timeframe_bias",
+            {
+                "signal_state": trend_state,
+                "higher_state": payload.get("trend_1h", "SIDEWAY"),
+                "alignment": "aligned",
+                "reasons": [],
+            },
+        )
+        payload.setdefault("regime", "MANUAL")
+        payload.setdefault("regime_label", "Manual")
+        payload.setdefault("regime_notes", [])
+        payload.setdefault("confidence_score", 0)
+        payload.setdefault("effective_leverage", config.leverage)
+        payload.setdefault("leverage_factor", 1)
+        payload.setdefault("tp_r_multiple", float(config.atr_multiplier_tp))
         payload.setdefault("candles", [])
         history = MarketSnapshot.objects.filter(
             symbol=symbol,

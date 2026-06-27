@@ -20,6 +20,8 @@ export interface BotConfig {
   require_trend_alignment: boolean;
   require_open_interest_confirmation: boolean;
   require_volume_confirmation: boolean;
+  auto_regime_enabled: boolean;
+  confidence_leverage_enabled: boolean;
   is_running: boolean;
   live_mode_requested: boolean;
   live_trading_available: boolean;
@@ -81,6 +83,19 @@ export interface MarketSnapshot {
     risk_multiplier: number;
     reasons: string[];
     trend_reasons?: string[];
+    higher_timeframe_bias?: {
+      signal_state: TrendState;
+      higher_state: TrendState;
+      alignment: "aligned" | "counter";
+      reasons: string[];
+    };
+    regime?: string;
+    regime_label?: string;
+    regime_notes?: string[];
+    confidence_score?: number;
+    effective_leverage?: number;
+    leverage_factor?: number;
+    tp_r_multiple?: number;
     sideways_reasons?: string[];
     open_interest_change_available?: boolean;
     statistics_period?: string;
@@ -114,6 +129,37 @@ export interface Trade {
   open_reason: string;
   close_reason: string;
   setup_tags: string[];
+  replay_payload: {
+    entry_timeframe?: string;
+    trend_timeframe?: string;
+    candles?: Candle[];
+    signal?: "LONG" | "SHORT" | "NO_TRADE";
+    trend_state?: TrendState;
+    higher_timeframe_bias?: {
+      signal_state: TrendState;
+      higher_state: TrendState;
+      alignment: "aligned" | "counter";
+      reasons: string[];
+    };
+    reasons?: string[];
+    trend_reasons?: string[];
+    regime?: string;
+    regime_label?: string;
+    regime_notes?: string[];
+    confidence_score?: number;
+    effective_leverage?: number;
+    tp_r_multiple?: number;
+    metrics?: {
+      price?: number;
+      adx?: number;
+      atr?: number;
+      volume?: number;
+      volume_ma20?: number;
+      open_interest?: number;
+      open_interest_change_percent?: number;
+      funding_rate?: number;
+    };
+  };
   is_paper: boolean;
   opened_at: string;
   closed_at: string | null;

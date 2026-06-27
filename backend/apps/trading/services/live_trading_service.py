@@ -39,6 +39,7 @@ class LiveTradingService:
         price,
         stop_loss: Decimal,
         take_profit: tuple[Decimal, Decimal, Decimal],
+        leverage: int | None = None,
     ) -> dict:
         existing_quantity = self.client.position_amount(self.config.symbol)
         if existing_quantity > 0:
@@ -49,7 +50,7 @@ class LiveTradingService:
         rules = self.client.symbol_rules(self.config.symbol)
         normalized_price, normalized_quantity = self.client.normalize_order(price, quantity, rules)
         self.client.set_margin_type(self.config.symbol, self.config.margin_type)
-        self.client.set_leverage(self.config.symbol, self.config.leverage)
+        self.client.set_leverage(self.config.symbol, leverage or self.config.leverage)
         exchange_side = "BUY" if side == "LONG" else "SELL"
         order = self.client.place_market_order(
             self.config.symbol,

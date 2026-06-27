@@ -1,7 +1,17 @@
 import type { Trade } from "@/lib/types";
 import { formatNumber, pnlColor } from "@/lib/utils";
 
-export function TradeTable({ trades, limit }: { trades: Trade[]; limit?: number }) {
+export function TradeTable({
+  trades,
+  limit,
+  onSelect,
+  selectedTradeId,
+}: {
+  trades: Trade[];
+  limit?: number;
+  onSelect?: (trade: Trade) => void;
+  selectedTradeId?: number | null;
+}) {
   const rows = limit ? trades.slice(0, limit) : trades;
   if (!rows.length) {
     return (
@@ -32,7 +42,11 @@ export function TradeTable({ trades, limit }: { trades: Trade[]; limit?: number 
         </thead>
         <tbody>
           {rows.map((trade) => (
-            <tr key={trade.id} className="border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]">
+            <tr
+              key={trade.id}
+              className={`border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)] ${selectedTradeId === trade.id ? "bg-[var(--accent)]/[0.07]" : ""} ${onSelect ? "cursor-pointer" : ""}`}
+              onClick={() => onSelect?.(trade)}
+            >
               <td className="px-4 py-3 font-mono font-semibold">{trade.symbol}</td>
               <td className={`px-3 py-3 font-bold ${trade.side === "LONG" ? "text-[var(--positive)]" : "text-[var(--negative)]"}`}>
                 {trade.side}
