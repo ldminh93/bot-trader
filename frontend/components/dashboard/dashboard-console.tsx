@@ -21,7 +21,7 @@ import { api } from "@/lib/api";
 import type { AnalyticsBucket, BacktestResult, BotConfig, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
-const SIGNAL_TIMEFRAMES = ["1m", "5m", "15m"];
+const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
 const LEVERAGE_OPTIONS = [1, 3, 5, 10, 20];
 
 function TrendBadge({ value }: { value: string }) {
@@ -75,7 +75,7 @@ export function DashboardConsole() {
   const [scannerConfigs, setScannerConfigs] = useState<BotConfig[]>([]);
   const [busy, setBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
-  const { config, setConfig, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
+  const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
   const openPosition = trades.find((trade) => trade.status === "OPEN");
   const liveModeEnabled = Boolean(config?.live_mode_requested && config.live_trading_available);
   const modeLabel = liveModeEnabled
@@ -112,6 +112,8 @@ export function DashboardConsole() {
   async function changeSignalTimeframe(timeframe: string) {
     if (!config || !symbol || timeframe === config.timeframe_signal) return;
     setBusy(true);
+    setSnapshot(null);
+    setConfig({ ...config, timeframe_signal: timeframe });
     try {
       setConfig(await api.saveConfig({ symbol, timeframe_signal: timeframe }));
       await refresh();

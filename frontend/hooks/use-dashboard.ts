@@ -97,12 +97,23 @@ export function useDashboard(symbol: string | null) {
   const selectedSymbol = useRef(symbol);
   selectedSymbol.current = symbol;
   const [config, setConfig] = useState<BotConfig | null>(null);
+  const configRef = useRef<BotConfig | null>(null);
   const [snapshot, setSnapshot] = useState<MarketSnapshot | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [stats, setStats] = useState<TradeStats>(EMPTY_STATS);
   const [logs, setLogs] = useState<BotLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  const snapshotMatchesCurrentView = useCallback((next: MarketSnapshot, expectedConfig?: BotConfig | null) => {
+    const activeConfig = expectedConfig ?? configRef.current;
+    if (next.symbol !== selectedSymbol.current) return false;
+    return !activeConfig || next.timeframe === activeConfig.timeframe_signal;
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!symbol) return;
@@ -119,12 +130,17 @@ export function useDashboard(symbol: string | null) {
       ]);
       if (selectedSymbol.current !== symbol) return;
       setConfig(nextConfig);
+      configRef.current = nextConfig;
       setTrades(nextTrades);
       setStats(nextStats);
       setLogs(nextLogs);
       try {
         const nextSnapshot = await api.snapshot(symbol);
         if (selectedSymbol.current !== symbol) return;
+        if (!snapshotMatchesCurrentView(nextSnapshot, nextConfig)) {
+          setSnapshot(null);
+          return;
+        }
         setSnapshot((current) => normalizeSnapshot(nextSnapshot, current));
       } catch {
         setSnapshot(null);
@@ -172,9 +188,9 @@ export function useDashboard(symbol: string | null) {
         const event = JSON.parse(message.data) as { event: string; payload: MarketSnapshot | Trade | BotLog };
         if (event.event === "snapshot") {
           const next = event.payload as MarketSnapshot;
-          if (next.symbol !== selectedSymbol.current) return;
+          if (!snapshotMatchesCurrentView(next)) return;
           setSnapshot((current) => {
-            if (next.symbol !== selectedSymbol.current) return current;
+            if (!snapshotMatchesCurrentView(next)) return current;
             return normalizeSnapshot(next, current);
           });
         }
@@ -213,6 +229,7 @@ export function useDashboard(symbol: string | null) {
   return {
     config: visibleConfig,
     setConfig,
+    setSnapshot,
     snapshot: visibleSnapshot,
     trades: visibleTrades,
     stats,

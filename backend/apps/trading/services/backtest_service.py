@@ -36,7 +36,7 @@ def _tf_minutes(value: str) -> int:
 
 
 def _period_for_oi(signal_timeframe: str) -> str:
-    return {"1m": "5m", "3m": "5m"}.get(signal_timeframe, signal_timeframe)
+    return {"1m": "5m", "3m": "5m", "4h": "1h"}.get(signal_timeframe, signal_timeframe)
 
 
 def _partial_close(trade: SimTrade, price: Decimal, fraction_of_original: Decimal) -> None:

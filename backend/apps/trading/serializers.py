@@ -51,7 +51,7 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         return normalized
 
     def validate_timeframe_signal(self, value: str) -> str:
-        allowed = {"1m", "3m", "5m", "15m", "30m"}
+        allowed = {"1m", "3m", "5m", "15m", "30m", "1h", "4h"}
         if value not in allowed:
             raise serializers.ValidationError(f"Signal timeframe must be one of: {', '.join(sorted(allowed))}")
         return value

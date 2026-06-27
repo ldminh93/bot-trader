@@ -99,6 +99,7 @@ class BinanceService:
         statistics_period = {
             "1m": "5m",
             "3m": "5m",
+            "4h": "1h",
         }.get(period, period)
         try:
             premium = self._get("/fapi/v1/premiumIndex", {"symbol": symbol})
