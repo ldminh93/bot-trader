@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+
 import {
   Area,
   AreaChart,
@@ -25,6 +27,10 @@ const tooltipStyle = {
   borderRadius: 8,
   fontSize: 12,
 };
+
+const DEFAULT_PRICE_WINDOW = 80;
+const MIN_PRICE_WINDOW = 35;
+const MAX_PRICE_WINDOW = 160;
 
 interface CandleShapeProps {
   x?: number;
@@ -115,11 +121,30 @@ export function PriceChart({
   candles: Candle[];
   position?: Trade;
 }) {
-  const data = candles.slice(-60).map((item) => ({
-    ...item,
-    range: [item.low, item.high] as [number, number],
-    time: new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-  }));
+  const [windowSize, setWindowSize] = useState(DEFAULT_PRICE_WINDOW);
+  const [offsetFromEnd, setOffsetFromEnd] = useState(0);
+  const dragRef = useRef<{ pointerId: number; startX: number; startOffset: number } | null>(null);
+
+  const maxOffset = Math.max(candles.length - windowSize, 0);
+  const clampedOffset = Math.min(offsetFromEnd, maxOffset);
+  const startIndex = Math.max(candles.length - windowSize - clampedOffset, 0);
+  const endIndex = candles.length - clampedOffset;
+  const isLiveView = clampedOffset === 0;
+
+  useEffect(() => {
+    setOffsetFromEnd((current) => Math.min(current, Math.max(candles.length - windowSize, 0)));
+  }, [candles.length, windowSize]);
+
+  const data = useMemo(
+    () =>
+      candles.slice(startIndex, endIndex).map((item) => ({
+        ...item,
+        range: [item.low, item.high] as [number, number],
+        time: new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      })),
+    [candles, startIndex, endIndex],
+  );
+
   const positionCandle = position && data.length
     ? data.reduce((closest, candle) => {
         const openedAt = new Date(position.opened_at).getTime();
@@ -129,49 +154,149 @@ export function PriceChart({
       })
     : null;
 
+  function moveWindow(nextOffset: number) {
+    setOffsetFromEnd(Math.max(0, Math.min(nextOffset, Math.max(candles.length - windowSize, 0))));
+  }
+
+  function updateWindowSize(nextSize: number) {
+    const size = Math.max(MIN_PRICE_WINDOW, Math.min(nextSize, Math.min(MAX_PRICE_WINDOW, Math.max(candles.length, MIN_PRICE_WINDOW))));
+    setWindowSize(size);
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (candles.length <= windowSize) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startOffset: clampedOffset,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    const candleWidth = Math.max(event.currentTarget.clientWidth / Math.max(windowSize, 1), 6);
+    const candleDelta = Math.round((event.clientX - dragRef.current.startX) / candleWidth);
+    moveWindow(dragRef.current.startOffset + candleDelta);
+  }
+
+  function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dragRef.current = null;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleWheel(event: WheelEvent<HTMLDivElement>) {
+    if (event.shiftKey) {
+      event.preventDefault();
+      updateWindowSize(windowSize + (event.deltaY > 0 ? 10 : -10));
+      return;
+    }
+    if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+      event.preventDefault();
+      moveWindow(clampedOffset + Math.round(event.deltaX / 20));
+    }
+  }
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={data} margin={{ top: 12, right: 12, bottom: 0, left: -10 }}>
-        <CartesianGrid stroke="#282e35" vertical={false} />
-        <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={32} fontSize={10} />
-        <YAxis
-          stroke="#69727d"
-          tickLine={false}
-          axisLine={false}
-          domain={["dataMin", "dataMax"]}
-          tickFormatter={(value) => formatNumber(value, value < 1 ? 4 : 0)}
-          fontSize={10}
-        />
-        <Tooltip
-          contentStyle={tooltipStyle}
-          labelStyle={{ color: "#f2f3ee" }}
-          formatter={(value, name, item) => {
-            if (name === "Candle") {
-              const candle = item.payload as Candle;
-              return [
-                `O ${formatNumber(candle.open, 4)}  H ${formatNumber(candle.high, 4)}  L ${formatNumber(candle.low, 4)}  C ${formatNumber(candle.close, 4)}`,
-                "OHLC",
-              ];
-            }
-            return [formatNumber(Number(value), 4), name];
-          }}
-        />
-        <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
-        <Bar dataKey="range" name="Candle" shape={<Candlestick />} isAnimationActive={false} />
-        <Line type="monotone" dataKey="close" name="Close" stroke="#f2f3ee" strokeOpacity={0.35} strokeWidth={1} dot={false} />
-        <Line type="monotone" dataKey="ma7" name="MA7" stroke="#f0b90b" strokeWidth={1.2} dot={false} />
-        <Line type="monotone" dataKey="ma25" name="MA25" stroke="#55a3e8" strokeWidth={1.2} dot={false} />
-        <Line type="monotone" dataKey="ma99" name="MA99" stroke="#d175d8" strokeWidth={1.2} dot={false} />
-        {position && positionCandle && (
-          <ReferenceDot
-            x={positionCandle.time}
-            y={Number(position.entry_price)}
-            ifOverflow="extendDomain"
-            shape={<PositionFlag side={position.side} />}
-          />
-        )}
-      </ComposedChart>
-    </ResponsiveContainer>
+    <div className="relative h-full select-none">
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)]/90 p-1 text-[10px] text-[var(--muted)] shadow-sm backdrop-blur">
+        <button
+          type="button"
+          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          onClick={() => moveWindow(clampedOffset + Math.max(Math.round(windowSize / 2), 1))}
+          disabled={clampedOffset >= maxOffset}
+        >
+          Older
+        </button>
+        <button
+          type="button"
+          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          onClick={() => moveWindow(clampedOffset - Math.max(Math.round(windowSize / 2), 1))}
+          disabled={isLiveView}
+        >
+          Newer
+        </button>
+        <button
+          type="button"
+          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          onClick={() => updateWindowSize(windowSize - 10)}
+          aria-label="Zoom in"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          onClick={() => updateWindowSize(windowSize + 10)}
+          aria-label="Zoom out"
+        >
+          -
+        </button>
+        <button
+          type="button"
+          className={`rounded-md px-2 py-1 font-semibold transition active:scale-95 ${isLiveView ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "text-[var(--text)] hover:bg-[var(--surface-raised)]"}`}
+          onClick={() => moveWindow(0)}
+        >
+          Live
+        </button>
+      </div>
+      <div className="absolute bottom-1 left-3 z-10 rounded-md bg-[var(--surface)]/80 px-2 py-1 text-[10px] text-[var(--muted)] backdrop-blur">
+        Drag chart to inspect history | Shift + wheel zoom | {startIndex + 1}-{Math.max(endIndex, startIndex + 1)} / {candles.length} bars
+      </div>
+      <div
+        className={`h-full touch-none ${candles.length > windowSize ? "cursor-grab active:cursor-grabbing" : ""}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onWheel={handleWheel}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 12, right: 12, bottom: 0, left: -10 }}>
+            <CartesianGrid stroke="#282e35" vertical={false} />
+            <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={32} fontSize={10} />
+            <YAxis
+              stroke="#69727d"
+              tickLine={false}
+              axisLine={false}
+              domain={["dataMin", "dataMax"]}
+              tickFormatter={(value) => formatNumber(value, value < 1 ? 4 : 0)}
+              fontSize={10}
+            />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              labelStyle={{ color: "#f2f3ee" }}
+              formatter={(value, name, item) => {
+                if (name === "Candle") {
+                  const candle = item.payload as Candle;
+                  return [
+                    `O ${formatNumber(candle.open, 4)}  H ${formatNumber(candle.high, 4)}  L ${formatNumber(candle.low, 4)}  C ${formatNumber(candle.close, 4)}`,
+                    "OHLC",
+                  ];
+                }
+                return [formatNumber(Number(value), 4), name];
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
+            <Bar dataKey="range" name="Candle" shape={<Candlestick />} isAnimationActive={false} />
+            <Line type="monotone" dataKey="close" name="Close" stroke="#f2f3ee" strokeOpacity={0.35} strokeWidth={1} dot={false} />
+            <Line type="monotone" dataKey="ma7" name="MA7" stroke="#f0b90b" strokeWidth={1.2} dot={false} />
+            <Line type="monotone" dataKey="ma25" name="MA25" stroke="#55a3e8" strokeWidth={1.2} dot={false} />
+            <Line type="monotone" dataKey="ma99" name="MA99" stroke="#d175d8" strokeWidth={1.2} dot={false} />
+            {position && positionCandle && (
+              <ReferenceDot
+                x={positionCandle.time}
+                y={Number(position.entry_price)}
+                ifOverflow="extendDomain"
+                shape={<PositionFlag side={position.side} />}
+              />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   );
 }
 

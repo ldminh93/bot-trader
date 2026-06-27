@@ -15,6 +15,7 @@ from .views import (
     MarketSnapshotView,
     OpportunityScoreboardView,
     SystemStatusView,
+    TradeReplayExportView,
     TradesView,
     TradeStatsView,
 )
@@ -30,6 +31,7 @@ urlpatterns = [
     path("market/snapshot", MarketSnapshotView.as_view()),
     path("market/opportunities", OpportunityScoreboardView.as_view()),
     path("trades", TradesView.as_view()),
+    path("trades/export-replay", TradeReplayExportView.as_view()),
     path("trades/stats", TradeStatsView.as_view()),
     path("logs", LogsView.as_view()),
     path("binance/credentials", CredentialView.as_view()),

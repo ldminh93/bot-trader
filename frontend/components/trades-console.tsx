@@ -14,6 +14,7 @@ export function TradesConsole() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [stats, setStats] = useState<TradeStats | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (!getToken()) {
@@ -29,9 +30,20 @@ export function TradesConsole() {
 
   const selectedTrade = trades.find((trade) => trade.id === selectedTradeId) ?? trades[0] ?? null;
 
+  async function exportReplay() {
+    if (!selectedTrade) return;
+    const result = await api.exportReplay(selectedTrade.id);
+    setMessage(result.message);
+  }
+
   return (
     <PageFrame title="Trades" description="Execution history and realized strategy performance.">
       <div className="grid gap-4">
+        {message && (
+          <div className="rounded-[var(--radius)] border border-[var(--positive)]/40 bg-[var(--positive)]/10 p-3 text-sm text-[#8ce9b8]">
+            {message}
+          </div>
+        )}
         <section className="grid overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] grid-cols-2 lg:grid-cols-4">
           <Stat label="Total PnL" value={`${formatNumber(stats?.total_profit ?? 0)} USDT`} tone={pnlColor(stats?.total_profit ?? 0)} />
           <Stat label="Win rate" value={`${formatNumber(stats?.win_rate ?? 0)}%`} />
@@ -53,7 +65,14 @@ export function TradesConsole() {
           <TradeTable trades={trades} onSelect={(trade) => setSelectedTradeId(trade.id)} selectedTradeId={selectedTrade?.id ?? null} />
         </Panel>
         <Panel>
-          <PanelHeader title="Trade replay" action={selectedTrade ? <span className="text-[10px] text-[var(--muted)]">Click any trade row to inspect its entry context</span> : undefined} />
+          <PanelHeader
+            title="Trade replay"
+            action={selectedTrade?.status === "CLOSED" ? (
+              <button type="button" onClick={exportReplay} className="text-[10px] font-bold text-[var(--accent)]">
+                Export Discord
+              </button>
+            ) : selectedTrade ? <span className="text-[10px] text-[var(--muted)]">Click any trade row to inspect its entry context</span> : undefined}
+          />
           {selectedTrade ? (
             <div className="grid gap-4 p-4 xl:grid-cols-[1.35fr_0.65fr]">
               <div className="h-[320px]">

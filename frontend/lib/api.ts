@@ -134,6 +134,8 @@ export const api = {
   snapshot: (symbol: string) => request<MarketSnapshot>(`/market/snapshot?symbol=${symbol}`),
   opportunities: () => request<OpportunityItem[]>("/market/opportunities"),
   trades: (symbol?: string) => request<Trade[]>(`/trades${symbol ? `?symbol=${symbol}` : ""}`),
+  exportReplay: (tradeId: number) =>
+    request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),
   stats: () => request<TradeStats>("/trades/stats"),
   logs: () => request<BotLog[]>("/logs"),
   saveCredential: (apiKey: string, apiSecret: string) =>

@@ -185,8 +185,8 @@ def evaluate_market_conditions(
 
 def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     client = BinanceService()
-    signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal)
-    trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend)
+    signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal, limit=300)
+    trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend, limit=200)
     if config.use_closed_candle_confirmation:
         signal_candles = _closed_candles(signal_candles)
         trend_candles = _closed_candles(trend_candles)

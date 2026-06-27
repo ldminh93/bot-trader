@@ -23,6 +23,7 @@ from .services.backtest_service import run_backtest
 from .services.binance_service import BinanceService
 from .services.credential_service import decrypt_secret, encrypt_secret
 from .services.discord_alert_service import send_discord_alert
+from .services.discord_alert_service import send_trade_replay_export
 from .services.health_service import build_live_sync_health
 from .services.live_trading_service import LiveTradingService
 from .services.market_snapshot_service import collect_market_snapshot
@@ -341,6 +342,20 @@ class TradesView(APIView):
         if symbol:
             trades = trades.filter(symbol=symbol.upper())
         return Response(TradeSerializer(trades[:200], many=True).data)
+
+
+class TradeReplayExportView(APIView):
+    def post(self, request):
+        trade_id = request.data.get("trade_id")
+        trade = Trade.objects.filter(user=request.user, id=trade_id).first()
+        if not trade:
+            return Response({"detail": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+        if trade.status != Trade.Status.CLOSED:
+            return Response({"detail": "Only closed trades can be exported."}, status=status.HTTP_400_BAD_REQUEST)
+        sent = send_trade_replay_export(trade, force=True)
+        if not sent:
+            return Response({"detail": "Discord webhook is not configured or export failed."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message": "Trade replay exported to Discord."})
 
 
 class TradeStatsView(APIView):

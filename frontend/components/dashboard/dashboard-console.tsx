@@ -311,7 +311,7 @@ export function DashboardConsole() {
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
               <Panel className="min-w-0">
-                <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / last 60 bars</span>} />
+                <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / draggable history</span>} />
                 <div className="h-[260px] p-2 sm:h-[310px]">
                   {snapshot?.payload.candles?.length ? (
                     <PriceChart candles={snapshot.payload.candles} position={openPosition} />
@@ -540,6 +540,25 @@ export function DashboardConsole() {
                   </button>
                 ))}
                 {!opportunities.length && <EmptyChart label="Opportunity rankings will appear after snapshots are collected." />}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHeader
+                title="Why not trade?"
+                action={<span className="text-[10px] text-[var(--muted)]">Current blockers by scanner coin</span>}
+              />
+              <div className="grid gap-2 p-2">
+                {opportunities.filter((item) => item.signal === "NO_TRADE").slice(0, 12).map((item) => (
+                  <div key={item.symbol} className="grid gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-xs md:grid-cols-[90px_80px_1fr]">
+                    <span className="font-mono font-bold">{item.symbol}</span>
+                    <span className={`font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
+                    <span className="text-[var(--muted)]">{item.reasons[0] ?? "Waiting for a current snapshot"}</span>
+                  </div>
+                ))}
+                {!opportunities.some((item) => item.signal === "NO_TRADE") && (
+                  <EmptyChart label="No blocked scanner coins in the latest opportunity list." />
+                )}
               </div>
             </Panel>
 

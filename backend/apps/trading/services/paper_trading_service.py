@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.utils import timezone
 
 from apps.trading.models import Trade
+from .discord_alert_service import send_trade_replay_export
 
 TAKER_FEE_RATE = Decimal("0.0005")
 
@@ -109,6 +110,7 @@ class PaperTradingService:
             else 0
         )
         trade.save()
+        send_trade_replay_export(trade)
         return trade
 
     @staticmethod

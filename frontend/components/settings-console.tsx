@@ -175,6 +175,8 @@ export function SettingsConsole() {
     }
   }
 
+  const riskPreview = config ? buildRiskPreview(config) : null;
+
   return (
     <PageFrame title="Settings" description="Risk controls, strategy thresholds, and exchange access.">
       {(message || error) && (
@@ -436,6 +438,14 @@ export function SettingsConsole() {
                 </p>
               </div>
               <div className="sm:col-span-2">
+                {riskPreview && (
+                  <div className="mb-4 grid gap-3 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] p-3 sm:grid-cols-4">
+                    <PreviewStat label="Notional" value={`${riskPreview.notional} USDT`} />
+                    <PreviewStat label="Margin" value={`${riskPreview.margin} USDT`} />
+                    <PreviewStat label="Stop loss" value={`${riskPreview.stopLoss} USDT`} />
+                    <PreviewStat label="Daily capacity" value={`${riskPreview.dailyLosses} losses`} />
+                  </div>
+                )}
                 <Button disabled={busy}><FloppyDisk size={17} />Save configuration</Button>
               </div>
             </form>
@@ -566,4 +576,34 @@ function Toggle({ label, checked, disabled = false, onChange }: { label: string;
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} className="size-4 accent-[var(--accent)]" />
     </label>
   );
+}
+
+function PreviewStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">{label}</p>
+      <p className="mt-1 font-mono text-sm font-bold">{value}</p>
+    </div>
+  );
+}
+
+function buildRiskPreview(config: BotConfig) {
+  const leverage = Math.max(Number(config.leverage) || 1, 1);
+  const paperBalance = Math.max(Number(config.paper_balance) || 0, 0);
+  const riskPercent = Math.max(Number(config.risk_per_trade_percent) || 0, 0);
+  const dailyLossPercent = Math.max(Number(config.max_daily_loss_percent) || 0, 0);
+  const fixedMargin = Number(config.position_margin_usdt || 0);
+  const margin = fixedMargin > 0 ? fixedMargin : paperBalance * riskPercent / 100;
+  const notional = margin * leverage;
+  const stopLoss = fixedMargin > 0
+    ? margin * Math.max(Number(config.max_margin_loss_percent) || 0, 0) / 100
+    : paperBalance * riskPercent / 100;
+  const dailyLoss = paperBalance * dailyLossPercent / 100;
+  const dailyLosses = stopLoss > 0 ? Math.floor(dailyLoss / stopLoss) : 0;
+  return {
+    margin: margin.toFixed(2),
+    notional: notional.toFixed(2),
+    stopLoss: stopLoss.toFixed(2),
+    dailyLosses: String(dailyLosses),
+  };
 }
