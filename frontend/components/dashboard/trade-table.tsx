@@ -52,30 +52,9 @@ export function TradeTable({ trades, limit }: { trades: Trade[]; limit?: number 
                 {new Date(trade.opened_at).toLocaleString()}
               </td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((trade) => (
-              <tr key={trade.id} className="border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]">
-                <td className="px-4 py-3 font-mono font-semibold">{trade.symbol}</td>
-                <td className={`px-3 py-3 font-bold ${trade.side === "LONG" ? "text-[var(--positive)]" : "text-[var(--negative)]"}`}>
-                  {trade.side}
-                </td>
-                <td className="px-3 py-3 font-mono">{formatNumber(trade.entry_price, 4)}</td>
-                <td className="px-3 py-3 font-mono">x{trade.leverage}</td>
-                <td className="px-3 py-3 font-mono">{trade.exit_price ? formatNumber(trade.exit_price, 4) : "-"}</td>
-                <td className={`px-3 py-3 font-mono font-semibold ${pnlColor(Number(trade.realized_pnl) + Number(trade.unrealized_pnl))}`}>
-                  {formatNumber(Number(trade.realized_pnl) + Number(trade.unrealized_pnl))}
-                </td>
-                <td className={`px-3 py-3 font-mono ${pnlColor(trade.pnl_percent)}`}>{formatNumber(trade.pnl_percent)}%</td>
-                <td className="px-3 py-3 text-[var(--muted)]">{trade.status}</td>
-                <td className="px-4 py-3 text-right text-[var(--muted)]">
-                  {new Date(trade.opened_at).toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
