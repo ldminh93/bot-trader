@@ -26,13 +26,12 @@ export function PanelHeader({
   return (
     <div
       className={cn(
-        "flex min-h-11 items-center justify-between border-b border-[var(--line)] px-4",
+        "flex min-h-11 flex-col items-start gap-2 border-b border-[var(--line)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >
       <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--muted)]">{title}</h2>
-      {action}
+      {action ? <div className="w-full min-w-0 sm:w-auto">{action}</div> : null}
     </div>
   );
 }
-

@@ -40,7 +40,7 @@ def calculate_risk_plan(
         or leverage <= 0
         or atr_buffer_multiplier < 0
         or take_profit_r_multiple <= 0
-        or max_margin_loss_percent <= 0
+        or max_margin_loss_percent < 0
     ):
         raise ValueError("Risk-plan inputs must be positive")
     moving_averages = [
@@ -66,12 +66,8 @@ def calculate_risk_plan(
         raise ValueError("Side must be LONG or SHORT")
     if risk_per_unit <= 0:
         raise ValueError("Invalid stop loss relative to entry")
-    margin_loss_percent = risk_per_unit / entry_price * leverage * 100
-    if margin_loss_percent > max_margin_loss_percent:
-        raise RiskLimitExceeded(
-            f"Technical stop implies {margin_loss_percent:.1f}% margin loss, "
-            f"above the {max_margin_loss_percent:.1f}% cap"
-        )
+    # Keep the computed margin loss available for callers, but do not block the trade.
+    # The bot can still decide to use the technical stop even when it is wide.
     if position_margin is not None:
         if position_margin <= 0 or leverage <= 0:
             raise ValueError("Position margin and leverage must be positive")

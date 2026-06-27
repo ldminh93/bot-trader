@@ -62,10 +62,10 @@ function Metric({
   tone?: string;
 }) {
   return (
-    <div className="min-w-0 px-4 py-3">
-      <p className="truncate text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">{label}</p>
-      <p className={`mt-1 truncate font-mono text-sm font-semibold ${tone ?? ""}`}>{value}</p>
-      {detail && <p className="mt-0.5 truncate text-[10px] text-[var(--muted)]">{detail}</p>}
+    <div className="min-w-0 px-3 py-3 sm:px-4">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] leading-[1.35] text-[var(--muted)] sm:text-[10px]">{label}</p>
+      <p className={`mt-1 break-words font-mono text-[15px] font-semibold leading-tight sm:text-sm ${tone ?? ""}`}>{value}</p>
+      {detail && <p className="mt-1 text-[10px] leading-4 text-[var(--muted)]">{detail}</p>}
     </div>
   );
 }
@@ -153,69 +153,88 @@ export function DashboardConsole() {
 
   return (
     <AppShell>
-      <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-[var(--line)] bg-[var(--background)]/95 px-4 backdrop-blur md:px-6">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <select
-              aria-label="Trading symbol"
-              value={symbol ?? ""}
-              disabled={!scannerConfigs.length}
-              onChange={(event) => setSymbol(event.target.value)}
-              className="h-9 appearance-none rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--surface)] pl-3 pr-9 font-mono text-sm font-bold outline-none focus:border-[var(--accent)] disabled:opacity-50"
-            >
-              {!scannerConfigs.length && <option value="">No scanner coins</option>}
-              {scannerConfigs.map((item) => (
-                <option key={item.id} value={item.symbol}>
-                  {item.symbol}{item.is_running ? " · scanning" : ""}
-                </option>
-              ))}
-            </select>
-            <CaretDown className="pointer-events-none absolute right-3 top-2.5 text-[var(--muted)]" size={15} />
+      <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--background)]/95 px-4 backdrop-blur md:px-6">
+        <div className="flex flex-col gap-3 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="grid min-w-0 gap-3">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_84px_84px] gap-2 sm:grid-cols-[minmax(0,1fr)_96px_96px]">
+              <div className="relative min-w-0">
+                <select
+                  aria-label="Trading symbol"
+                  value={symbol ?? ""}
+                  disabled={!scannerConfigs.length}
+                  onChange={(event) => setSymbol(event.target.value)}
+                  className="h-10 w-full appearance-none rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--surface)] pl-3 pr-9 font-mono text-sm font-bold outline-none focus:border-[var(--accent)] disabled:opacity-50"
+                >
+                  {!scannerConfigs.length && <option value="">No scanner coins</option>}
+                  {scannerConfigs.map((item) => (
+                    <option key={item.id} value={item.symbol}>
+                      {item.symbol}{item.is_running ? " · scanning" : ""}
+                    </option>
+                  ))}
+                </select>
+                <CaretDown className="pointer-events-none absolute right-3 top-3 text-[var(--muted)]" size={15} />
+              </div>
+              <div className="relative">
+                <select
+                  aria-label="Signal timeframe"
+                  value={config?.timeframe_signal ?? "15m"}
+                  disabled={!config || busy}
+                  onChange={(event) => void changeSignalTimeframe(event.target.value)}
+                  className="h-10 w-full appearance-none rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--surface)] pl-3 pr-8 font-mono text-xs font-bold outline-none focus:border-[var(--accent)] disabled:opacity-50"
+                >
+                  {SIGNAL_TIMEFRAMES.map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <CaretDown className="pointer-events-none absolute right-2.5 top-3 text-[var(--muted)]" size={14} />
+              </div>
+              <div className="relative">
+                <select
+                  aria-label="Trade leverage"
+                  value={config?.leverage ?? 10}
+                  disabled={!config || busy || Boolean(openPosition)}
+                  onChange={(event) => void changeLeverage(Number(event.target.value))}
+                  className="h-10 w-full appearance-none rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--surface)] pl-3 pr-8 font-mono text-xs font-bold outline-none focus:border-[var(--accent)] disabled:opacity-50"
+                  title={openPosition ? "Close the current position before changing leverage" : "Trade leverage"}
+                >
+                  {LEVERAGE_OPTIONS.map((item) => <option key={item} value={item}>x{item}</option>)}
+                </select>
+                <CaretDown className="pointer-events-none absolute right-2.5 top-3 text-[var(--muted)]" size={14} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:hidden">
+              <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
+                <p className="text-[9px] uppercase tracking-[0.1em] text-[var(--muted)]">Price</p>
+                <p className="mt-1 font-mono text-sm font-bold">
+                  {snapshot ? formatNumber(snapshot.price, Number(snapshot.price) < 1 ? 6 : 2) : "-"}
+                </p>
+              </div>
+              <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
+                <p className="text-[9px] uppercase tracking-[0.1em] text-[var(--muted)]">OI change</p>
+                <p className={`mt-1 font-mono text-sm font-bold ${pnlColor(snapshot?.open_interest_change_percent ?? 0)}`}>
+                  {snapshot ? `${formatNumber(snapshot.open_interest_change_percent)}%` : "-"}
+                </p>
+              </div>
+            </div>
+            <div className="hidden items-baseline gap-2 md:flex">
+              <span className="font-mono text-lg font-bold">{snapshot ? formatNumber(snapshot.price, Number(snapshot.price) < 1 ? 6 : 2) : "-"}</span>
+              <span className={pnlColor(snapshot?.open_interest_change_percent ?? 0)}>
+                {snapshot ? `${formatNumber(snapshot.open_interest_change_percent)}% OI` : "Waiting for data"}
+              </span>
+            </div>
           </div>
-          <div className="relative">
-            <select
-              aria-label="Signal timeframe"
-              value={config?.timeframe_signal ?? "15m"}
-              disabled={!config || busy}
-              onChange={(event) => void changeSignalTimeframe(event.target.value)}
-              className="h-9 appearance-none rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--surface)] pl-3 pr-8 font-mono text-xs font-bold outline-none focus:border-[var(--accent)] disabled:opacity-50"
-            >
-              {SIGNAL_TIMEFRAMES.map((item) => <option key={item}>{item}</option>)}
-            </select>
-            <CaretDown className="pointer-events-none absolute right-2.5 top-2.5 text-[var(--muted)]" size={14} />
-          </div>
-          <div className="relative">
-            <select
-              aria-label="Trade leverage"
-              value={config?.leverage ?? 10}
-              disabled={!config || busy || Boolean(openPosition)}
-              onChange={(event) => void changeLeverage(Number(event.target.value))}
-              className="h-9 appearance-none rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--surface)] pl-3 pr-8 font-mono text-xs font-bold outline-none focus:border-[var(--accent)] disabled:opacity-50"
-              title={openPosition ? "Close the current position before changing leverage" : "Trade leverage"}
-            >
-              {LEVERAGE_OPTIONS.map((item) => <option key={item} value={item}>x{item}</option>)}
-            </select>
-            <CaretDown className="pointer-events-none absolute right-2.5 top-2.5 text-[var(--muted)]" size={14} />
-          </div>
-          <div className="hidden items-baseline gap-2 sm:flex">
-            <span className="font-mono text-lg font-bold">{snapshot ? formatNumber(snapshot.price, Number(snapshot.price) < 1 ? 6 : 2) : "-"}</span>
-            <span className={pnlColor(snapshot?.open_interest_change_percent ?? 0)}>
-              {snapshot ? `${formatNumber(snapshot.open_interest_change_percent)}% OI` : "Waiting for data"}
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center md:justify-end">
+            <span className="inline-flex rounded-[var(--radius)] border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2.5 py-2 text-xs font-bold text-[var(--accent)]">
+              {modeLabel}
             </span>
+            <Button
+              variant={config?.is_running ? "danger" : "primary"}
+              onClick={toggleBot}
+              disabled={!config || busy}
+              className="h-10 w-full sm:w-auto"
+            >
+              {config?.is_running ? <Stop size={16} weight="fill" /> : <Play size={16} weight="fill" />}
+              {config?.is_running ? "Stop bot" : "Start bot"}
+            </Button>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="hidden rounded-[var(--radius)] border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2.5 py-1.5 text-xs font-bold text-[var(--accent)] sm:inline-flex">
-            {modeLabel}
-          </span>
-          <Button
-            variant={config?.is_running ? "danger" : "primary"}
-            onClick={toggleBot}
-            disabled={!config || busy}
-          >
-            {config?.is_running ? <Stop size={16} weight="fill" /> : <Play size={16} weight="fill" />}
-            {config?.is_running ? "Stop bot" : "Start bot"}
-          </Button>
         </div>
       </header>
 
@@ -230,7 +249,7 @@ export function DashboardConsole() {
           <DashboardSkeleton />
         ) : (
           <div className="grid gap-4">
-            <section className="grid overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] grid-cols-2 md:grid-cols-4 xl:grid-cols-9">
+            <section className="grid grid-cols-2 overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
               <Metric label={`${config?.timeframe_signal ?? "Signal"} state`} value={snapshot?.trend.replaceAll("_", " ") ?? "-"} />
               <Metric label={`${config?.timeframe_trend ?? "1h"} state`} value={snapshot?.payload.trend_1h.replaceAll("_", " ") ?? "-"} />
               <Metric label="Risk multiplier" value={`${formatNumber((snapshot?.payload.risk_multiplier ?? 0) * 100, 0)}%`} />
@@ -248,8 +267,8 @@ export function DashboardConsole() {
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
               <Panel className="min-w-0">
-                <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)]">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / last 60 bars</span>} />
-                <div className="h-[310px] p-2">
+                <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / last 60 bars</span>} />
+                <div className="h-[260px] p-2 sm:h-[310px]">
                   {snapshot?.payload.candles?.length ? (
                     <PriceChart candles={snapshot.payload.candles} position={openPosition} />
                   ) : (
@@ -270,13 +289,13 @@ export function DashboardConsole() {
                 />
                 <div className="p-4">
                   <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius)] bg-[var(--line)]">
-                    <div className="bg-[var(--background)] p-4">
+                    <div className="bg-[var(--background)] p-3 sm:p-4">
                       <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Long score</p>
-                      <p className="mt-1 font-mono text-3xl font-bold text-[var(--positive)]">{snapshot?.payload.long_score ?? 0}</p>
+                      <p className="mt-1 font-mono text-2xl font-bold text-[var(--positive)] sm:text-3xl">{snapshot?.payload.long_score ?? 0}</p>
                     </div>
-                    <div className="bg-[var(--background)] p-4">
+                    <div className="bg-[var(--background)] p-3 sm:p-4">
                       <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Short score</p>
-                      <p className="mt-1 font-mono text-3xl font-bold text-[var(--negative)]">{snapshot?.payload.short_score ?? 0}</p>
+                      <p className="mt-1 font-mono text-2xl font-bold text-[var(--negative)] sm:text-3xl">{snapshot?.payload.short_score ?? 0}</p>
                     </div>
                   </div>
                   <div className="mt-4">
@@ -295,18 +314,18 @@ export function DashboardConsole() {
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_0.9fr]">
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader title="Order flow" />
                 <div className="grid grid-cols-2 border-b border-[var(--line)]">
                   <Metric label="Delta" value={snapshot ? formatCompact(snapshot.delta) : "-"} tone={pnlColor(snapshot?.delta ?? 0)} />
                   <Metric label="CVD" value={snapshot ? formatCompact(snapshot.cvd) : "-"} tone={pnlColor(snapshot?.cvd ?? 0)} />
                 </div>
-                <div className="h-48 p-2">
+                <div className="h-40 p-2 sm:h-48">
                   {snapshot?.payload.candles?.length ? <FlowChart candles={snapshot.payload.candles} /> : <EmptyChart />}
                 </div>
               </Panel>
 
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader title="Positioning and participation" />
                 <div className="grid grid-cols-2">
                   <Metric label="Open interest" value={snapshot ? formatCompact(snapshot.open_interest) : "-"} detail={`${formatNumber(snapshot?.open_interest_change_percent ?? 0)}% change`} tone={pnlColor(snapshot?.open_interest_change_percent ?? 0)} />
@@ -314,7 +333,7 @@ export function DashboardConsole() {
                   <Metric label="Top accounts L/S" value={snapshot ? formatNumber(snapshot.top_trader_account_ratio, 3) : "-"} />
                   <Metric label="Top positions L/S" value={snapshot ? formatNumber(snapshot.top_trader_position_ratio, 3) : "-"} />
                 </div>
-                <div className="h-40 border-t border-[var(--line)] p-2">
+                <div className="h-36 border-t border-[var(--line)] p-2 sm:h-40">
                   {snapshot?.payload.market_history?.length ? (
                     <PositioningChart history={snapshot.payload.market_history} />
                   ) : (
@@ -323,7 +342,7 @@ export function DashboardConsole() {
                 </div>
               </Panel>
 
-              <Panel className="lg:col-span-2 xl:col-span-1">
+              <Panel className="min-w-0 lg:col-span-2 xl:col-span-1">
                 <PanelHeader
                   title="Open position"
                   action={openPosition ? (
@@ -381,7 +400,7 @@ export function DashboardConsole() {
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader title="Performance" />
                 <div className="grid grid-cols-2 border-b border-[var(--line)] sm:grid-cols-4">
                   <Metric label="Total profit" value={`${formatNumber(stats.total_profit)} USDT`} tone={pnlColor(stats.total_profit)} />
@@ -389,14 +408,14 @@ export function DashboardConsole() {
                   <Metric label="Win rate" value={`${formatNumber(stats.win_rate)}%`} />
                   <Metric label="Trades" value={String(stats.trades)} />
                 </div>
-                <div className="h-52 p-2">{stats.daily.length ? <ProfitChart stats={stats} /> : <EmptyChart />}</div>
+                <div className="h-44 p-2 sm:h-52">{stats.daily.length ? <ProfitChart stats={stats} /> : <EmptyChart />}</div>
               </Panel>
 
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader title="Bot event stream" action={<Broadcast size={16} className={config?.is_running ? "text-[var(--positive)]" : "text-[var(--muted)]"} />} />
-                <div className="h-[284px] overflow-y-auto p-2 scrollbar-thin">
+                <div className="h-[240px] overflow-y-auto p-2 scrollbar-thin sm:h-[284px]">
                   {logs.length ? logs.slice(0, 30).map((log) => (
-                    <div key={log.id} className="grid grid-cols-[68px_1fr] gap-3 rounded-md px-2 py-2 text-xs hover:bg-[var(--surface-raised)]">
+                    <div key={log.id} className="grid gap-1 rounded-md px-2 py-2 text-xs hover:bg-[var(--surface-raised)] sm:grid-cols-[68px_1fr] sm:gap-3">
                       <span className={`font-mono text-[10px] ${log.level === "ERROR" ? "text-[var(--negative)]" : log.level === "WARNING" ? "text-[var(--warning)]" : "text-[var(--muted)]"}`}>
                         {new Date(log.created_at).toLocaleTimeString()}
                       </span>

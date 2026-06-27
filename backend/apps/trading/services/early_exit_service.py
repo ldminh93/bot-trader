@@ -7,8 +7,8 @@ from .binance_service import BinanceService
 from .indicator_service import calculate_indicators
 
 
-EARLY_EXIT_CONDITION_COUNT = 3
-OPPOSITE_SCORE_CONDITION_THRESHOLD = 80
+EARLY_EXIT_CONDITION_COUNT = 2
+OPPOSITE_SCORE_CONDITION_THRESHOLD = 70
 EXTREME_FUNDING_RATE = 0.001
 
 

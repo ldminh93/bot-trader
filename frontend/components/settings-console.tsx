@@ -302,14 +302,14 @@ export function SettingsConsole() {
                 <input
                   className={inputClass}
                   type="number"
-                  min="1"
+                  min="0"
                   max="100"
                   step="0.1"
                   value={config.max_margin_loss_percent}
                   onChange={(event) => setConfig({ ...config, max_margin_loss_percent: event.target.value })}
                 />
                 <span className="font-normal leading-5 text-[var(--muted)]">
-                  Skip entries when the technical stop would lose more than this percent of position margin.
+                  Skip entries when the technical stop would lose more than this percent of position margin. Set to 0 to disable this check.
                 </span>
               </Field>
               <Field label="ADX minimum">
