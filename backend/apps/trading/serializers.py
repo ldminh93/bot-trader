@@ -97,6 +97,11 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Entry score threshold must be between 60 and 150")
         return value
 
+    def validate_max_entry_distance_atr(self, value):
+        if value < 0.2 or value > 5:
+            raise serializers.ValidationError("Max entry distance must be between 0.2 ATR and 5 ATR")
+        return value
+
 
 class MarketSnapshotSerializer(serializers.ModelSerializer):
     class Meta:
@@ -134,6 +139,9 @@ class DiscordAlertConfigSerializer(serializers.ModelSerializer):
             "notify_info",
             "notify_warning",
             "notify_error",
+            "error_escalation_enabled",
+            "error_escalation_threshold",
+            "error_escalation_window_minutes",
             "webhook_url",
             "webhook_configured",
         )
@@ -141,3 +149,13 @@ class DiscordAlertConfigSerializer(serializers.ModelSerializer):
 
     def get_webhook_configured(self, obj) -> bool:
         return bool(obj.webhook_url_encrypted)
+
+    def validate_error_escalation_threshold(self, value: int) -> int:
+        if value < 2 or value > 20:
+            raise serializers.ValidationError("Error escalation threshold must be between 2 and 20")
+        return value
+
+    def validate_error_escalation_window_minutes(self, value: int) -> int:
+        if value < 1 or value > 240:
+            raise serializers.ValidationError("Error escalation window must be between 1 and 240 minutes")
+        return value

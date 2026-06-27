@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { api } from "@/lib/api";
-import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, TrendState } from "@/lib/types";
+import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, OpportunityItem, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
 const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
@@ -76,6 +76,7 @@ export function DashboardConsole() {
   const [busy, setBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [liveSync, setLiveSync] = useState<LiveSyncHealth | null>(null);
+  const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
   const openPosition = trades.find((trade) => trade.status === "OPEN");
   const liveModeEnabled = Boolean(config?.live_mode_requested && config.live_trading_available);
@@ -113,6 +114,20 @@ export function DashboardConsole() {
     const timer = window.setInterval(refreshLiveSync, 20_000);
     return () => window.clearInterval(timer);
   }, [refreshLiveSync]);
+
+  const refreshOpportunities = useCallback(async () => {
+    try {
+      setOpportunities(await api.opportunities());
+    } catch {
+      setOpportunities([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOpportunities();
+    const timer = window.setInterval(refreshOpportunities, 20_000);
+    return () => window.clearInterval(timer);
+  }, [refreshOpportunities]);
 
   async function toggleBot() {
     if (!config || !symbol) return;
@@ -502,6 +517,34 @@ export function DashboardConsole() {
 
             <Panel>
               <PanelHeader
+                title="Opportunity scoreboard"
+                action={<span className="text-[10px] text-[var(--muted)]">Ranked by setup quality</span>}
+              />
+              <div className="grid gap-2 p-2">
+                {(opportunities.length ? opportunities.slice(0, 10) : []).map((item) => (
+                  <button
+                    key={item.symbol}
+                    type="button"
+                    onClick={() => setSymbol(item.symbol)}
+                    className={`grid gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-raised)] md:grid-cols-[92px_52px_72px_70px_1fr] ${symbol === item.symbol ? "border-[var(--accent)] bg-[var(--accent)]/[0.05]" : ""}`}
+                  >
+                    <span className="font-mono font-bold">{item.symbol}</span>
+                    <span className={`font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
+                    <span className={item.signal === "LONG" ? "font-bold text-[var(--positive)]" : item.signal === "SHORT" ? "font-bold text-[var(--negative)]" : "font-bold text-[var(--muted)]"}>
+                      {item.signal}
+                    </span>
+                    <span className="font-mono">{item.score}</span>
+                    <span className="truncate text-[var(--muted)]">
+                      {item.regime_label} / {item.alignment}{item.is_stale ? " / stale" : ""}
+                    </span>
+                  </button>
+                ))}
+                {!opportunities.length && <EmptyChart label="Opportunity rankings will appear after snapshots are collected." />}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHeader
                 title="Live sync health"
                 action={(
                   <Button type="button" size="sm" variant="danger" disabled={busy} onClick={runKillSwitch}>
@@ -543,6 +586,7 @@ export function DashboardConsole() {
                   <AnalyticsBlock title="By side" rows={stats.analytics.by_side} />
                   <AnalyticsBlock title="By open hour" rows={stats.analytics.by_hour} />
                   <AnalyticsBlock title="By close reason" rows={stats.analytics.by_close_reason} />
+                  <AnalyticsBlock title="By grade" rows={stats.analytics.by_grade} />
                   <BlockReasonBlock rows={stats.block_reasons} />
                 </div>
               </Panel>
@@ -626,6 +670,13 @@ function AnalyticsBlock({ title, rows }: { title: string; rows: AnalyticsBucket[
       </div>
     </div>
   );
+}
+
+function gradeTone(grade: string) {
+  if (grade === "A") return "text-[var(--positive)]";
+  if (grade === "B") return "text-[var(--accent)]";
+  if (grade === "C") return "text-[var(--warning)]";
+  return "text-[var(--muted)]";
 }
 
 function BlockReasonBlock({ rows }: { rows: { reason: string; count: number; symbols: string[]; last_seen: string }[] }) {

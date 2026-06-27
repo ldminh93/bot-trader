@@ -74,6 +74,18 @@ def build_trade_analytics(user) -> dict:
         key=lambda item: item["trades"],
         reverse=True,
     )
+    grade_rows: dict[str, list[Trade]] = defaultdict(list)
+    for trade in closed:
+        grade = "D"
+        for tag in trade.setup_tags or []:
+            if str(tag).startswith("grade:"):
+                grade = str(tag).split(":", 1)[1].upper()
+                break
+        grade_rows[grade].append(trade)
+    by_grade = sorted(
+        (_aggregate(grade, rows) for grade, rows in grade_rows.items()),
+        key=lambda item: item["label"],
+    )
 
     return {
         "by_symbol": by_symbol,
@@ -81,4 +93,5 @@ def build_trade_analytics(user) -> dict:
         "by_hour": by_hour,
         "by_close_reason": by_close_reason,
         "by_setup_tag": by_setup_tag,
+        "by_grade": by_grade,
     }

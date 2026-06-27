@@ -140,13 +140,16 @@ def process_config(config: TradingBotConfig) -> None:
     execution_payload = snapshot.payload
     effective_leverage = int(execution_payload.get("effective_leverage") or config.leverage)
     tp_r_multiple = float(execution_payload.get("tp_r_multiple") or config.atr_multiplier_tp)
-    location_reason = entry_location_block_reason(
-        signal.signal,
-        price,
-        signal_indicators.ma7,
-        signal_indicators.ma25,
-        signal_indicators.atr,
-    )
+    location_reason = None
+    if config.pullback_entry_enabled:
+        location_reason = entry_location_block_reason(
+            signal.signal,
+            price,
+            signal_indicators.ma7,
+            signal_indicators.ma25,
+            signal_indicators.atr,
+            float(config.max_entry_distance_atr),
+        )
     if location_reason:
         create_log(config, BotLog.Level.INFO, f"Entry skipped: {location_reason}")
         return
@@ -215,6 +218,8 @@ def process_config(config: TradingBotConfig) -> None:
         "regime_label": snapshot.payload.get("regime_label"),
         "regime_notes": snapshot.payload.get("regime_notes", []),
         "confidence_score": snapshot.payload.get("confidence_score", 0),
+        "trade_grade": snapshot.payload.get("trade_grade", "D"),
+        "opportunity_score": snapshot.payload.get("opportunity_score", 0),
         "effective_leverage": effective_leverage,
         "tp_r_multiple": tp_r_multiple,
         "metrics": {
@@ -234,6 +239,7 @@ def process_config(config: TradingBotConfig) -> None:
                 *snapshot.payload.get("setup_tags", []),
                 f"regime:{str(snapshot.payload.get('regime', 'manual')).lower()}",
                 f"confidence:{snapshot.payload.get('confidence_score', 0)}",
+                f"grade:{snapshot.payload.get('trade_grade', 'D')}",
             ]
         )
     )
@@ -296,7 +302,8 @@ def process_config(config: TradingBotConfig) -> None:
         BotLog.Level.INFO,
         f"{'Live' if use_live else 'Paper'} {signal.signal} opened at {price:.6f} "
         f"with {sizing_message}, x{effective_leverage}, {snapshot.payload.get('regime_label', 'Manual')} regime, "
-        f"TP {tp_r_multiple:.2f}R, confidence {snapshot.payload.get('confidence_score', 0)}.",
+        f"TP {tp_r_multiple:.2f}R, grade {snapshot.payload.get('trade_grade', 'D')}, "
+        f"confidence {snapshot.payload.get('confidence_score', 0)}.",
     )
     broadcast_user_update(config.user_id, "position", TradeSerializer(trade).data)
 

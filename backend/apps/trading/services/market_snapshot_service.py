@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass, replace
 
 from apps.trading.models import MarketSnapshot, TradingBotConfig
@@ -5,6 +6,7 @@ from apps.trading.models import MarketSnapshot, TradingBotConfig
 from .binance_service import BinanceService
 from .execution_profile_service import build_execution_profile
 from .indicator_service import IndicatorResult, calculate_indicators
+from .opportunity_service import grade_from_context, opportunity_score
 from .signal_service import SignalResult, score_signal
 from .trend_service import detect_trend_state, explain_trend_state
 
@@ -101,6 +103,8 @@ def evaluate_market_conditions(
         config.enable_long,
         config.enable_short,
         int(config.entry_score_threshold),
+        config.pullback_entry_enabled,
+        float(config.max_entry_distance_atr),
     )
     trend_reasons = explain_trend_state(
         signal_indicators,
@@ -170,6 +174,12 @@ def evaluate_market_conditions(
         },
         "alignment": execution.alignment_score,
     }
+    context["trade_grade"] = grade_from_context(
+        execution.confidence_score,
+        execution.alignment_score,
+        signal.signal,
+        execution.regime,
+    )
     return signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context
 
 
@@ -177,6 +187,9 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     client = BinanceService()
     signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal)
     trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend)
+    if config.use_closed_candle_confirmation:
+        signal_candles = _closed_candles(signal_candles)
+        trend_candles = _closed_candles(trend_candles)
     metrics = client.market_metrics(config.symbol, config.timeframe_signal)
     signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context = evaluate_market_conditions(
         config,
@@ -223,6 +236,15 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
             "regime_label": context["execution"]["regime_label"],
             "regime_notes": context["execution"]["regime_notes"],
             "confidence_score": context["execution"]["confidence_score"],
+            "trade_grade": context["trade_grade"],
+            "opportunity_score": opportunity_score(
+                {
+                    "signal": signal.signal,
+                    "confidence_score": context["execution"]["confidence_score"],
+                    "higher_timeframe_bias": {"alignment": context["alignment"]},
+                    "regime": context["execution"]["regime"],
+                }
+            ),
             "effective_leverage": context["execution"]["effective_leverage"],
             "leverage_factor": context["execution"]["leverage_factor"],
             "tp_r_multiple": context["execution"]["tp_r_multiple"],
@@ -233,3 +255,12 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
         },
     )
     return MarketEvaluation(snapshot, signal_indicators, metrics, signal)
+
+
+def _closed_candles(candles: list[dict]) -> list[dict]:
+    if not candles:
+        return candles
+    now_ms = int(time.time() * 1000)
+    if int(candles[-1].get("close_timestamp", 0)) > now_ms:
+        return candles[:-1]
+    return candles

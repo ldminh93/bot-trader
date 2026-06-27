@@ -78,6 +78,8 @@ def score_signal(
     enable_long: bool = True,
     enable_short: bool = True,
     entry_score_threshold: int = DEFAULT_ENTRY_SCORE_THRESHOLD,
+    pullback_entry_enabled: bool = True,
+    max_entry_distance_atr: float = MAX_ENTRY_DISTANCE_ATR,
 ) -> SignalResult:
     state = TrendState(trend_state)
     long_score = 0
@@ -197,22 +199,24 @@ def score_signal(
         and state in {TrendState.EARLY_UPTREND, TrendState.CONFIRMED_UPTREND}
         and long_score >= entry_score_threshold
     ):
-        location_reason = entry_location_block_reason(
-            "LONG",
-            signal_data.price,
-            signal_data.ma7,
-            signal_data.ma25,
-            signal_data.atr,
-        )
-        if location_reason:
-            return SignalResult(
-                "NO_TRADE",
-                long_score,
-                short_score,
-                [location_reason],
-                state.value,
-                multiplier,
+        if pullback_entry_enabled:
+            location_reason = entry_location_block_reason(
+                "LONG",
+                signal_data.price,
+                signal_data.ma7,
+                signal_data.ma25,
+                signal_data.atr,
+                max_entry_distance_atr,
             )
+            if location_reason:
+                return SignalResult(
+                    "NO_TRADE",
+                    long_score,
+                    short_score,
+                    [location_reason],
+                    state.value,
+                    multiplier,
+                )
         return SignalResult(
             "LONG",
             long_score,
@@ -226,22 +230,24 @@ def score_signal(
         and state in {TrendState.EARLY_DOWNTREND, TrendState.CONFIRMED_DOWNTREND}
         and short_score >= entry_score_threshold
     ):
-        location_reason = entry_location_block_reason(
-            "SHORT",
-            signal_data.price,
-            signal_data.ma7,
-            signal_data.ma25,
-            signal_data.atr,
-        )
-        if location_reason:
-            return SignalResult(
-                "NO_TRADE",
-                long_score,
-                short_score,
-                [location_reason],
-                state.value,
-                multiplier,
+        if pullback_entry_enabled:
+            location_reason = entry_location_block_reason(
+                "SHORT",
+                signal_data.price,
+                signal_data.ma7,
+                signal_data.ma25,
+                signal_data.atr,
+                max_entry_distance_atr,
             )
+            if location_reason:
+                return SignalResult(
+                    "NO_TRADE",
+                    long_score,
+                    short_score,
+                    [location_reason],
+                    state.value,
+                    multiplier,
+                )
         return SignalResult(
             "SHORT",
             long_score,

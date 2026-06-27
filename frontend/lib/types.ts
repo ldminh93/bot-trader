@@ -22,6 +22,9 @@ export interface BotConfig {
   require_volume_confirmation: boolean;
   auto_regime_enabled: boolean;
   confidence_leverage_enabled: boolean;
+  use_closed_candle_confirmation: boolean;
+  pullback_entry_enabled: boolean;
+  max_entry_distance_atr: string;
   is_running: boolean;
   live_mode_requested: boolean;
   live_trading_available: boolean;
@@ -180,6 +183,24 @@ export interface BlockReasonStat {
   last_seen: string;
 }
 
+export interface OpportunityItem {
+  symbol: string;
+  timeframe: string;
+  signal: "LONG" | "SHORT" | "NO_TRADE";
+  score: number;
+  grade: "A" | "B" | "C" | "D";
+  confidence_score: number;
+  regime: string;
+  regime_label: string;
+  alignment: "aligned" | "counter" | "unknown";
+  long_score: number;
+  short_score: number;
+  is_running: boolean;
+  is_stale: boolean;
+  age_seconds: number | null;
+  reasons: string[];
+}
+
 export interface LiveSyncRow {
   symbol: string;
   is_running: boolean;
@@ -211,6 +232,9 @@ export interface DiscordAlertConfig {
   notify_info: boolean;
   notify_warning: boolean;
   notify_error: boolean;
+  error_escalation_enabled: boolean;
+  error_escalation_threshold: number;
+  error_escalation_window_minutes: number;
   webhook_configured: boolean;
 }
 
@@ -258,6 +282,7 @@ export interface TradeStats {
     by_hour: AnalyticsBucket[];
     by_close_reason: AnalyticsBucket[];
     by_setup_tag: AnalyticsBucket[];
+    by_grade: AnalyticsBucket[];
   };
   block_reasons: BlockReasonStat[];
 }

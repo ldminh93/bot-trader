@@ -6,6 +6,7 @@ import type {
   KillSwitchResult,
   LiveSyncHealth,
   MarketSnapshot,
+  OpportunityItem,
   Trade,
   TradeStats,
 } from "./types";
@@ -131,6 +132,7 @@ export const api = {
   backtest: (symbol: string, limit = 320) =>
     request<BacktestResult>("/bot/backtest", { method: "POST", body: JSON.stringify({ symbol, limit }) }),
   snapshot: (symbol: string) => request<MarketSnapshot>(`/market/snapshot?symbol=${symbol}`),
+  opportunities: () => request<OpportunityItem[]>("/market/opportunities"),
   trades: (symbol?: string) => request<Trade[]>(`/trades${symbol ? `?symbol=${symbol}` : ""}`),
   stats: () => request<TradeStats>("/trades/stats"),
   logs: () => request<BotLog[]>("/logs"),

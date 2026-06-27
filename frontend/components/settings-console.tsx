@@ -364,6 +364,20 @@ export function SettingsConsole() {
               <Field label="Trailing ATR multiplier">
                 <input className={inputClass} type="number" min="0.2" max="10" step="0.1" value={config.trailing_atr_multiplier} onChange={(event) => setConfig({ ...config, trailing_atr_multiplier: event.target.value })} />
               </Field>
+              <Field label="Max entry distance (ATR)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0.2"
+                  max="5"
+                  step="0.1"
+                  value={config.max_entry_distance_atr}
+                  onChange={(event) => setConfig({ ...config, max_entry_distance_atr: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Pullback mode waits when price is too far from MA7/MA25.
+                </span>
+              </Field>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
                 <Toggle label="Allow long" checked={config.enable_long} onChange={(value) => setConfig({ ...config, enable_long: value })} />
                 <Toggle label="Allow short" checked={config.enable_short} onChange={(value) => setConfig({ ...config, enable_short: value })} />
@@ -396,6 +410,18 @@ export function SettingsConsole() {
                   label="Confidence leverage"
                   checked={config.confidence_leverage_enabled}
                   onChange={(value) => setConfig({ ...config, confidence_leverage_enabled: value })}
+                />
+              </div>
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+                <Toggle
+                  label="Closed candle entry"
+                  checked={config.use_closed_candle_confirmation}
+                  onChange={(value) => setConfig({ ...config, use_closed_candle_confirmation: value })}
+                />
+                <Toggle
+                  label="Pullback entry"
+                  checked={config.pullback_entry_enabled}
+                  onChange={(value) => setConfig({ ...config, pullback_entry_enabled: value })}
                 />
               </div>
               <div className="sm:col-span-2">
@@ -480,11 +506,38 @@ export function SettingsConsole() {
                       checked={discordConfig.notify_warning}
                       onChange={(value) => setDiscordConfig({ ...discordConfig, notify_warning: value })}
                     />
-                    <Toggle
-                      label="Error"
-                      checked={discordConfig.notify_error}
-                      onChange={(value) => setDiscordConfig({ ...discordConfig, notify_error: value })}
-                    />
+                  <Toggle
+                    label="Error"
+                    checked={discordConfig.notify_error}
+                    onChange={(value) => setDiscordConfig({ ...discordConfig, notify_error: value })}
+                  />
+                </div>
+                  <Toggle
+                    label="Escalate repeated errors"
+                    checked={discordConfig.error_escalation_enabled}
+                    onChange={(value) => setDiscordConfig({ ...discordConfig, error_escalation_enabled: value })}
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Repeat threshold">
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="2"
+                        max="20"
+                        value={discordConfig.error_escalation_threshold}
+                        onChange={(event) => setDiscordConfig({ ...discordConfig, error_escalation_threshold: Number(event.target.value) })}
+                      />
+                    </Field>
+                    <Field label="Window minutes">
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min="1"
+                        max="240"
+                        value={discordConfig.error_escalation_window_minutes}
+                        onChange={(event) => setDiscordConfig({ ...discordConfig, error_escalation_window_minutes: Number(event.target.value) })}
+                      />
+                    </Field>
                   </div>
                 </>
               )}

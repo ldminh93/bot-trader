@@ -26,6 +26,7 @@ from .services.discord_alert_service import send_discord_alert
 from .services.health_service import build_live_sync_health
 from .services.live_trading_service import LiveTradingService
 from .services.market_snapshot_service import collect_market_snapshot
+from .services.opportunity_service import build_opportunity_scoreboard
 from .services.paper_trading_service import PaperTradingService
 
 
@@ -88,6 +89,9 @@ class BotConfigView(APIView):
                 "require_volume_confirmation",
                 "auto_regime_enabled",
                 "confidence_leverage_enabled",
+                "use_closed_candle_confirmation",
+                "pullback_entry_enabled",
+                "max_entry_distance_atr",
                 "live_mode_requested",
                 "paper_balance",
                 "position_margin_usdt",
@@ -303,6 +307,8 @@ class MarketSnapshotView(APIView):
         payload.setdefault("regime_label", "Manual")
         payload.setdefault("regime_notes", [])
         payload.setdefault("confidence_score", 0)
+        payload.setdefault("trade_grade", "D")
+        payload.setdefault("opportunity_score", 0)
         payload.setdefault("effective_leverage", config.leverage)
         payload.setdefault("leverage_factor", 1)
         payload.setdefault("tp_r_multiple", float(config.atr_multiplier_tp))
@@ -321,6 +327,11 @@ class MarketSnapshotView(APIView):
             for item in reversed(list(history))
         ]
         return Response(data)
+
+
+class OpportunityScoreboardView(APIView):
+    def get(self, request):
+        return Response(build_opportunity_scoreboard(request.user))
 
 
 class TradesView(APIView):

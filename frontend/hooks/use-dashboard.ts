@@ -28,6 +28,7 @@ const EMPTY_STATS: TradeStats = {
     by_hour: [],
     by_close_reason: [],
     by_setup_tag: [],
+    by_grade: [],
   },
   block_reasons: [],
 };
