@@ -504,9 +504,9 @@ export function DashboardConsole() {
                 <PanelHeader title="Bot event stream" action={<Broadcast size={16} className={config?.is_running ? "text-[var(--positive)]" : "text-[var(--muted)]"} />} />
                 <div className="h-[240px] overflow-y-auto p-2 scrollbar-thin sm:h-[284px]">
                   {logs.length ? logs.slice(0, 30).map((log) => (
-                    <div key={log.id} className="grid gap-1 rounded-md px-2 py-2 text-xs hover:bg-[var(--surface-raised)] sm:grid-cols-[68px_1fr] sm:gap-3">
+                    <div key={log.id} className="grid gap-1 rounded-md px-2 py-2 text-xs hover:bg-[var(--surface-raised)] sm:grid-cols-[132px_1fr] sm:gap-3">
                       <span className={`font-mono text-[10px] ${log.level === "ERROR" ? "text-[var(--negative)]" : log.level === "WARNING" ? "text-[var(--warning)]" : "text-[var(--muted)]"}`}>
-                        {new Date(log.created_at).toLocaleTimeString()}
+                        {new Date(log.created_at).toLocaleString()}
                       </span>
                       <p className="leading-5">{log.message}</p>
                     </div>
@@ -526,12 +526,12 @@ export function DashboardConsole() {
                     key={item.symbol}
                     type="button"
                     onClick={() => setSymbol(item.symbol)}
-                    className={`grid gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-raised)] md:grid-cols-[92px_52px_72px_70px_1fr] ${symbol === item.symbol ? "border-[var(--accent)] bg-[var(--accent)]/[0.05]" : ""}`}
+                    className={`grid gap-3 rounded-md border border-[var(--line)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-raised)] md:grid-cols-[96px_64px_88px_56px_1fr] ${symbol === item.symbol ? "border-[var(--accent)] bg-[var(--accent)]/[0.05]" : ""}`}
                   >
-                    <span className="font-mono font-bold">{item.symbol}</span>
-                    <span className={`font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
-                    <span className={item.signal === "LONG" ? "font-bold text-[var(--positive)]" : item.signal === "SHORT" ? "font-bold text-[var(--negative)]" : "font-bold text-[var(--muted)]"}>
-                      {item.signal}
+                    <span className="truncate font-mono font-bold">{item.symbol}</span>
+                    <span className={`whitespace-nowrap font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
+                    <span className={`whitespace-nowrap font-bold ${item.signal === "LONG" ? "text-[var(--positive)]" : item.signal === "SHORT" ? "text-[var(--negative)]" : "text-[var(--muted)]"}`}>
+                      {item.signal.replaceAll("_", " ")}
                     </span>
                     <span className="font-mono">{item.score}</span>
                     <span className="truncate text-[var(--muted)]">

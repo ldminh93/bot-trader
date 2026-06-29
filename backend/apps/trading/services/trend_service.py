@@ -182,6 +182,18 @@ def detect_trend_state(
     return TrendState.SIDEWAY
 
 
+def format_compact(value: float) -> str:
+    number = float(value)
+    sign = "-" if number < 0 else ""
+    magnitude = abs(number)
+    for suffix, threshold in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
+        if magnitude >= threshold:
+            return f"{sign}{magnitude / threshold:.2f}{suffix}"
+    if magnitude >= 1:
+        return f"{sign}{magnitude:.2f}"
+    return f"{sign}{magnitude:.4f}"
+
+
 def explain_trend_state(
     result: IndicatorResult,
     adx_min: float,
@@ -197,31 +209,52 @@ def explain_trend_state(
         if result.adx < adx_min:
             reasons.append(f"ADX {result.adx:.1f} is below {adx_min:.1f}")
         if result.atr_ma20 > 0 and result.atr < result.atr_ma20 * 0.8:
-            reasons.append("ATR is below 80% of ATR MA20")
+            reasons.append(
+                f"ATR ({format_compact(result.atr)}) is below 80% of ATR MA20 "
+                f"({format_compact(result.atr_ma20)})"
+            )
         if are_mas_compressed(result.ma7, result.ma25, result.ma99, result.atr):
-            reasons.append("MA7, MA25, and MA99 are compressed")
+            spread = max(result.ma7, result.ma25, result.ma99) - min(result.ma7, result.ma25, result.ma99)
+            reasons.append(
+                f"MA7, MA25, and MA99 are compressed (spread {format_compact(spread)})"
+            )
         if is_oi_flat(oi_series) and delta_changes_direction_frequently(delta_series):
-            reasons.append("open interest is flat while delta changes direction frequently")
+            reasons.append(
+                f"open interest is flat ({format_compact(oi_series[-1])}) "
+                f"while delta changes direction frequently"
+            )
         if not reasons:
             reasons.append("trend conditions are not aligned")
     elif trend_state == TrendState.WEAK_UPTREND:
         if delta_series[-1] < 0:
-            reasons.append("delta turned negative")
+            reasons.append(f"delta turned negative ({format_compact(delta_series[-1])})")
         if is_cvd_falling(cvd_series):
-            reasons.append("CVD is falling")
+            reasons.append(f"CVD is falling ({format_compact(cvd_series[-1])})")
         if len(oi_series) >= 2 and float(oi_series[-1]) < float(oi_series[0]):
-            reasons.append("open interest is decreasing")
+            reasons.append(
+                f"open interest is decreasing ({format_compact(oi_series[0])} → "
+                f"{format_compact(oi_series[-1])})"
+            )
         if result.price < result.ma25:
-            reasons.append("price closed below MA25")
+            reasons.append(
+                f"price ({format_compact(result.price)}) closed below MA25 "
+                f"({format_compact(result.ma25)})"
+            )
     elif trend_state == TrendState.WEAK_DOWNTREND:
         if delta_series[-1] > 0:
-            reasons.append("delta turned positive")
+            reasons.append(f"delta turned positive ({format_compact(delta_series[-1])})")
         if is_cvd_rising(cvd_series):
-            reasons.append("CVD is rising")
+            reasons.append(f"CVD is rising ({format_compact(cvd_series[-1])})")
         if len(oi_series) >= 2 and float(oi_series[-1]) < float(oi_series[0]):
-            reasons.append("open interest is decreasing")
+            reasons.append(
+                f"open interest is decreasing ({format_compact(oi_series[0])} → "
+                f"{format_compact(oi_series[-1])})"
+            )
         if result.price > result.ma25:
-            reasons.append("price closed above MA25")
+            reasons.append(
+                f"price ({format_compact(result.price)}) closed above MA25 "
+                f"({format_compact(result.ma25)})"
+            )
     elif trend_state in {TrendState.EARLY_UPTREND, TrendState.EARLY_DOWNTREND}:
         reasons.append("early trend conditions are aligned")
     else:

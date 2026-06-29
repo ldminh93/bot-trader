@@ -448,8 +448,14 @@ class DiscordAlertConfigView(APIView):
         webhook_url = serializer.validated_data.pop("webhook_url", None)
         saved = serializer.save()
         if webhook_url is not None:
+            had_webhook = bool(saved.webhook_url_encrypted)
             saved.webhook_url_encrypted = encrypt_secret(webhook_url.strip()) if webhook_url.strip() else ""
-            saved.save(update_fields=["webhook_url_encrypted", "updated_at"])
+            update_fields = ["webhook_url_encrypted", "updated_at"]
+            # Auto-enable alerts when a webhook URL is configured for the first time
+            if not had_webhook and saved.webhook_url_encrypted and not saved.is_enabled:
+                saved.is_enabled = True
+                update_fields.append("is_enabled")
+            saved.save(update_fields=update_fields)
         return Response(DiscordAlertConfigSerializer(saved).data)
 
     def post(self, request):

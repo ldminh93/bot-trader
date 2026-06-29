@@ -80,6 +80,19 @@ def process_config(config: TradingBotConfig) -> None:
                 signal_indicators.atr,
                 float(config.trailing_atr_multiplier) if config.use_trailing_stop else 0,
             )
+        if open_trade.status == Trade.Status.CLOSED:
+            mode = "Paper" if open_trade.is_paper else "Live"
+            pnl = float(open_trade.realized_pnl)
+            roi = float(open_trade.pnl_percent)
+            create_log(
+                config,
+                BotLog.Level.INFO,
+                f"{mode} {open_trade.side} closed at {float(open_trade.exit_price):.6f} — "
+                f"PnL {pnl:+.4f} USDT ({roi:+.2f}%). "
+                f"Reason: {open_trade.close_reason}",
+            )
+            broadcast_user_update(config.user_id, "position", TradeSerializer(open_trade).data)
+            return
         if open_trade.status == Trade.Status.OPEN:
             early_exit = evaluate_early_exit(
                 open_trade,
