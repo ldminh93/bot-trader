@@ -19,6 +19,22 @@ class MarketEvaluation:
     signal: SignalResult
 
 
+def _tf_alignment_score(signal_side: str, signal_state, trend_state, bias_4h_state) -> int:
+    """Score 0-3: how many timeframes (signal TF, trend TF, 4H) align with the signal direction."""
+    if signal_side == "NO_TRADE":
+        return 0
+    score = 0
+    if signal_side == "LONG" and "UPTREND" in signal_state.value:
+        score += 1
+    elif signal_side == "SHORT" and "DOWNTREND" in signal_state.value:
+        score += 1
+    if _alignment_matches(signal_side, trend_state):
+        score += 1
+    if bias_4h_state is not None and _alignment_matches(signal_side, bias_4h_state):
+        score += 1
+    return score
+
+
 def _alignment_matches(signal_side: str, higher_trend_state) -> bool:
     if signal_side == "LONG":
         return "UPTREND" in higher_trend_state.value
@@ -190,6 +206,9 @@ def evaluate_market_conditions(
         execution.regime,
     )
     context["trend_4h"] = bias_4h_state.value if bias_4h_state is not None else None
+    context["tf_alignment_score"] = _tf_alignment_score(
+        signal.signal, trend_state, higher_trend_state, bias_4h_state
+    )
     return signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context
 
 
@@ -198,7 +217,7 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal, limit=300)
     trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend, limit=200)
     bias_candles = None
-    if config.require_4h_alignment:
+    if config.require_4h_alignment or config.min_tf_alignment_score > 0:
         bias_candles = client.fetch_klines(config.symbol, "4h", limit=100)
         if config.use_closed_candle_confirmation:
             bias_candles = _closed_candles(bias_candles)
@@ -254,6 +273,7 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
             "regime_notes": context["execution"]["regime_notes"],
             "confidence_score": context["execution"]["confidence_score"],
             "trade_grade": context["trade_grade"],
+            "tf_alignment_score": context["tf_alignment_score"],
             "opportunity_score": opportunity_score(
                 {
                     "signal": signal.signal,

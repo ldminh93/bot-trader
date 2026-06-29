@@ -37,6 +37,11 @@ def create_log(config: TradingBotConfig, level: str, message: str) -> BotLog:
     return log
 
 
+def _timeframe_minutes(tf: str) -> int:
+    return {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+            "1h": 60, "2h": 120, "4h": 240, "1d": 1440}.get(tf, 15)
+
+
 def _suppressed_tags(config: TradingBotConfig, setup_tags: list[str]) -> list[str]:
     """Return tags whose last 20+ closed trades have a win rate below 40%."""
     MIN_TRADES = 20
@@ -226,6 +231,61 @@ def process_config(config: TradingBotConfig) -> None:
                 f"over the last 20 trades.",
             )
             return
+
+    # Volatility spike filter
+    if float(config.atr_spike_max_ratio) > 0 and signal_indicators.atr_ma20 > 0:
+        ratio = signal_indicators.atr / signal_indicators.atr_ma20
+        if ratio > float(config.atr_spike_max_ratio):
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: ATR spike ({ratio:.2f}× ATR MA20) exceeds max "
+                f"{float(config.atr_spike_max_ratio):.1f}×.")
+            return
+
+    # Funding rate filter
+    if float(config.funding_rate_threshold) > 0:
+        funding = float(metrics["funding_rate"])
+        threshold = float(config.funding_rate_threshold)
+        if signal.signal == "LONG" and funding > threshold:
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: funding rate {funding:.6f} is too high for LONG "
+                f"(max {threshold:.6f}).")
+            return
+        if signal.signal == "SHORT" and funding < -threshold:
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: funding rate {funding:.6f} is too negative for SHORT "
+                f"(min -{threshold:.6f}).")
+            return
+
+    # Multi-timeframe alignment score
+    if config.min_tf_alignment_score > 0:
+        tf_score = snapshot.payload.get("tf_alignment_score", 0)
+        if tf_score < config.min_tf_alignment_score:
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: TF alignment score {tf_score}/3 is below "
+                f"minimum {config.min_tf_alignment_score}.")
+            return
+
+    # Re-entry cooldown after stop loss
+    if config.sl_cooldown_candles > 0:
+        last_sl = (
+            Trade.objects.filter(
+                user=config.user,
+                symbol=config.symbol,
+                status=Trade.Status.CLOSED,
+                close_reason__icontains="stop",
+            )
+            .order_by("-closed_at")
+            .first()
+        )
+        if last_sl and last_sl.closed_at:
+            tf_min = _timeframe_minutes(config.timeframe_signal)
+            elapsed_candles = (timezone.now() - last_sl.closed_at).total_seconds() / 60 / tf_min
+            if elapsed_candles < config.sl_cooldown_candles:
+                remaining = int(config.sl_cooldown_candles - elapsed_candles) + 1
+                create_log(config, BotLog.Level.INFO,
+                    f"Entry skipped: re-entry cooldown active after stop loss "
+                    f"({remaining} candle(s) remaining).")
+                return
 
     execution_payload = snapshot.payload
     effective_leverage = int(execution_payload.get("effective_leverage") or config.leverage)

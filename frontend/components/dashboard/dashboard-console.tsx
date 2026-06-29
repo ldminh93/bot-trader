@@ -513,6 +513,19 @@ export function DashboardConsole() {
                   <Metric label="Win rate" value={`${formatNumber(stats.win_rate)}%`} />
                   <Metric label="Trades" value={String(stats.trades)} />
                 </div>
+                <div className="grid grid-cols-3 border-b border-[var(--line)]">
+                  <Metric
+                    label="Balance"
+                    value={`${formatNumber(stats.current_balance ?? 0)} USDT`}
+                    detail={`peak ${formatNumber(stats.peak_balance ?? 0)} USDT`}
+                  />
+                  <Metric
+                    label="Drawdown"
+                    value={`${formatNumber(stats.drawdown_pct ?? 0)}%`}
+                    tone={(stats.drawdown_pct ?? 0) > 10 ? "text-[var(--negative)]" : (stats.drawdown_pct ?? 0) > 5 ? "text-[var(--warning)]" : "text-[var(--muted)]"}
+                  />
+                  <Metric label="Avg trade" value={`${formatNumber(stats.average_pnl_percent ?? 0)}%`} detail="Margin ROI" />
+                </div>
                 <div className="grid sm:grid-cols-2">
                   <div className="h-44 border-r border-[var(--line)] p-2 sm:h-48">
                     {stats.daily.length ? <ProfitChart stats={stats} /> : <EmptyChart />}
@@ -634,11 +647,23 @@ export function DashboardConsole() {
                 />
                 <div className="grid gap-4 p-4 md:grid-cols-2">
                   <AnalyticsBlock title="By symbol" rows={stats.analytics.by_symbol} />
-                  <AnalyticsBlock title="By setup tag" rows={stats.analytics.by_setup_tag} />
                   <AnalyticsBlock title="By side" rows={stats.analytics.by_side} />
-                  <AnalyticsBlock title="By open hour" rows={stats.analytics.by_hour} />
                   <AnalyticsBlock title="By close reason" rows={stats.analytics.by_close_reason} />
                   <AnalyticsBlock title="By grade" rows={stats.analytics.by_grade} />
+                  <div className="rounded-[var(--radius)] border border-[var(--line)] md:col-span-2">
+                    <div className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                      Best entry hour
+                      <span className="ml-2 normal-case font-normal">UTC — hover cells for details</span>
+                    </div>
+                    <HourHeatmap rows={stats.analytics.by_hour} />
+                  </div>
+                  <div className="rounded-[var(--radius)] border border-[var(--line)] md:col-span-2">
+                    <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                      <span>Setup tag P&L</span>
+                      <span className="normal-case font-normal">Sorted by total PnL</span>
+                    </div>
+                    <TagPnlTable rows={stats.analytics.by_setup_tag} />
+                  </div>
                   <BlockReasonBlock rows={stats.block_reasons} />
                 </div>
               </Panel>
@@ -701,6 +726,86 @@ export function DashboardConsole() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function HourHeatmap({ rows }: { rows: AnalyticsBucket[] }) {
+  const byHour = new Map(rows.map((r) => [r.label, r]));
+  return (
+    <div>
+      <div className="grid grid-cols-12 gap-0.5 p-3">
+        {Array.from({ length: 24 }, (_, h) => {
+          const key = `${String(h).padStart(2, "0")}:00`;
+          const row = byHour.get(key);
+          const wr = row ? row.win_rate : -1;
+          let bg = "bg-[var(--surface-raised)]";
+          if (wr >= 60) bg = "bg-[var(--positive)]/40";
+          else if (wr >= 45) bg = "bg-[var(--positive)]/15";
+          else if (wr >= 0 && wr < 45) bg = "bg-[var(--negative)]/20";
+          return (
+            <div
+              key={h}
+              title={row
+                ? `${key} — ${row.trades} trades, ${row.win_rate.toFixed(0)}% WR, ${row.realized_pnl >= 0 ? "+" : ""}${row.realized_pnl.toFixed(2)} USDT`
+                : `${key} — no trades`}
+              className={`${bg} flex flex-col items-center justify-center rounded py-1.5 text-center`}
+            >
+              <span className="text-[9px] font-semibold text-[var(--text)]">{String(h).padStart(2, "0")}</span>
+              {row ? <span className="text-[8px] text-[var(--muted)]">{row.trades}</span> : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-3 border-t border-[var(--line)] px-3 py-2 text-[10px] text-[var(--muted)]">
+        <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-sm bg-[var(--positive)]/40" /> ≥60% WR</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-sm bg-[var(--positive)]/15" /> 45–60%</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-sm bg-[var(--negative)]/20" /> &lt;45%</span>
+        <span className="flex items-center gap-1"><span className="inline-block size-2.5 rounded-sm bg-[var(--surface-raised)]" /> no data</span>
+      </div>
+    </div>
+  );
+}
+
+function TagPnlTable({ rows }: { rows: AnalyticsBucket[] }) {
+  const sorted = [...rows].sort((a, b) => b.realized_pnl - a.realized_pnl).slice(0, 15);
+  if (!sorted.length) return <div className="grid min-h-24 place-items-center text-xs text-[var(--muted)]">No tag data yet.</div>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="text-[10px] uppercase tracking-[0.08em] text-[var(--muted)]">
+          <tr className="border-b border-[var(--line)]">
+            <th className="px-3 py-2 text-left">Tag</th>
+            <th className="px-3 py-2 text-right">Trades</th>
+            <th className="px-3 py-2 text-right">Win %</th>
+            <th className="px-3 py-2 text-right">PnL</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row) => (
+            <tr key={row.label} className="border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]">
+              <td className="max-w-[200px] truncate px-3 py-2 font-mono text-[10px]">{row.label}</td>
+              <td className="px-3 py-2 text-right text-[var(--muted)]">{row.trades}</td>
+              <td className="px-3 py-2 text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[var(--surface-raised)]">
+                    <div
+                      className={`h-full rounded-full ${row.win_rate >= 50 ? "bg-[var(--positive)]" : "bg-[var(--negative)]"}`}
+                      style={{ width: `${Math.min(100, row.win_rate)}%` }}
+                    />
+                  </div>
+                  <span className={row.win_rate >= 50 ? "text-[var(--positive)]" : "text-[var(--negative)]"}>
+                    {row.win_rate.toFixed(0)}%
+                  </span>
+                </div>
+              </td>
+              <td className={`px-3 py-2 text-right font-mono font-semibold ${row.realized_pnl >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]"}`}>
+                {row.realized_pnl >= 0 ? "+" : ""}{row.realized_pnl.toFixed(2)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

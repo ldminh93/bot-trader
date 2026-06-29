@@ -276,6 +276,9 @@ export interface TradeStats {
   trades: number;
   win_rate: number;
   average_pnl_percent: number;
+  current_balance: number;
+  peak_balance: number;
+  drawdown_pct: number;
   daily: { day: string; pnl: number }[];
   analytics: {
     by_symbol: AnalyticsBucket[];

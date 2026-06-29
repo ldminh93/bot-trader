@@ -21,6 +21,9 @@ const EMPTY_STATS: TradeStats = {
   trades: 0,
   win_rate: 0,
   average_pnl_percent: 0,
+  current_balance: 0,
+  peak_balance: 0,
+  drawdown_pct: 0,
   daily: [],
   analytics: {
     by_symbol: [],

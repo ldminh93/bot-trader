@@ -380,6 +380,18 @@ class TradeStatsView(APIView):
             )["value"]
             or 0
         )
+        # Drawdown from peak balance
+        config = TradingBotConfig.objects.filter(user=request.user).first()
+        starting_balance = float(config.paper_balance) if config else 10000.0
+        current_balance = starting_balance + float(totals["realized_pnl"] or 0) + float(open_pnl)
+        running = starting_balance
+        peak_balance = running
+        for day_item in daily:
+            running += float(day_item["pnl"])
+            if running > peak_balance:
+                peak_balance = running
+        peak_balance = max(peak_balance, current_balance)
+        drawdown_pct = max(0.0, (peak_balance - current_balance) / peak_balance * 100) if peak_balance > 0 else 0.0
         return Response(
             {
                 "realized_pnl": totals["realized_pnl"] or 0,
@@ -388,6 +400,9 @@ class TradeStatsView(APIView):
                 "trades": total,
                 "win_rate": (wins / total * 100) if total else 0,
                 "average_pnl_percent": totals["average_pnl_percent"] or 0,
+                "current_balance": current_balance,
+                "peak_balance": peak_balance,
+                "drawdown_pct": drawdown_pct,
                 "daily": daily,
                 "analytics": build_trade_analytics(request.user),
                 "block_reasons": build_block_reason_stats(request.user),
