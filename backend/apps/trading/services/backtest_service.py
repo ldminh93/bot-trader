@@ -246,8 +246,6 @@ def run_backtest(config, limit: int = 320) -> dict:
                 account_balance,
                 float(config.risk_per_trade_percent) * signal.risk_multiplier,
                 indicators.atr,
-                indicators.swing_high,
-                indicators.swing_low,
                 indicators.ma7,
                 indicators.ma25,
                 indicators.ma99,

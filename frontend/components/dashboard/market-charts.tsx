@@ -140,7 +140,6 @@ export function PriceChart({
       candles.slice(startIndex, endIndex).map((item) => ({
         ...item,
         range: [item.low, item.high] as [number, number],
-        time: new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       })),
     [candles, startIndex, endIndex],
   );
@@ -256,7 +255,15 @@ export function PriceChart({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 12, right: 12, bottom: 0, left: -10 }}>
             <CartesianGrid stroke="#282e35" vertical={false} />
-            <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={32} fontSize={10} />
+            <XAxis
+              dataKey="timestamp"
+              stroke="#69727d"
+              tickLine={false}
+              axisLine={false}
+              minTickGap={32}
+              fontSize={10}
+              tickFormatter={(ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            />
             <YAxis
               stroke="#69727d"
               tickLine={false}
@@ -268,6 +275,9 @@ export function PriceChart({
             <Tooltip
               contentStyle={tooltipStyle}
               labelStyle={{ color: "#f2f3ee" }}
+              labelFormatter={(ts: number) =>
+                new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+              }
               formatter={(value, name, item) => {
                 if (name === "Candle") {
                   const candle = item.payload as Candle;
@@ -287,7 +297,7 @@ export function PriceChart({
             <Line type="monotone" dataKey="ma99" name="MA99" stroke="#d175d8" strokeWidth={1.2} dot={false} />
             {position && positionCandle && (
               <ReferenceDot
-                x={positionCandle.time}
+                x={positionCandle.timestamp}
                 y={Number(position.entry_price)}
                 ifOverflow="extendDomain"
                 shape={<PositionFlag side={position.side} />}

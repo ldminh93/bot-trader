@@ -87,12 +87,23 @@ def process_config(config: TradingBotConfig) -> None:
         status=Trade.Status.OPEN,
     ).first()
     if open_trade:
+        tp3_trail = float(config.tp3_trailing_percent)
+        early_be = float(config.early_breakeven_r)
+        lock_pr = float(config.lock_profit_r)
+        # Snapshot flags before update to detect SL step transitions
+        _was_early_be = open_trade.early_breakeven_moved
+        _was_be = open_trade.breakeven_moved
+        _was_lock = open_trade.profit_lock_moved
+        _old_sl = open_trade.stop_loss
         if open_trade.is_paper:
             PaperTradingService.update_trade(
                 open_trade,
                 metrics["price"],
                 signal_indicators.atr,
                 float(config.trailing_atr_multiplier) if config.use_trailing_stop else 0,
+                tp3_trailing_percent=tp3_trail,
+                early_breakeven_r=early_be,
+                lock_profit_r=lock_pr,
             )
         else:
             credential = getattr(config.user, "binance_credential", None)
@@ -101,7 +112,25 @@ def process_config(config: TradingBotConfig) -> None:
                 metrics["price"],
                 signal_indicators.atr,
                 float(config.trailing_atr_multiplier) if config.use_trailing_stop else 0,
+                tp3_trailing_percent=tp3_trail,
             )
+        # Log SL step events
+        if open_trade.status == Trade.Status.OPEN:
+            price_now = float(metrics["price"])
+            new_sl = float(open_trade.stop_loss)
+            if not _was_early_be and open_trade.early_breakeven_moved:
+                create_log(config, BotLog.Level.INFO,
+                    f"SL moved to {new_sl:.6f} (early risk reduction at {early_be}R). "
+                    f"Price {price_now:.6f}.")
+            elif not _was_be and open_trade.breakeven_moved:
+                create_log(config, BotLog.Level.INFO,
+                    f"SL moved to breakeven {new_sl:.6f} (1R reached). "
+                    f"Price {price_now:.6f}.")
+            elif not _was_lock and open_trade.profit_lock_moved:
+                locked_r = lock_pr - 1
+                create_log(config, BotLog.Level.INFO,
+                    f"SL moved to {new_sl:.6f} ({locked_r:.2f}R locked in at {lock_pr}R). "
+                    f"Price {price_now:.6f}.")
         if open_trade.status == Trade.Status.CLOSED:
             mode = "Paper" if open_trade.is_paper else "Live"
             pnl = float(open_trade.realized_pnl)
@@ -252,8 +281,6 @@ def process_config(config: TradingBotConfig) -> None:
             account_balance,
             float(config.risk_per_trade_percent) * signal.risk_multiplier,
             signal_indicators.atr,
-            signal_indicators.swing_high,
-            signal_indicators.swing_low,
             signal_indicators.ma7,
             signal_indicators.ma25,
             signal_indicators.ma99,
@@ -332,6 +359,7 @@ def process_config(config: TradingBotConfig) -> None:
             remaining_quantity=executed_quantity,
             leverage=effective_leverage,
             stop_loss=plan.stop_loss,
+            initial_stop_loss=plan.stop_loss,
             take_profit_1=plan.take_profit_1,
             take_profit_2=plan.take_profit_2,
             take_profit_3=plan.take_profit_3,

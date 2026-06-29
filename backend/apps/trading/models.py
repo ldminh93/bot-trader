@@ -83,6 +83,24 @@ class TradingBotConfig(models.Model):
         default=False,
         help_text="Block entries when a setup tag has <40% win rate over 20+ recent trades.",
     )
+    tp3_trailing_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        help_text="Trailing stop % after TP3 price is reached. 0 = close immediately at TP3.",
+    )
+    early_breakeven_r = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        help_text="Move SL halfway to entry when profit reaches this R multiple. 0 = disabled.",
+    )
+    lock_profit_r = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        help_text="Lock in (lock_profit_r − 1) R of profit when price reaches this R multiple. 0 = disabled.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -165,7 +183,12 @@ class Trade(models.Model):
     is_paper = models.BooleanField(default=True)
     tp1_hit = models.BooleanField(default=False)
     tp2_hit = models.BooleanField(default=False)
+    tp3_hit = models.BooleanField(default=False)
+    tp3_trail_price = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
+    initial_stop_loss = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
+    early_breakeven_moved = models.BooleanField(default=False)
     breakeven_moved = models.BooleanField(default=False)
+    profit_lock_moved = models.BooleanField(default=False)
     opened_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
