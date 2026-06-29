@@ -358,6 +358,97 @@ export function DailyPnlChart({ stats }: { stats: TradeStats }) {
   );
 }
 
+export function WinRateSparkline({ trades }: { trades: Trade[] }) {
+  const closed = trades
+    .filter((t) => t.status === "CLOSED")
+    .slice()
+    .reverse(); // oldest first
+
+  if (closed.length < 2) {
+    return <div className="grid h-full place-items-center text-xs text-[var(--muted)]">Need more trades for rolling win rate.</div>;
+  }
+
+  const WINDOW = 10;
+  const data = closed.map((_, i) => {
+    const slice = closed.slice(Math.max(0, i - WINDOW + 1), i + 1);
+    const wins = slice.filter((t) => Number(t.realized_pnl) > 0).length;
+    return {
+      trade: i + 1,
+      winRate: Math.round((wins / slice.length) * 100),
+    };
+  });
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
+        <defs>
+          <linearGradient id="wrFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#55a3e8" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="#55a3e8" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="#282e35" vertical={false} />
+        <XAxis dataKey="trade" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} label={{ value: "trade #", position: "insideBottomRight", offset: -4, fontSize: 9, fill: "#69727d" }} />
+        <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, `Rolling ${WINDOW}-trade win rate`]} />
+        <Area type="monotone" dataKey="winRate" name={`Rolling ${WINDOW}-trade win rate`} stroke="#55a3e8" fill="url(#wrFill)" strokeWidth={1.5} dot={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function closeCategory(reason: string): "tp" | "sl" | "early" | "manual" {
+  const r = reason.toLowerCase();
+  if (r.includes("take profit") || r.includes("tp3") || r.includes("trailing stop hit")) return "tp";
+  if (r.includes("stop loss") || r.includes("trailing stop")) return "sl";
+  if (r.includes("early exit")) return "early";
+  return "manual";
+}
+
+export function PnlAttributionChart({ trades }: { trades: Trade[] }) {
+  const closed = trades.filter((t) => t.status === "CLOSED" && t.closed_at);
+
+  const byDay = new Map<string, { tp: number; sl: number; early: number; manual: number }>();
+  for (const trade of closed) {
+    const day = trade.closed_at!.slice(0, 10);
+    const pnl = Number(trade.realized_pnl);
+    const existing = byDay.get(day) ?? { tp: 0, sl: 0, early: 0, manual: 0 };
+    existing[closeCategory(trade.close_reason)] += pnl;
+    byDay.set(day, existing);
+  }
+
+  const data = Array.from(byDay.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-30)
+    .map(([day, vals]) => ({
+      day: day.slice(5), // MM-DD
+      tp: Number(vals.tp.toFixed(2)),
+      sl: Number(vals.sl.toFixed(2)),
+      early: Number(vals.early.toFixed(2)),
+      manual: Number(vals.manual.toFixed(2)),
+    }));
+
+  if (!data.length) {
+    return <div className="grid h-full place-items-center text-xs text-[var(--muted)]">No closed trades to attribute.</div>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
+        <CartesianGrid stroke="#282e35" vertical={false} />
+        <XAxis dataKey="day" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
+        <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [formatNumber(Number(v)), name]} />
+        <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
+        <Bar dataKey="tp" name="Take profit" stackId="pnl" fill="#43c987" />
+        <Bar dataKey="early" name="Early exit" stackId="pnl" fill="#f0b90b" />
+        <Bar dataKey="manual" name="Manual" stackId="pnl" fill="#55a3e8" />
+        <Bar dataKey="sl" name="Stop loss" stackId="pnl" fill="#f06464" radius={[0, 0, 2, 2]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function PositioningChart({
   history,
 }: {

@@ -326,6 +326,25 @@ class BinanceService:
         )
         return abs(Decimal(position["positionAmt"])) if position else Decimal("0")
 
+    def position_unrealized_pnl(self, symbol: str) -> Decimal:
+        rows = self._signed_request(
+            "GET",
+            "/fapi/v2/positionRisk",
+            {"symbol": symbol.upper()},
+        )
+        position = next((row for row in rows if row["symbol"] == symbol.upper()), None)
+        if not position:
+            return Decimal("0")
+        return Decimal(str(position.get("unRealizedProfit", "0")))
+
+    def user_trades(self, symbol: str, start_time_ms: int, limit: int = 200) -> list[dict]:
+        """Fetch actual trade fills for a symbol since start_time_ms."""
+        return self._signed_request(
+            "GET",
+            "/fapi/v1/userTrades",
+            {"symbol": symbol.upper(), "startTime": start_time_ms, "limit": limit},
+        )
+
     @staticmethod
     def _mock_klines(symbol: str, interval: str, limit: int) -> list[dict]:
         seed = sum(ord(char) for char in f"{symbol}:{interval}")

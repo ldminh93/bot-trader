@@ -11,6 +11,20 @@ import { formatNumber, pnlColor } from "@/lib/utils";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function tradeGrade(trade: Trade): string {
+  const fromPayload = trade.replay_payload?.trade_grade;
+  if (fromPayload) return fromPayload.toUpperCase();
+  const tag = (trade.setup_tags ?? []).find((t) => t.startsWith("grade:"));
+  return tag ? tag.split(":")[1].toUpperCase() : "";
+}
+
+function gradeBadgeClass(grade: string): string {
+  if (grade === "A") return "bg-[var(--positive)]/15 text-[var(--positive)]";
+  if (grade === "B") return "bg-[var(--accent)]/15 text-[var(--accent)]";
+  if (grade === "C") return "bg-yellow-500/15 text-yellow-500";
+  return "bg-[var(--surface-raised)] text-[var(--muted)]";
+}
+
 interface DaySummary {
   date: string; // "YYYY-MM-DD"
   trades: Trade[];
@@ -104,6 +118,15 @@ export function CalendarConsole() {
     return { pnl, wins, losses };
   }, [summaries, year, month]);
 
+  const maxMonthPnl = useMemo(() => {
+    let max = 0;
+    const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+    for (const [key, summary] of summaries) {
+      if (key.startsWith(prefix)) max = Math.max(max, Math.abs(summary.totalPnl));
+    }
+    return max;
+  }, [summaries, year, month]);
+
   return (
     <AppShell>
       <header className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--background)]/95 px-4 py-3 backdrop-blur md:px-6">
@@ -172,17 +195,26 @@ export function CalendarConsole() {
                   const summary = summaries.get(dateStr);
                   const isToday = dateStr === today;
                   const isSelected = dateStr === selectedDate;
+                  const ratio = maxMonthPnl > 0 && summary && summary.totalPnl !== 0
+                    ? Math.min(1, Math.abs(summary.totalPnl) / maxMonthPnl)
+                    : 0;
+                  const cellStyle = !isSelected && ratio > 0 ? {
+                    backgroundColor: summary!.totalPnl >= 0
+                      ? `rgba(34, 197, 94, ${(0.07 + ratio * 0.28).toFixed(2)})`
+                      : `rgba(239, 68, 68, ${(0.07 + ratio * 0.28).toFixed(2)})`,
+                  } : undefined;
 
                   return (
                     <button
                       key={dateStr}
                       type="button"
                       onClick={() => setSelectedDate(isSelected ? null : dateStr)}
+                      style={cellStyle}
                       className={[
                         "flex min-h-[72px] flex-col rounded-[var(--radius)] border p-1.5 text-left transition-colors sm:min-h-[80px] sm:p-2",
                         isSelected
                           ? "border-[var(--accent)] bg-[var(--accent)]/[0.06]"
-                          : "border-[var(--line)] hover:bg-[var(--surface-raised)]",
+                          : "border-[var(--line)] hover:brightness-95",
                       ].join(" ")}
                     >
                       <span
@@ -277,6 +309,9 @@ export function CalendarConsole() {
                             >
                               {trade.side}
                             </span>
+                            {(() => { const g = tradeGrade(trade); return g ? (
+                              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${gradeBadgeClass(g)}`}>{g}</span>
+                            ) : null; })()}
                             <span
                               className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                                 trade.status === "OPEN"
@@ -300,7 +335,7 @@ export function CalendarConsole() {
                             <span>Exit <span className="font-mono text-[var(--text)]">{formatNumber(Number(trade.exit_price), 4)}</span></span>
                           ) : null}
                           <span>x{trade.leverage} · ROI <span className={`font-mono ${pnlColor(trade.pnl_percent)}`}>{formatNumber(trade.pnl_percent)}%</span></span>
-                          {trade.close_reason ? <span className="truncate">{trade.close_reason}</span> : null}
+                          {trade.close_reason ? <span className="col-span-2">{trade.close_reason}</span> : null}
                         </div>
 
                         {trade.setup_tags.length > 0 ? (
@@ -311,6 +346,21 @@ export function CalendarConsole() {
                               </span>
                             ))}
                           </div>
+                        ) : null}
+
+                        {(trade.replay_payload?.reasons?.length ?? 0) > 0 ? (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer select-none text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)] hover:text-[var(--text)]">
+                              Why this trade?
+                            </summary>
+                            <ul className="mt-1 space-y-0.5 pl-2">
+                              {trade.replay_payload.reasons!.map((reason, i) => (
+                                <li key={i} className="text-[11px] text-[var(--muted)] before:mr-1 before:content-['·']">
+                                  {reason}
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
                         ) : null}
                       </div>
                     );

@@ -150,6 +150,7 @@ export interface Trade {
     regime_label?: string;
     regime_notes?: string[];
     confidence_score?: number;
+    trade_grade?: string;
     effective_leverage?: number;
     tp_r_multiple?: number;
     metrics?: {

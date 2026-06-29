@@ -1,6 +1,20 @@
 import type { Trade } from "@/lib/types";
 import { formatNumber, pnlColor } from "@/lib/utils";
 
+function tradeGrade(trade: Trade): string {
+  const fromPayload = trade.replay_payload?.trade_grade;
+  if (fromPayload) return fromPayload.toUpperCase();
+  const tag = (trade.setup_tags ?? []).find((t) => t.startsWith("grade:"));
+  return tag ? tag.split(":")[1].toUpperCase() : "";
+}
+
+function gradeBadgeClass(grade: string): string {
+  if (grade === "A") return "bg-[var(--positive)]/15 text-[var(--positive)]";
+  if (grade === "B") return "bg-[var(--accent)]/15 text-[var(--accent)]";
+  if (grade === "C") return "bg-yellow-500/15 text-yellow-500";
+  return "bg-[var(--surface-raised)] text-[var(--muted)]";
+}
+
 export function TradeTable({
   trades,
   limit,
@@ -35,6 +49,7 @@ export function TradeTable({
             <th className="px-3 py-3">Exit</th>
             <th className="px-3 py-3">PnL</th>
             <th className="px-3 py-3">Margin ROI</th>
+            <th className="px-3 py-3">Grade</th>
             <th className="px-3 py-3">Setup tags</th>
             <th className="px-3 py-3">Status</th>
             <th className="px-4 py-3 text-right">Opened</th>
@@ -58,6 +73,11 @@ export function TradeTable({
                 {formatNumber(Number(trade.realized_pnl) + Number(trade.unrealized_pnl))}
               </td>
               <td className={`px-3 py-3 font-mono ${pnlColor(trade.pnl_percent)}`}>{formatNumber(trade.pnl_percent)}%</td>
+              <td className="px-3 py-3">
+                {(() => { const g = tradeGrade(trade); return g ? (
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${gradeBadgeClass(g)}`}>{g}</span>
+                ) : <span className="text-[var(--muted)]">—</span>; })()}
+              </td>
               <td className="px-3 py-3 text-[10px] text-[var(--muted)]">
                 {(trade.setup_tags ?? []).slice(0, 3).join(", ") || "-"}
               </td>

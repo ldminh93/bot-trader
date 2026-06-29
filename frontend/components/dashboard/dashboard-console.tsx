@@ -9,10 +9,10 @@ import {
   Stop,
   Warning,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
-import { FlowChart, PositioningChart, PriceChart, ProfitChart } from "@/components/dashboard/market-charts";
+import { FlowChart, PnlAttributionChart, PositioningChart, PriceChart, ProfitChart, WinRateSparkline } from "@/components/dashboard/market-charts";
 import { TradeTable } from "@/components/dashboard/trade-table";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
@@ -78,6 +78,16 @@ export function DashboardConsole() {
   const [liveSync, setLiveSync] = useState<LiveSyncHealth | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
+  const [nextCycle, setNextCycle] = useState(5);
+  const cycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    setNextCycle(5);
+    if (cycleTimerRef.current) clearInterval(cycleTimerRef.current);
+    cycleTimerRef.current = setInterval(() => setNextCycle((n) => Math.max(0, n - 1)), 1000);
+    return () => { if (cycleTimerRef.current) clearInterval(cycleTimerRef.current); };
+  }, [snapshot?.id]);
+
   const openPosition = trades.find((trade) => trade.status === "OPEN");
   const liveModeEnabled = Boolean(config?.live_mode_requested && config.live_trading_available);
   const modeLabel = liveModeEnabled
@@ -266,6 +276,12 @@ export function DashboardConsole() {
             </div>
           </div>
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center md:justify-end">
+            {config?.is_running && (
+              <span className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-2.5 py-2 font-mono text-xs text-[var(--muted)]">
+                <span className={`size-1.5 rounded-full ${nextCycle > 0 ? "bg-[var(--muted)]" : "animate-pulse bg-[var(--positive)]"}`} />
+                {nextCycle > 0 ? `next cycle ${nextCycle}s` : "scanning…"}
+              </span>
+            )}
             <span className="inline-flex rounded-[var(--radius)] border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2.5 py-2 text-xs font-bold text-[var(--accent)]">
               {modeLabel}
             </span>
@@ -497,7 +513,14 @@ export function DashboardConsole() {
                   <Metric label="Win rate" value={`${formatNumber(stats.win_rate)}%`} />
                   <Metric label="Trades" value={String(stats.trades)} />
                 </div>
-                <div className="h-44 p-2 sm:h-52">{stats.daily.length ? <ProfitChart stats={stats} /> : <EmptyChart />}</div>
+                <div className="grid sm:grid-cols-2">
+                  <div className="h-44 border-r border-[var(--line)] p-2 sm:h-48">
+                    {stats.daily.length ? <ProfitChart stats={stats} /> : <EmptyChart />}
+                  </div>
+                  <div className="h-44 p-2 sm:h-48">
+                    <WinRateSparkline trades={trades} />
+                  </div>
+                </div>
               </Panel>
 
               <Panel className="min-w-0">
@@ -594,6 +617,16 @@ export function DashboardConsole() {
             </Panel>
 
             <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+              <Panel className="min-w-0">
+                <PanelHeader
+                  title="PnL attribution"
+                  action={<span className="text-[10px] text-[var(--muted)]">Daily stacked by close reason</span>}
+                />
+                <div className="h-52 p-2 sm:h-60">
+                  <PnlAttributionChart trades={trades} />
+                </div>
+              </Panel>
+
               <Panel>
                 <PanelHeader
                   title="Analytics"

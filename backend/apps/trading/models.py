@@ -69,6 +69,20 @@ class TradingBotConfig(models.Model):
         blank=True,
         help_text="Fixed margin allocated to each new position. Null uses risk-based sizing.",
     )
+    atr_min_percent = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=0,
+        help_text="Minimum ATR as % of price. 0 disables the filter.",
+    )
+    require_4h_alignment = models.BooleanField(
+        default=False,
+        help_text="Require 4H trend to align with the signal before entering.",
+    )
+    auto_suppress_losing_tags = models.BooleanField(
+        default=False,
+        help_text="Block entries when a setup tag has <40% win rate over 20+ recent trades.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

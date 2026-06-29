@@ -80,6 +80,7 @@ def evaluate_market_conditions(
     trend_candles: list[dict],
     metrics: dict,
     oi_series: list[float] | None = None,
+    bias_candles: list[dict] | None = None,
 ) -> tuple[IndicatorResult, SignalResult, list[str], object, object, list[str], dict]:
     signal_indicators = calculate_indicators(signal_candles)
     trend_indicators = calculate_indicators(trend_candles)
@@ -94,6 +95,10 @@ def evaluate_market_conditions(
         float(config.adx_min),
         oi_values,
     )
+    bias_4h_state = None
+    if bias_candles:
+        bias_indicators = calculate_indicators(bias_candles)
+        bias_4h_state = detect_trend_state(bias_indicators, float(config.adx_min), oi_values)
     signal = score_signal(
         signal_indicators,
         trend_state,
@@ -118,6 +123,10 @@ def evaluate_market_conditions(
         if config.require_trend_alignment and not _alignment_matches(signal.signal, higher_trend_state):
             extra_reasons.append(
                 f"{signal.signal} requires {config.timeframe_trend} trend alignment"
+            )
+        if bias_4h_state is not None and not _alignment_matches(signal.signal, bias_4h_state):
+            extra_reasons.append(
+                f"{signal.signal} requires 4H trend alignment (4H state: {bias_4h_state.value})"
             )
         if config.require_open_interest_confirmation:
             if not metrics["open_interest_change_available"]:
@@ -180,6 +189,7 @@ def evaluate_market_conditions(
         signal.signal,
         execution.regime,
     )
+    context["trend_4h"] = bias_4h_state.value if bias_4h_state is not None else None
     return signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context
 
 
@@ -187,6 +197,11 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     client = BinanceService()
     signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal, limit=300)
     trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend, limit=200)
+    bias_candles = None
+    if config.require_4h_alignment:
+        bias_candles = client.fetch_klines(config.symbol, "4h", limit=100)
+        if config.use_closed_candle_confirmation:
+            bias_candles = _closed_candles(bias_candles)
     if config.use_closed_candle_confirmation:
         signal_candles = _closed_candles(signal_candles)
         trend_candles = _closed_candles(trend_candles)
@@ -196,6 +211,7 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
         signal_candles,
         trend_candles,
         metrics,
+        bias_candles=bias_candles,
     )
     snapshot = MarketSnapshot.objects.create(
         symbol=config.symbol,
@@ -220,6 +236,7 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
             "source": metrics.get("source", "unknown"),
             "trend_state": trend_state.value,
             "trend_1h": higher_trend_state.value,
+            "trend_4h": context["trend_4h"],
             "signal": signal.signal,
             "long_score": signal.long_score,
             "short_score": signal.short_score,

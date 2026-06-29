@@ -152,17 +152,30 @@ class LiveTradingService:
         exchange_quantity = self.client.position_amount(self.config.symbol)
         if exchange_quantity <= 0:
             self.client.cancel_all_algo_orders(self.config.symbol)
-            return PaperTradingService.close_trade(
+            avg_exit_price, gross_pnl, total_commission = self._sync_close_from_fills(trade)
+            closed = PaperTradingService.close_trade(
                 trade,
-                price,
+                avg_exit_price if avg_exit_price is not None else price,
                 "Live position closed by exchange protective order",
             )
+            if gross_pnl is not None:
+                closed.realized_pnl = gross_pnl - total_commission
+                closed.fees = total_commission
+                margin_basis = PaperTradingService._margin_basis(closed)
+                closed.pnl_percent = (
+                    closed.realized_pnl / margin_basis * 100 if margin_basis else Decimal("0")
+                )
+                closed.save(update_fields=["realized_pnl", "fees", "pnl_percent"])
+            return closed
         if exchange_quantity < trade.remaining_quantity:
             trade.remaining_quantity = exchange_quantity
             trade.tp1_hit = exchange_quantity <= trade.quantity * Decimal("0.70")
             trade.tp2_hit = exchange_quantity <= trade.quantity * Decimal("0.30")
-        direction = Decimal("1") if trade.side == Trade.Side.LONG else Decimal("-1")
-        trade.unrealized_pnl = (price - trade.entry_price) * trade.remaining_quantity * direction
+        try:
+            trade.unrealized_pnl = self.client.position_unrealized_pnl(self.config.symbol)
+        except Exception:
+            direction = Decimal("1") if trade.side == Trade.Side.LONG else Decimal("-1")
+            trade.unrealized_pnl = (price - trade.entry_price) * trade.remaining_quantity * direction
         margin_basis = PaperTradingService._margin_basis(trade)
         trade.pnl_percent = (
             (trade.realized_pnl + trade.unrealized_pnl) / margin_basis * 100
@@ -171,6 +184,38 @@ class LiveTradingService:
         )
         trade.save()
         return trade
+
+    def _sync_close_from_fills(
+        self, trade: Trade
+    ) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+        """
+        Fetches actual fills from Binance since the trade opened.
+        Returns (avg_exit_price, gross_realized_pnl, total_commission).
+        Falls back to (None, None, None) on any error.
+        Binance reports realizedPnl=0 on entry fills and the actual value on closing fills,
+        so summing all realizedPnl gives the correct gross PnL for the position.
+        """
+        try:
+            opened_at_ms = int(trade.opened_at.timestamp() * 1000)
+            fills = self.client.user_trades(self.config.symbol, opened_at_ms)
+            if not fills:
+                return None, None, None
+            close_side = "SELL" if trade.side == Trade.Side.LONG else "BUY"
+            exit_fills = [
+                f for f in fills
+                if f.get("side") == close_side and Decimal(str(f.get("realizedPnl", "0"))) != 0
+            ]
+            if not exit_fills:
+                return None, None, None
+            total_exit_qty = sum(Decimal(str(f["qty"])) for f in exit_fills)
+            total_exit_value = sum(Decimal(str(f["price"])) * Decimal(str(f["qty"])) for f in exit_fills)
+            avg_exit_price = total_exit_value / total_exit_qty if total_exit_qty else None
+            gross_pnl = sum(Decimal(str(f["realizedPnl"])) for f in exit_fills)
+            # Sum commissions from all fills (entry + exit) to get the total cost of the trade
+            total_commission = sum(Decimal(str(f.get("commission", "0"))) for f in fills)
+            return avg_exit_price, gross_pnl, total_commission
+        except Exception:
+            return None, None, None
 
     def close_trade(self, trade: Trade, price: Decimal, reason: str) -> Trade:
         self.close_position(trade.side, trade.remaining_quantity, price)

@@ -37,6 +37,28 @@ def create_log(config: TradingBotConfig, level: str, message: str) -> BotLog:
     return log
 
 
+def _suppressed_tags(config: TradingBotConfig, setup_tags: list[str]) -> list[str]:
+    """Return tags whose last 20+ closed trades have a win rate below 40%."""
+    MIN_TRADES = 20
+    MIN_WIN_RATE = 0.40
+    suppressed = []
+    for tag in setup_tags:
+        pnl_values = list(
+            Trade.objects.filter(
+                user=config.user,
+                setup_tags__contains=[tag],
+                status=Trade.Status.CLOSED,
+            )
+            .order_by("-opened_at")
+            .values_list("realized_pnl", flat=True)[:MIN_TRADES]
+        )
+        if len(pnl_values) >= MIN_TRADES:
+            wins = sum(1 for pnl in pnl_values if float(pnl) > 0)
+            if wins / len(pnl_values) < MIN_WIN_RATE:
+                suppressed.append(tag)
+    return suppressed
+
+
 def daily_loss_reached(config: TradingBotConfig) -> bool:
     today = timezone.now().date()
     realized = (
@@ -150,6 +172,32 @@ def process_config(config: TradingBotConfig) -> None:
         return
 
     price = metrics["price"]
+
+    # ATR minimum-percent filter
+    if float(config.atr_min_percent) > 0 and price > 0:
+        atr_pct = signal_indicators.atr / price * 100
+        if atr_pct < float(config.atr_min_percent):
+            create_log(
+                config,
+                BotLog.Level.INFO,
+                f"Entry skipped: ATR ({atr_pct:.3f}% of price) is below the "
+                f"{float(config.atr_min_percent):.2f}% minimum — market is too quiet.",
+            )
+            return
+
+    # Auto-suppress setup tags with poor historical win rate
+    if config.auto_suppress_losing_tags:
+        snapshot_tags = snapshot.payload.get("setup_tags", [])
+        bad_tags = _suppressed_tags(config, snapshot_tags)
+        if bad_tags:
+            create_log(
+                config,
+                BotLog.Level.INFO,
+                f"Entry skipped: setup tag(s) {', '.join(bad_tags)} have <40% win rate "
+                f"over the last 20 trades.",
+            )
+            return
+
     execution_payload = snapshot.payload
     effective_leverage = int(execution_payload.get("effective_leverage") or config.leverage)
     tp_r_multiple = float(execution_payload.get("tp_r_multiple") or config.atr_multiplier_tp)
