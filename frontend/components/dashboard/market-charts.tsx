@@ -200,26 +200,30 @@ export function PriceChart({
 
   return (
     <div className="relative h-full select-none">
-      <div className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-[var(--line)] bg-[var(--surface)]/90 p-1 text-[10px] text-[var(--muted)] shadow-sm backdrop-blur">
+      <div className="absolute right-2 top-2 z-10 flex items-center gap-0.5 rounded-lg border border-[var(--line)] bg-[var(--surface)]/90 p-1 text-[10px] text-[var(--muted)] shadow-sm backdrop-blur">
         <button
           type="button"
-          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
           onClick={() => moveWindow(clampedOffset + Math.max(Math.round(windowSize / 2), 1))}
           disabled={clampedOffset >= maxOffset}
+          aria-label="Older candles"
         >
-          Older
+          <span className="hidden sm:inline">Older</span>
+          <span className="sm:hidden">‹</span>
         </button>
         <button
           type="button"
-          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
           onClick={() => moveWindow(clampedOffset - Math.max(Math.round(windowSize / 2), 1))}
           disabled={isLiveView}
+          aria-label="Newer candles"
         >
-          Newer
+          <span className="hidden sm:inline">Newer</span>
+          <span className="sm:hidden">›</span>
         </button>
         <button
           type="button"
-          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
           onClick={() => updateWindowSize(windowSize - 10)}
           aria-label="Zoom in"
         >
@@ -227,22 +231,23 @@ export function PriceChart({
         </button>
         <button
           type="button"
-          className="rounded-md px-2 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95"
+          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
           onClick={() => updateWindowSize(windowSize + 10)}
           aria-label="Zoom out"
         >
-          -
+          −
         </button>
         <button
           type="button"
-          className={`rounded-md px-2 py-1 font-semibold transition active:scale-95 ${isLiveView ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "text-[var(--text)] hover:bg-[var(--surface-raised)]"}`}
+          className={`rounded-md px-1.5 py-1 font-semibold transition active:scale-95 sm:px-2 ${isLiveView ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "text-[var(--text)] hover:bg-[var(--surface-raised)]"}`}
           onClick={() => moveWindow(0)}
         >
           Live
         </button>
       </div>
-      <div className="absolute bottom-1 left-3 z-10 rounded-md bg-[var(--surface)]/80 px-2 py-1 text-[10px] text-[var(--muted)] backdrop-blur">
-        Drag chart to inspect history | Shift + wheel zoom | {startIndex + 1}-{Math.max(endIndex, startIndex + 1)} / {candles.length} bars
+      <div className="absolute bottom-1 left-3 z-10 max-w-[calc(100%-96px)] truncate rounded-md bg-[var(--surface)]/80 px-2 py-1 text-[10px] text-[var(--muted)] backdrop-blur">
+        <span className="hidden sm:inline">Drag to pan · Shift+wheel zoom · </span>
+        {startIndex + 1}–{Math.max(endIndex, startIndex + 1)} / {candles.length} bars
       </div>
       <div
         className={`h-full touch-none ${candles.length > windowSize ? "cursor-grab active:cursor-grabbing" : ""}`}

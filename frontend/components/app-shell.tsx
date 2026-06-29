@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-[var(--background)] lg:grid lg:grid-cols-[220px_1fr]">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[var(--background)] lg:grid lg:grid-cols-[220px_1fr]">
       <aside className="fixed inset-x-0 bottom-0 z-20 border-t border-[var(--line)] bg-[var(--surface)]/96 shadow-[0_-12px_36px_rgba(0,0,0,0.28)] backdrop-blur lg:inset-y-0 lg:left-0 lg:right-auto lg:flex lg:w-[220px] lg:flex-col lg:border-r lg:border-t-0 lg:bg-[var(--surface)] lg:shadow-none">
         <div className="hidden h-16 items-center gap-3 border-b border-[var(--line)] px-5 lg:flex">
           <div className="grid size-8 place-items-center rounded-[var(--radius)] bg-[var(--accent)] text-[var(--accent-ink)]">

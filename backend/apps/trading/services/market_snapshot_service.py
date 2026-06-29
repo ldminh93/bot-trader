@@ -19,6 +19,14 @@ class MarketEvaluation:
     signal: SignalResult
 
 
+def _ma_slope_pct(candles: list, field: str, periods: int = 5) -> float:
+    """Percent change of MA per candle over the last N periods (positive = rising)."""
+    vals = [c[field] for c in candles[-periods:] if c.get(field) is not None]
+    if len(vals) < 2 or vals[0] == 0:
+        return 0.0
+    return (vals[-1] - vals[0]) / vals[0] * 100 / (len(vals) - 1)
+
+
 def _tf_alignment_score(signal_side: str, signal_state, trend_state, bias_4h_state) -> int:
     """Score 0-3: how many timeframes (signal TF, trend TF, 4H) align with the signal direction."""
     if signal_side == "NO_TRADE":
@@ -206,6 +214,8 @@ def evaluate_market_conditions(
         execution.regime,
     )
     context["trend_4h"] = bias_4h_state.value if bias_4h_state is not None else None
+    context["ma7_slope_pct"] = _ma_slope_pct(signal_indicators.candles, "ma7", 5)
+    context["ma25_slope_pct"] = _ma_slope_pct(signal_indicators.candles, "ma25", 5)
     context["tf_alignment_score"] = _tf_alignment_score(
         signal.signal, trend_state, higher_trend_state, bias_4h_state
     )
@@ -273,6 +283,8 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
             "regime_notes": context["execution"]["regime_notes"],
             "confidence_score": context["execution"]["confidence_score"],
             "trade_grade": context["trade_grade"],
+            "ma7_slope_pct": context["ma7_slope_pct"],
+            "ma25_slope_pct": context["ma25_slope_pct"],
             "tf_alignment_score": context["tf_alignment_score"],
             "opportunity_score": opportunity_score(
                 {

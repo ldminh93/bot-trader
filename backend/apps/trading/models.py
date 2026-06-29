@@ -103,6 +103,38 @@ class TradingBotConfig(models.Model):
         default=0,
         help_text="Minimum number of timeframes (0-3) aligned with signal direction. 0 = disabled.",
     )
+    partial_entry_enabled = models.BooleanField(
+        default=False,
+        help_text="Enter at partial_entry_size_pct% first; scale in the rest when price confirms above/below MA7.",
+    )
+    partial_entry_size_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=50,
+        help_text="Percentage of planned quantity to enter initially (e.g. 50 = half size). Rest added on confirmation.",
+    )
+    max_consecutive_losses = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Pause new entries after N consecutive losses on this symbol. 0 = disabled.",
+    )
+    circuit_breaker_hours = models.DecimalField(
+        max_digits=4, decimal_places=1, default=4,
+        help_text="Hours to block new entries after hitting max_consecutive_losses.",
+    )
+    volume_spike_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=0,
+        help_text="Require signal candle volume >= N × volume MA20 (e.g. 2.0). 0 = disabled.",
+    )
+    ma_slope_min_pct = models.DecimalField(
+        max_digits=6, decimal_places=4, default=0,
+        help_text="Minimum MA7 slope (% change per candle over 5 bars) in signal direction. 0 = disabled.",
+    )
+    adx_tp_high_threshold = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="When ADX ≥ this, widen TP R-multiple by 33%. 0 = disabled.",
+    )
+    adx_tp_low_threshold = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="When ADX ≤ this, narrow TP R-multiple by 33%. 0 = disabled.",
+    )
     tp3_trailing_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -209,6 +241,10 @@ class Trade(models.Model):
     early_breakeven_moved = models.BooleanField(default=False)
     breakeven_moved = models.BooleanField(default=False)
     profit_lock_moved = models.BooleanField(default=False)
+    partial_entry_filled = models.BooleanField(
+        default=True,
+        help_text="False while waiting for scale-in confirmation after a partial entry.",
+    )
     opened_at = models.DateTimeField(auto_now_add=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 

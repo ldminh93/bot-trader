@@ -298,7 +298,7 @@ export function DashboardConsole() {
         </div>
       </header>
 
-      <div className="p-4 md:p-6">
+      <div className="min-w-0 overflow-x-hidden p-4 md:p-6">
         {error && (
           <div className="mb-4 flex items-start gap-3 rounded-[var(--radius)] border border-[var(--negative)]/40 bg-[var(--negative)]/10 p-3 text-sm text-[#ff9b9b]">
             <Warning className="mt-0.5 shrink-0" size={18} />
@@ -309,7 +309,7 @@ export function DashboardConsole() {
           <DashboardSkeleton />
         ) : (
           <div className="grid gap-4">
-            <section className="grid grid-cols-2 overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
+            <section className="grid grid-cols-3 overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
               <Metric label={`${config?.timeframe_signal ?? "Signal"} state`} value={snapshot?.trend.replaceAll("_", " ") ?? "-"} />
               <Metric label={`${config?.timeframe_trend ?? "1h"} state`} value={snapshot?.payload.trend_1h.replaceAll("_", " ") ?? "-"} />
               <Metric label="Risk multiplier" value={`${formatNumber((snapshot?.payload.risk_multiplier ?? 0) * 100, 0)}%`} />
@@ -328,7 +328,7 @@ export function DashboardConsole() {
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
               <Panel className="min-w-0">
                 <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / draggable history</span>} />
-                <div className="h-[260px] p-2 sm:h-[310px]">
+                <div className="h-[260px] overflow-hidden p-2 sm:h-[310px]">
                   {snapshot?.payload.candles?.length ? (
                     <PriceChart candles={snapshot.payload.candles} position={openPosition} />
                   ) : (
@@ -382,7 +382,7 @@ export function DashboardConsole() {
                   </span>
                 ) : undefined}
               />
-              <div className="grid gap-4 p-4 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-4 p-4 md:grid-cols-4">
                 <Metric label="Signal trend" value={snapshot?.payload.higher_timeframe_bias?.signal_state.replaceAll("_", " ") ?? "-"} />
                 <Metric label={`${config?.timeframe_trend ?? "1h"} trend`} value={snapshot?.payload.higher_timeframe_bias?.higher_state.replaceAll("_", " ") ?? "-"} />
                 <Metric label="Regime" value={snapshot?.payload.regime_label ?? "-"} detail={(snapshot?.payload.regime ?? "").replaceAll("_", " ")} />
@@ -425,7 +425,7 @@ export function DashboardConsole() {
                   <Metric label="Delta" value={snapshot ? formatCompact(snapshot.delta) : "-"} tone={pnlColor(snapshot?.delta ?? 0)} />
                   <Metric label="CVD" value={snapshot ? formatCompact(snapshot.cvd) : "-"} tone={pnlColor(snapshot?.cvd ?? 0)} />
                 </div>
-                <div className="h-40 p-2 sm:h-48">
+                <div className="h-40 overflow-hidden p-2 sm:h-48">
                   {snapshot?.payload.candles?.length ? <FlowChart candles={snapshot.payload.candles} /> : <EmptyChart />}
                 </div>
               </Panel>
@@ -438,7 +438,7 @@ export function DashboardConsole() {
                   <Metric label="Top accounts L/S" value={snapshot ? formatNumber(snapshot.top_trader_account_ratio, 3) : "-"} />
                   <Metric label="Top positions L/S" value={snapshot ? formatNumber(snapshot.top_trader_position_ratio, 3) : "-"} />
                 </div>
-                <div className="h-36 border-t border-[var(--line)] p-2 sm:h-40">
+                <div className="h-36 overflow-hidden border-t border-[var(--line)] p-2 sm:h-40">
                   {snapshot?.payload.market_history?.length ? (
                     <PositioningChart history={snapshot.payload.market_history} />
                   ) : (
@@ -527,10 +527,10 @@ export function DashboardConsole() {
                   <Metric label="Avg trade" value={`${formatNumber(stats.average_pnl_percent ?? 0)}%`} detail="Margin ROI" />
                 </div>
                 <div className="grid sm:grid-cols-2">
-                  <div className="h-44 border-r border-[var(--line)] p-2 sm:h-48">
+                  <div className="h-44 overflow-hidden border-r border-[var(--line)] p-2 sm:h-48">
                     {stats.daily.length ? <ProfitChart stats={stats} /> : <EmptyChart />}
                   </div>
-                  <div className="h-44 p-2 sm:h-48">
+                  <div className="h-44 overflow-hidden p-2 sm:h-48">
                     <WinRateSparkline trades={trades} />
                   </div>
                 </div>
@@ -562,17 +562,19 @@ export function DashboardConsole() {
                     key={item.symbol}
                     type="button"
                     onClick={() => setSymbol(item.symbol)}
-                    className={`grid gap-3 rounded-md border border-[var(--line)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-raised)] md:grid-cols-[96px_64px_88px_56px_1fr] ${symbol === item.symbol ? "border-[var(--accent)] bg-[var(--accent)]/[0.05]" : ""}`}
+                    className={`rounded-md border border-[var(--line)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-raised)] ${symbol === item.symbol ? "border-[var(--accent)] bg-[var(--accent)]/[0.05]" : ""}`}
                   >
-                    <span className="truncate font-mono font-bold">{item.symbol}</span>
-                    <span className={`whitespace-nowrap font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
-                    <span className={`whitespace-nowrap font-bold ${item.signal === "LONG" ? "text-[var(--positive)]" : item.signal === "SHORT" ? "text-[var(--negative)]" : "text-[var(--muted)]"}`}>
-                      {item.signal.replaceAll("_", " ")}
-                    </span>
-                    <span className="font-mono">{item.score}</span>
-                    <span className="truncate text-[var(--muted)]">
-                      {item.regime_label} / {item.alignment}{item.is_stale ? " / stale" : ""}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                      <span className="font-mono font-bold">{item.symbol}</span>
+                      <span className={`font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
+                      <span className={`font-bold ${item.signal === "LONG" ? "text-[var(--positive)]" : item.signal === "SHORT" ? "text-[var(--negative)]" : "text-[var(--muted)]"}`}>
+                        {item.signal.replaceAll("_", " ")}
+                      </span>
+                      <span className="font-mono text-[var(--muted)]">{item.score}</span>
+                      <span className="truncate text-[var(--muted)]">
+                        {item.regime_label} / {item.alignment}{item.is_stale ? " · stale" : ""}
+                      </span>
+                    </div>
                   </button>
                 ))}
                 {!opportunities.length && <EmptyChart label="Opportunity rankings will appear after snapshots are collected." />}
@@ -586,10 +588,12 @@ export function DashboardConsole() {
               />
               <div className="grid gap-2 p-2">
                 {opportunities.filter((item) => item.signal === "NO_TRADE").slice(0, 12).map((item) => (
-                  <div key={item.symbol} className="grid gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-xs md:grid-cols-[90px_80px_1fr]">
-                    <span className="font-mono font-bold">{item.symbol}</span>
-                    <span className={`font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
-                    <span className="text-[var(--muted)]">{item.reasons[0] ?? "Waiting for a current snapshot"}</span>
+                  <div key={item.symbol} className="rounded-md border border-[var(--line)] px-3 py-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                      <span className="font-mono font-bold">{item.symbol}</span>
+                      <span className={`font-bold ${gradeTone(item.grade)}`}>Grade {item.grade}</span>
+                    </div>
+                    <p className="mt-1 text-[var(--muted)]">{item.reasons[0] ?? "Waiting for a current snapshot"}</p>
                   </div>
                 ))}
                 {!opportunities.some((item) => item.signal === "NO_TRADE") && (
@@ -635,7 +639,7 @@ export function DashboardConsole() {
                   title="PnL attribution"
                   action={<span className="text-[10px] text-[var(--muted)]">Daily stacked by close reason</span>}
                 />
-                <div className="h-52 p-2 sm:h-60">
+                <div className="h-52 overflow-hidden p-2 sm:h-60">
                   <PnlAttributionChart trades={trades} />
                 </div>
               </Panel>

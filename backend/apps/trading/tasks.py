@@ -42,6 +42,26 @@ def _timeframe_minutes(tf: str) -> int:
             "1h": 60, "2h": 120, "4h": 240, "1d": 1440}.get(tf, 15)
 
 
+def _consecutive_losses(config: TradingBotConfig) -> int:
+    """Count the most-recent consecutive losing trades for this symbol."""
+    recent = list(
+        Trade.objects.filter(
+            user=config.user,
+            symbol=config.symbol,
+            status=Trade.Status.CLOSED,
+        )
+        .order_by("-closed_at")
+        .values_list("realized_pnl", flat=True)[:10]
+    )
+    count = 0
+    for pnl in recent:
+        if float(pnl) < 0:
+            count += 1
+        else:
+            break
+    return count
+
+
 def _suppressed_tags(config: TradingBotConfig, setup_tags: list[str]) -> list[str]:
     """Return tags whose last 20+ closed trades have a win rate below 40%."""
     MIN_TRADES = 20
@@ -92,6 +112,46 @@ def process_config(config: TradingBotConfig) -> None:
         status=Trade.Status.OPEN,
     ).first()
     if open_trade:
+        # Partial entry scale-in: add remaining quantity when price confirms above/below MA7
+        if config.partial_entry_enabled and not open_trade.partial_entry_filled:
+            price_f = float(metrics["price"])
+            ma7_f = float(signal_indicators.ma7)
+            pct = Decimal(str(config.partial_entry_size_pct))
+            remaining_qty = open_trade.quantity * (Decimal("100") - pct) / pct
+            confirmed = (
+                (open_trade.side == Trade.Side.LONG and price_f > ma7_f) or
+                (open_trade.side == Trade.Side.SHORT and price_f < ma7_f)
+            )
+            if confirmed and remaining_qty > Decimal("0"):
+                if open_trade.is_paper:
+                    PaperTradingService.scale_in_entry(open_trade, price_f, remaining_qty)
+                else:
+                    credential = getattr(config.user, "binance_credential", None)
+                    live_svc = LiveTradingService(credential, config)
+                    try:
+                        rules = live_svc.client.symbol_rules(config.symbol)
+                        _, norm_qty = live_svc.client.normalize_order(
+                            Decimal(str(price_f)), remaining_qty, rules
+                        )
+                        exchange_side = "BUY" if open_trade.side == Trade.Side.LONG else "SELL"
+                        live_svc.client.place_market_order(
+                            config.symbol, exchange_side, norm_qty, reduce_only=False
+                        )
+                        open_trade.quantity += remaining_qty
+                        open_trade.remaining_quantity += remaining_qty
+                        open_trade.partial_entry_filled = True
+                        open_trade.save()
+                        live_svc._update_exchange_sl(
+                            open_trade, float(config.tp3_trailing_percent)
+                        )
+                    except Exception as exc:
+                        create_log(config, BotLog.Level.ERROR,
+                            f"Scale-in failed: {exc}. Continuing with partial position.")
+                if open_trade.partial_entry_filled:
+                    create_log(config, BotLog.Level.INFO,
+                        f"Scale-in: added {float(remaining_qty):.5f} at {price_f:.6f} "
+                        f"(price confirmed {'above' if open_trade.side == Trade.Side.LONG else 'below'} MA7).")
+
         tp3_trail = float(config.tp3_trailing_percent)
         early_be = float(config.early_breakeven_r)
         lock_pr = float(config.lock_profit_r)
@@ -181,6 +241,31 @@ def process_config(config: TradingBotConfig) -> None:
 
     if signal.signal == "NO_TRADE":
         return
+
+    # Consecutive-loss circuit breaker
+    if config.max_consecutive_losses > 0:
+        losses = _consecutive_losses(config)
+        if losses >= config.max_consecutive_losses:
+            last_loss = (
+                Trade.objects.filter(
+                    user=config.user,
+                    symbol=config.symbol,
+                    status=Trade.Status.CLOSED,
+                    realized_pnl__lt=0,
+                )
+                .order_by("-closed_at")
+                .first()
+            )
+            if last_loss and last_loss.closed_at:
+                elapsed_h = (timezone.now() - last_loss.closed_at).total_seconds() / 3600
+                cooldown_h = float(config.circuit_breaker_hours)
+                if elapsed_h < cooldown_h:
+                    remaining_h = cooldown_h - elapsed_h
+                    create_log(config, BotLog.Level.WARNING,
+                        f"Circuit breaker: {losses} consecutive losses on {config.symbol}. "
+                        f"New entries blocked for {remaining_h:.1f}h more.")
+                    return
+
     if not opposite_entry_has_new_candle_confirmation(
         config.user,
         config.symbol,
@@ -287,9 +372,39 @@ def process_config(config: TradingBotConfig) -> None:
                     f"({remaining} candle(s) remaining).")
                 return
 
+    # Volume spike filter — signal candle must show strong volume
+    if float(config.volume_spike_multiplier) > 0 and signal_indicators.volume_ma20 > 0:
+        volume_ratio = signal_indicators.volume / signal_indicators.volume_ma20
+        if volume_ratio < float(config.volume_spike_multiplier):
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: signal candle volume ({volume_ratio:.2f}× MA20) is below "
+                f"the {float(config.volume_spike_multiplier):.1f}× spike minimum.")
+            return
+
+    # MA7 slope filter — require trend momentum in signal direction
+    if float(config.ma_slope_min_pct) > 0:
+        ma7_slope = snapshot.payload.get("ma7_slope_pct", 0)
+        required = float(config.ma_slope_min_pct)
+        if signal.signal == "LONG" and ma7_slope < required:
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: MA7 slope ({ma7_slope:+.4f}%/candle) is below "
+                f"minimum +{required:.4f}%/candle (trend too flat for LONG).")
+            return
+        if signal.signal == "SHORT" and ma7_slope > -required:
+            create_log(config, BotLog.Level.INFO,
+                f"Entry skipped: MA7 slope ({ma7_slope:+.4f}%/candle) is above "
+                f"-{required:.4f}%/candle (trend too flat for SHORT).")
+            return
+
     execution_payload = snapshot.payload
     effective_leverage = int(execution_payload.get("effective_leverage") or config.leverage)
     tp_r_multiple = float(execution_payload.get("tp_r_multiple") or config.atr_multiplier_tp)
+
+    # Dynamic TP based on ADX strength
+    if config.adx_tp_high_threshold > 0 and signal_indicators.adx >= config.adx_tp_high_threshold:
+        tp_r_multiple = min(round(tp_r_multiple * 1.33, 2), 6.0)
+    elif config.adx_tp_low_threshold > 0 and signal_indicators.adx <= config.adx_tp_low_threshold:
+        tp_r_multiple = max(round(tp_r_multiple * 0.67, 2), 1.5)
     location_reason = None
     if config.pullback_entry_enabled:
         location_reason = entry_location_block_reason(
@@ -391,11 +506,18 @@ def process_config(config: TradingBotConfig) -> None:
             ]
         )
     )
+    # Compute initial entry quantity (partial entry scaling)
+    initial_quantity = plan.quantity
+    is_partial = config.partial_entry_enabled
+    if is_partial:
+        pct = float(config.partial_entry_size_pct)
+        initial_quantity = plan.quantity * Decimal(str(pct / 100))
+
     if live_service:
         try:
             order = live_service.place_entry(
                 signal.signal,
-                plan.quantity,
+                initial_quantity,
                 Decimal(str(price)),
                 plan.stop_loss,
                 (
@@ -409,7 +531,7 @@ def process_config(config: TradingBotConfig) -> None:
             create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")
             return
         executed_price = float(order.get("avgPrice") or price)
-        executed_quantity = Decimal(str(order.get("executedQty") or plan.quantity))
+        executed_quantity = Decimal(str(order.get("executedQty") or initial_quantity))
         trade = Trade.objects.create(
             user=config.user,
             symbol=config.symbol,
@@ -427,6 +549,7 @@ def process_config(config: TradingBotConfig) -> None:
             setup_tags=trade_setup_tags,
             replay_payload=replay_payload,
             is_paper=False,
+            partial_entry_filled=not is_partial,
         )
     else:
         trade = PaperTradingService.open_trade(
@@ -439,6 +562,7 @@ def process_config(config: TradingBotConfig) -> None:
             trade_setup_tags,
             effective_leverage,
             replay_payload,
+            quantity_override=initial_quantity if is_partial else None,
         )
     sizing_message = (
         f"{position_margin:.2f} USDT margin "
@@ -446,13 +570,14 @@ def process_config(config: TradingBotConfig) -> None:
         if position_margin is not None
         else f"{signal.risk_multiplier:.0%} risk ({plan.risk_amount:.2f} USDT)"
     )
+    partial_note = f" [{float(config.partial_entry_size_pct):.0f}% partial — waiting for MA7 confirm]" if is_partial else ""
     create_log(
         config,
         BotLog.Level.INFO,
         f"{'Live' if use_live else 'Paper'} {signal.signal} opened at {price:.6f} "
         f"with {sizing_message}, x{effective_leverage}, {snapshot.payload.get('regime_label', 'Manual')} regime, "
         f"TP {tp_r_multiple:.2f}R, grade {snapshot.payload.get('trade_grade', 'D')}, "
-        f"confidence {snapshot.payload.get('confidence_score', 0)}.",
+        f"confidence {snapshot.payload.get('confidence_score', 0)}{partial_note}.",
     )
     broadcast_user_update(config.user_id, "position", TradeSerializer(trade).data)
 

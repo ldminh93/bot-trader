@@ -72,6 +72,18 @@ def _apply_profit_steps(
 
 class PaperTradingService:
     @staticmethod
+    def scale_in_entry(trade: Trade, price: float, additional_quantity: Decimal) -> None:
+        """Add to an open partial position and mark the position as fully entered."""
+        entry = Decimal(str(price))
+        fee = entry * additional_quantity * TAKER_FEE_RATE
+        trade.quantity += additional_quantity
+        trade.remaining_quantity += additional_quantity
+        trade.realized_pnl -= fee
+        trade.fees += fee
+        trade.partial_entry_filled = True
+        trade.save()
+
+    @staticmethod
     def open_trade(
         user,
         config,
@@ -82,8 +94,9 @@ class PaperTradingService:
         setup_tags: list[str] | None = None,
         leverage: int | None = None,
         replay_payload: dict | None = None,
+        quantity_override: Decimal | None = None,
     ) -> Trade:
-        quantity = Decimal(str(plan.quantity))
+        quantity = Decimal(str(quantity_override if quantity_override is not None else plan.quantity))
         entry = Decimal(str(price))
         fee = entry * quantity * TAKER_FEE_RATE
         return Trade.objects.create(
@@ -105,6 +118,7 @@ class PaperTradingService:
             setup_tags=setup_tags or [],
             replay_payload=replay_payload or {},
             is_paper=True,
+            partial_entry_filled=(quantity_override is None),
         )
 
     @staticmethod
