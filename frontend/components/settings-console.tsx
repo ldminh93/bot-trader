@@ -405,7 +405,7 @@ export function SettingsConsole() {
               <div className="sm:col-span-2">
                 <Toggle
                   label="Confirmed HTF only"
-                  checked={config.require_confirmed_higher_tf}
+                  checked={config.require_confirmed_higher_tf ?? false}
                   onChange={(value) => setConfig({ ...config, require_confirmed_higher_tf: value })}
                 />
                 <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
@@ -451,7 +451,7 @@ export function SettingsConsole() {
                       min="1"
                       max="7"
                       step="1"
-                      value={config.early_exit_min_conditions}
+                      value={config.early_exit_min_conditions ?? 3}
                       onChange={(event) => setConfig({ ...config, early_exit_min_conditions: Number(event.target.value) })}
                     />
                     <span className="font-normal leading-5 text-[var(--muted)]">
@@ -465,7 +465,7 @@ export function SettingsConsole() {
                       min="0"
                       max="20"
                       step="1"
-                      value={config.early_exit_grace_candles}
+                      value={config.early_exit_grace_candles ?? 2}
                       onChange={(event) => setConfig({ ...config, early_exit_grace_candles: Number(event.target.value) })}
                     />
                     <span className="font-normal leading-5 text-[var(--muted)]">

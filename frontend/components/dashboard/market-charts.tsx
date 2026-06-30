@@ -252,7 +252,7 @@ export function PriceChart({
         onWheel={handleWheel}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -10 }}>
+          <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -10 }}>
             <CartesianGrid stroke="#282e35" vertical={false} />
             <XAxis
               dataKey="timestamp"

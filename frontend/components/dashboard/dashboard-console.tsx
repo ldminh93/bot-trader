@@ -328,7 +328,7 @@ export function DashboardConsole() {
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
               <Panel className="min-w-0">
                 <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / draggable history</span>} />
-                <div className="h-[260px] overflow-hidden p-2 sm:h-[310px]">
+                <div className="h-[295px] overflow-hidden sm:h-[345px]">
                   {snapshot?.payload.candles?.length ? (
                     <PriceChart candles={snapshot.payload.candles} position={openPosition} />
                   ) : (
