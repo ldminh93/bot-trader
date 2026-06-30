@@ -202,10 +202,10 @@ export function PriceChart({
     "rounded px-1.5 py-0.5 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 disabled:opacity-30 sm:px-2";
 
   return (
-    <div className="flex h-full select-none flex-col">
+    <div className="flex h-full min-w-0 select-none flex-col overflow-hidden">
       {/* Nav bar sits above the chart — never overlaps the tooltip */}
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
-        <div className="flex items-center gap-0.5">
+      <div className="flex shrink-0 items-center border-b border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             className={btnBase}
@@ -236,15 +236,16 @@ export function PriceChart({
             Live
           </button>
         </div>
-        <span className="truncate pl-2 text-[var(--muted)]">
+        {/* min-w-0 + flex-1 required for truncate to work inside a flex row */}
+        <span className="min-w-0 flex-1 truncate pl-2 text-right">
           <span className="hidden sm:inline">Drag · Shift+wheel zoom · </span>
           {startIndex + 1}–{Math.max(endIndex, startIndex + 1)} / {candles.length} bars
         </span>
       </div>
 
-      {/* Chart area */}
+      {/* Chart area — min-w-0 ensures ResponsiveContainer measures the correct width */}
       <div
-        className={`min-h-0 flex-1 touch-none ${candles.length > windowSize ? "cursor-grab active:cursor-grabbing" : ""}`}
+        className={`min-h-0 min-w-0 flex-1 touch-none ${candles.length > windowSize ? "cursor-grab active:cursor-grabbing" : ""}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -274,7 +275,6 @@ export function PriceChart({
             <Tooltip
               contentStyle={tooltipStyle}
               labelStyle={{ color: "#f2f3ee" }}
-              itemStyle={{ color: "#c8cdd3" }}
               labelFormatter={(ts: number) =>
                 new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
               }
@@ -290,7 +290,7 @@ export function PriceChart({
               }}
             />
             <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
-            <Bar dataKey="range" name="Candle" shape={<Candlestick />} isAnimationActive={false} />
+            <Bar dataKey="range" name="Candle" fill="#69727d" shape={<Candlestick />} isAnimationActive={false} />
             <Line type="monotone" dataKey="close" name="Close" stroke="#f2f3ee" strokeOpacity={0.35} strokeWidth={1} dot={false} />
             <Line type="monotone" dataKey="ma7" name="MA7" stroke="#f0b90b" strokeWidth={1.2} dot={false} />
             <Line type="monotone" dataKey="ma25" name="MA25" stroke="#55a3e8" strokeWidth={1.2} dot={false} />

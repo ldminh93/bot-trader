@@ -23,6 +23,7 @@ export function SettingsConsole() {
   const [discordWebhook, setDiscordWebhook] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [confirmApplyAll, setConfirmApplyAll] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -41,6 +42,7 @@ export function SettingsConsole() {
   }, []);
 
   function updateStoredConfig(nextConfig: BotConfig) {
+    setConfirmApplyAll(false);
     setConfig((current) => current?.id === nextConfig.id ? nextConfig : current);
     setConfigs((items) => items
       .map((item) => item.id === nextConfig.id ? nextConfig : item)
@@ -59,6 +61,36 @@ export function SettingsConsole() {
       setMessage(`${config.symbol} configuration saved.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save settings");
+    }
+  }
+
+  async function applyToAll() {
+    if (!config) return;
+    const others = configs.filter((c) => c.id !== config.id);
+    if (!others.length) return;
+    setBusy(true);
+    setError("");
+    setConfirmApplyAll(false);
+    try {
+      // Strip per-coin identity and status; copy all strategy settings
+      const {
+        id: _id,
+        symbol: _sym,
+        is_running: _run,
+        live_mode_requested: _live,
+        live_trading_available: _avail,
+        live_trading_message: _msg,
+        ...strategy
+      } = config;
+      await Promise.all(others.map((other) => api.saveConfig({ ...strategy, symbol: other.symbol })));
+      const refreshed = await api.configs();
+      setConfigs(refreshed);
+      setConfig(refreshed.find((c) => c.id === config.id) ?? null);
+      setMessage(`Strategy settings applied to ${others.length} other coin${others.length > 1 ? "s" : ""}.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to apply settings to all coins");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -216,7 +248,7 @@ export function SettingsConsole() {
                 >
                   <button
                     type="button"
-                    onClick={() => setConfig(item)}
+                    onClick={() => { setConfig(item); setConfirmApplyAll(false); }}
                     className="min-w-0 flex-1 px-1 text-left"
                   >
                     <span className="block truncate font-mono text-sm font-bold">{item.symbol}</span>
@@ -495,7 +527,24 @@ export function SettingsConsole() {
                     <PreviewStat label="Daily capacity" value={`${riskPreview.dailyLosses} losses`} />
                   </div>
                 )}
-                <Button disabled={busy}><FloppyDisk size={17} />Save configuration</Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button disabled={busy}><FloppyDisk size={17} />Save configuration</Button>
+                  {configs.length > 1 && !confirmApplyAll && (
+                    <Button type="button" variant="secondary" disabled={busy} onClick={() => setConfirmApplyAll(true)}>
+                      Apply to all coins
+                    </Button>
+                  )}
+                  {confirmApplyAll && (
+                    <>
+                      <Button type="button" variant="danger" disabled={busy} onClick={() => void applyToAll()}>
+                        Confirm: overwrite {configs.length - 1} coin{configs.length > 2 ? "s" : ""}
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setConfirmApplyAll(false)}>
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </form>
           ) : (
