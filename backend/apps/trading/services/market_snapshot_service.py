@@ -148,6 +148,16 @@ def evaluate_market_conditions(
             extra_reasons.append(
                 f"{signal.signal} requires {config.timeframe_trend} trend alignment"
             )
+        if getattr(config, "require_confirmed_higher_tf", False):
+            htf_val = higher_trend_state.value
+            if signal.signal == "LONG" and htf_val != "CONFIRMED_UPTREND":
+                extra_reasons.append(
+                    f"LONG requires confirmed {config.timeframe_trend} uptrend (current: {htf_val.replace('_', ' ').lower()})"
+                )
+            elif signal.signal == "SHORT" and htf_val != "CONFIRMED_DOWNTREND":
+                extra_reasons.append(
+                    f"SHORT requires confirmed {config.timeframe_trend} downtrend (current: {htf_val.replace('_', ' ').lower()})"
+                )
         if bias_4h_state is not None and not _alignment_matches(signal.signal, bias_4h_state):
             extra_reasons.append(
                 f"{signal.signal} requires 4H trend alignment (4H state: {bias_4h_state.value})"

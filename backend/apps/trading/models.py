@@ -135,6 +135,18 @@ class TradingBotConfig(models.Model):
         default=0,
         help_text="When ADX ≤ this, narrow TP R-multiple by 33%. 0 = disabled.",
     )
+    early_exit_min_conditions = models.PositiveSmallIntegerField(
+        default=3,
+        help_text="Conditions needed to trigger early exit (was hardcoded 2). Higher = less sensitive.",
+    )
+    early_exit_grace_candles = models.PositiveSmallIntegerField(
+        default=2,
+        help_text="Minimum 15m candles to wait after entry before early exit is allowed. 0 = no grace.",
+    )
+    require_confirmed_higher_tf = models.BooleanField(
+        default=False,
+        help_text="Require higher TF to be CONFIRMED_UPTREND/DOWNTREND (not weak/early). Blocks entries on weak trends.",
+    )
     tp3_trailing_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -246,6 +258,7 @@ class Trade(models.Model):
         help_text="False while waiting for scale-in confirmation after a partial entry.",
     )
     opened_at = models.DateTimeField(auto_now_add=True)
+
     closed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

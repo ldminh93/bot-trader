@@ -31,6 +31,9 @@ export interface BotConfig {
   live_trading_message: string;
   paper_balance: string;
   position_margin_usdt: string | null;
+  early_exit_min_conditions: number;
+  early_exit_grace_candles: number;
+  require_confirmed_higher_tf: boolean;
 }
 
 export interface Candle {

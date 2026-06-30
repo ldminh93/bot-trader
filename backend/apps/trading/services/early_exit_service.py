@@ -7,7 +7,6 @@ from .binance_service import BinanceService
 from .indicator_service import calculate_indicators
 
 
-EARLY_EXIT_CONDITION_COUNT = 2
 OPPOSITE_SCORE_CONDITION_THRESHOLD = 70
 EXTREME_FUNDING_RATE = 0.001
 
@@ -21,6 +20,41 @@ class EarlyExitDecision:
     def reason(self) -> str:
         joined = "; ".join(self.conditions)
         return f"Early exit ({len(self.conditions)} conditions): {joined}"
+
+
+def _cvd_falling_persistently(candles: list) -> bool:
+    """
+    Require CVD to be declining on at least 2 consecutive candles (not just net decline).
+    This filters out single-candle CVD dips that reverse quickly.
+    """
+    recent = [float(c["cvd"]) for c in candles[-6:]]
+    if len(recent) < 3:
+        return False
+    # Need at least 2 consecutive declining steps in the last 5 transitions
+    consecutive = 0
+    for i in range(len(recent) - 1, 0, -1):
+        if recent[i] < recent[i - 1]:
+            consecutive += 1
+            if consecutive >= 2:
+                return True
+        else:
+            break
+    return False
+
+
+def _cvd_rising_persistently(candles: list) -> bool:
+    recent = [float(c["cvd"]) for c in candles[-6:]]
+    if len(recent) < 3:
+        return False
+    consecutive = 0
+    for i in range(len(recent) - 1, 0, -1):
+        if recent[i] > recent[i - 1]:
+            consecutive += 1
+            if consecutive >= 2:
+                return True
+        else:
+            break
+    return False
 
 
 def evaluate_early_exit(
@@ -39,19 +73,30 @@ def evaluate_early_exit(
     ]
     if len(closed_candles) < 100:
         return EarlyExitDecision(False, [])
+
     opened_at = getattr(trade, "opened_at", None)
     if opened_at is not None:
+        opened_at_ms = int(opened_at.timestamp() * 1000)
         latest_closed_timestamp = max(
             int(candle.get("close_timestamp", 0)) for candle in closed_candles
         )
-        if latest_closed_timestamp <= int(opened_at.timestamp() * 1000):
+        if latest_closed_timestamp <= opened_at_ms:
             return EarlyExitDecision(False, [])
+
+        # Grace period: wait until N 15m candles have closed since entry
+        grace = int(config.early_exit_grace_candles) if hasattr(config, "early_exit_grace_candles") else 2
+        if grace > 0:
+            candles_since_entry = sum(
+                1 for c in closed_candles
+                if int(c.get("close_timestamp", 0)) > opened_at_ms
+            )
+            if candles_since_entry < grace:
+                return EarlyExitDecision(False, [])
 
     indicators = calculate_indicators(closed_candles)
     metrics = client.market_metrics(trade.symbol, "15m")
     recent = indicators.candles[-4:]
     recent_deltas = [float(candle["delta"]) for candle in recent[-3:]]
-    recent_cvds = [float(candle["cvd"]) for candle in recent]
     price_decreasing = float(recent[-1]["close"]) < float(recent[-2]["close"])
     price_increasing = float(recent[-1]["close"]) > float(recent[-2]["close"])
     oi_decreasing = (
@@ -65,8 +110,8 @@ def evaluate_early_exit(
             conditions.append("15m close is below MA25")
         if all(delta < 0 for delta in recent_deltas):
             conditions.append("last 3 candle deltas are negative")
-        if recent_cvds[-1] < recent_cvds[0]:
-            conditions.append("CVD is falling")
+        if _cvd_falling_persistently(indicators.candles):
+            conditions.append("CVD falling for 2+ consecutive candles")
         if oi_decreasing and price_decreasing:
             conditions.append("open interest and price are decreasing")
         if indicators.adx < float(config.adx_min):
@@ -82,8 +127,8 @@ def evaluate_early_exit(
             conditions.append("15m close is above MA25")
         if all(delta > 0 for delta in recent_deltas):
             conditions.append("last 3 candle deltas are positive")
-        if recent_cvds[-1] > recent_cvds[0]:
-            conditions.append("CVD is rising")
+        if _cvd_rising_persistently(indicators.candles):
+            conditions.append("CVD rising for 2+ consecutive candles")
         if oi_decreasing and price_increasing:
             conditions.append("open interest is decreasing while price increases")
         if indicators.adx < float(config.adx_min):
@@ -95,8 +140,17 @@ def evaluate_early_exit(
         if metrics["funding_rate"] < -EXTREME_FUNDING_RATE:
             conditions.append("funding is below -0.10%")
 
+    # Configurable threshold (default 3, was hardcoded 2)
+    min_conditions = int(config.early_exit_min_conditions) if hasattr(config, "early_exit_min_conditions") else 3
+
+    # Profit guard: if the trade is currently in profit, require one extra condition
+    # to avoid closing winners on short-term noise
+    effective_min = min_conditions
+    if float(trade.unrealized_pnl) > 0:
+        effective_min += 1
+
     return EarlyExitDecision(
-        len(conditions) >= EARLY_EXIT_CONDITION_COUNT,
+        len(conditions) >= effective_min,
         conditions,
     )
 

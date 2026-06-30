@@ -402,6 +402,19 @@ export function SettingsConsole() {
                   onChange={(value) => setConfig({ ...config, require_volume_confirmation: value })}
                 />
               </div>
+              <div className="sm:col-span-2">
+                <Toggle
+                  label="Confirmed HTF only"
+                  checked={config.require_confirmed_higher_tf}
+                  onChange={(value) => setConfig({ ...config, require_confirmed_higher_tf: value })}
+                />
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  Block entries when the trend timeframe shows a weak or early trend. Only allows LONG on{" "}
+                  <strong className="text-[var(--text)]">confirmed_uptrend</strong>, SHORT on{" "}
+                  <strong className="text-[var(--text)]">confirmed_downtrend</strong>. Most impactful setting for reducing{" "}
+                  <code className="rounded bg-[var(--surface-raised)] px-1">higher:weak_uptrend</code> losses.
+                </p>
+              </div>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
                 <Toggle
                   label="Auto regime mode"
@@ -426,6 +439,42 @@ export function SettingsConsole() {
                   onChange={(value) => setConfig({ ...config, pullback_entry_enabled: value })}
                 />
               </div>
+
+              {/* Early exit controls */}
+              <div className="sm:col-span-2 border-t border-[var(--line)] pt-3">
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">Early exit controls</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Min conditions to exit (1–7)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="1"
+                      max="7"
+                      step="1"
+                      value={config.early_exit_min_conditions}
+                      onChange={(event) => setConfig({ ...config, early_exit_min_conditions: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      How many bearish signals must align before the bot exits early. Default 3 (was 2). Higher = less sensitive to short-term noise.
+                    </span>
+                  </Field>
+                  <Field label="Grace period (15m candles)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max="20"
+                      step="1"
+                      value={config.early_exit_grace_candles}
+                      onChange={(event) => setConfig({ ...config, early_exit_grace_candles: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      Block early exit for the first N × 15 minutes after entry. Default 2 = 30 min buffer for the trade to breathe.
+                    </span>
+                  </Field>
+                </div>
+              </div>
+
               <div className="sm:col-span-2">
                 <Toggle
                   label="Live trading for all scanner coins"

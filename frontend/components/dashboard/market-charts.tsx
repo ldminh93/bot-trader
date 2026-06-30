@@ -198,59 +198,53 @@ export function PriceChart({
     }
   }
 
+  const btnBase =
+    "rounded px-1.5 py-0.5 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 disabled:opacity-30 sm:px-2";
+
   return (
-    <div className="relative h-full select-none">
-      <div className="absolute right-2 top-2 z-10 flex items-center gap-0.5 rounded-lg border border-[var(--line)] bg-[var(--surface)]/90 p-1 text-[10px] text-[var(--muted)] shadow-sm backdrop-blur">
-        <button
-          type="button"
-          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
-          onClick={() => moveWindow(clampedOffset + Math.max(Math.round(windowSize / 2), 1))}
-          disabled={clampedOffset >= maxOffset}
-          aria-label="Older candles"
-        >
-          <span className="hidden sm:inline">Older</span>
-          <span className="sm:hidden">‹</span>
-        </button>
-        <button
-          type="button"
-          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
-          onClick={() => moveWindow(clampedOffset - Math.max(Math.round(windowSize / 2), 1))}
-          disabled={isLiveView}
-          aria-label="Newer candles"
-        >
-          <span className="hidden sm:inline">Newer</span>
-          <span className="sm:hidden">›</span>
-        </button>
-        <button
-          type="button"
-          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
-          onClick={() => updateWindowSize(windowSize - 10)}
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        <button
-          type="button"
-          className="rounded-md px-1.5 py-1 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 sm:px-2"
-          onClick={() => updateWindowSize(windowSize + 10)}
-          aria-label="Zoom out"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className={`rounded-md px-1.5 py-1 font-semibold transition active:scale-95 sm:px-2 ${isLiveView ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "text-[var(--text)] hover:bg-[var(--surface-raised)]"}`}
-          onClick={() => moveWindow(0)}
-        >
-          Live
-        </button>
+    <div className="flex h-full select-none flex-col">
+      {/* Nav bar sits above the chart — never overlaps the tooltip */}
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            className={btnBase}
+            onClick={() => moveWindow(clampedOffset + Math.max(Math.round(windowSize / 2), 1))}
+            disabled={clampedOffset >= maxOffset}
+            aria-label="Older candles"
+          >
+            <span className="hidden sm:inline">Older</span>
+            <span className="sm:hidden">‹</span>
+          </button>
+          <button
+            type="button"
+            className={btnBase}
+            onClick={() => moveWindow(clampedOffset - Math.max(Math.round(windowSize / 2), 1))}
+            disabled={isLiveView}
+            aria-label="Newer candles"
+          >
+            <span className="hidden sm:inline">Newer</span>
+            <span className="sm:hidden">›</span>
+          </button>
+          <button type="button" className={btnBase} onClick={() => updateWindowSize(windowSize - 10)} aria-label="Zoom in">+</button>
+          <button type="button" className={btnBase} onClick={() => updateWindowSize(windowSize + 10)} aria-label="Zoom out">−</button>
+          <button
+            type="button"
+            className={`rounded px-1.5 py-0.5 font-semibold transition active:scale-95 sm:px-2 ${isLiveView ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "text-[var(--text)] hover:bg-[var(--surface-raised)]"}`}
+            onClick={() => moveWindow(0)}
+          >
+            Live
+          </button>
+        </div>
+        <span className="truncate pl-2 text-[var(--muted)]">
+          <span className="hidden sm:inline">Drag · Shift+wheel zoom · </span>
+          {startIndex + 1}–{Math.max(endIndex, startIndex + 1)} / {candles.length} bars
+        </span>
       </div>
-      <div className="absolute bottom-1 left-3 z-10 max-w-[calc(100%-96px)] truncate rounded-md bg-[var(--surface)]/80 px-2 py-1 text-[10px] text-[var(--muted)] backdrop-blur">
-        <span className="hidden sm:inline">Drag to pan · Shift+wheel zoom · </span>
-        {startIndex + 1}–{Math.max(endIndex, startIndex + 1)} / {candles.length} bars
-      </div>
+
+      {/* Chart area */}
       <div
-        className={`h-full touch-none ${candles.length > windowSize ? "cursor-grab active:cursor-grabbing" : ""}`}
+        className={`min-h-0 flex-1 touch-none ${candles.length > windowSize ? "cursor-grab active:cursor-grabbing" : ""}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -258,7 +252,7 @@ export function PriceChart({
         onWheel={handleWheel}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 12, right: 12, bottom: 0, left: -10 }}>
+          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -10 }}>
             <CartesianGrid stroke="#282e35" vertical={false} />
             <XAxis
               dataKey="timestamp"
@@ -280,6 +274,7 @@ export function PriceChart({
             <Tooltip
               contentStyle={tooltipStyle}
               labelStyle={{ color: "#f2f3ee" }}
+              itemStyle={{ color: "#c8cdd3" }}
               labelFormatter={(ts: number) =>
                 new Date(ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
               }
