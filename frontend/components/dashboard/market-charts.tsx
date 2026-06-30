@@ -202,7 +202,7 @@ export function PriceChart({
     "rounded px-1.5 py-0.5 font-semibold text-[var(--text)] transition hover:bg-[var(--surface-raised)] active:scale-95 disabled:opacity-30 sm:px-2";
 
   return (
-    <div className="flex h-full min-w-0 select-none flex-col overflow-hidden">
+    <div className="flex h-full w-full min-w-0 select-none flex-col overflow-hidden">
       {/* Nav bar sits above the chart — never overlaps the tooltip */}
       <div className="flex shrink-0 items-center border-b border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
         <div className="flex shrink-0 items-center gap-0.5">

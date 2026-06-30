@@ -298,7 +298,7 @@ export function DashboardConsole() {
         </div>
       </header>
 
-      <div className="min-w-0 overflow-x-hidden p-4 md:p-6">
+      <div className="overflow-x-auto p-4 md:p-6">
         {error && (
           <div className="mb-4 flex items-start gap-3 rounded-[var(--radius)] border border-[var(--negative)]/40 bg-[var(--negative)]/10 p-3 text-sm text-[#ff9b9b]">
             <Warning className="mt-0.5 shrink-0" size={18} />
@@ -328,7 +328,7 @@ export function DashboardConsole() {
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
               <Panel className="min-w-0">
                 <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / draggable history</span>} />
-                <div className="h-[295px] overflow-hidden sm:h-[345px]">
+                <div className="h-[295px] w-full overflow-hidden sm:h-[345px]">
                   {snapshot?.payload.candles?.length ? (
                     <PriceChart candles={snapshot.payload.candles} position={openPosition} />
                   ) : (

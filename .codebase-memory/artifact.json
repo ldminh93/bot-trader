@@ -1,11 +1,11 @@
 {
     "schema_version": 1,
-    "commit": "",
-    "indexed_at": "2026-06-25T03:39:38Z",
+    "commit": "4aa5edf890acfbf8f4324833483cd72ab1f800cb",
+    "indexed_at": "2026-06-26T03:54:17Z",
     "project": "Users-ldminh-Training-binance",
-    "nodes": 810,
-    "edges": 1599,
-    "original_size": 2949120,
-    "compressed_size": 188589,
+    "nodes": 0,
+    "edges": 0,
+    "original_size": 102400,
+    "compressed_size": 1396,
     "compression_level": 3
 }
