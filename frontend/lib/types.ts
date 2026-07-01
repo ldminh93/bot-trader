@@ -11,6 +11,7 @@ export interface BotConfig {
   entry_score_threshold: number;
   max_open_positions: number;
   adx_min: string;
+  adx_period: number;
   atr_multiplier_sl: string;
   atr_multiplier_tp: string;
   use_trailing_stop: boolean;

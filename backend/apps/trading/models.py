@@ -45,6 +45,10 @@ class TradingBotConfig(models.Model):
     entry_score_threshold = models.PositiveSmallIntegerField(default=85)
     max_open_positions = models.PositiveSmallIntegerField(default=5)
     adx_min = models.DecimalField(max_digits=6, decimal_places=2, default=20)
+    adx_period = models.PositiveSmallIntegerField(
+        default=14,
+        help_text="Lookback period (candles) used to calculate ADX/ATR. Was hardcoded to 14.",
+    )
     atr_multiplier_sl = models.DecimalField(max_digits=6, decimal_places=2, default=0.25)
     atr_multiplier_tp = models.DecimalField(max_digits=6, decimal_places=2, default=3)
     use_trailing_stop = models.BooleanField(default=True)

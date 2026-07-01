@@ -383,6 +383,12 @@ export function SettingsConsole() {
               <Field label="ADX minimum">
                 <input className={inputClass} type="number" min="5" max="60" value={config.adx_min} onChange={(event) => setConfig({ ...config, adx_min: event.target.value })} />
               </Field>
+              <Field label="ADX period">
+                <input className={inputClass} type="number" min="2" max="50" value={config.adx_period} onChange={(event) => setConfig({ ...config, adx_period: Number(event.target.value) })} />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Lookback candles used to calculate ADX/ATR. Default 14.
+                </span>
+              </Field>
               <Field label="SL ATR buffer">
                 <input className={inputClass} type="number" min="0" max="2" step="0.05" value={config.atr_multiplier_sl} onChange={(event) => setConfig({ ...config, atr_multiplier_sl: event.target.value })} />
                 <span className="font-normal leading-5 text-[var(--muted)]">

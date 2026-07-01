@@ -316,8 +316,8 @@ export function DashboardConsole() {
               <Metric label="MA7" value={snapshot ? formatNumber(snapshot.ma7, 4) : "-"} />
               <Metric label="MA25" value={snapshot ? formatNumber(snapshot.ma25, 4) : "-"} />
               <Metric label="MA99" value={snapshot ? formatNumber(snapshot.ma99, 4) : "-"} />
-              <Metric label="ADX 14" value={snapshot ? formatNumber(snapshot.adx) : "-"} detail={`Min ${config?.adx_min ?? 20}`} />
-              <Metric label="ATR 14" value={snapshot ? formatNumber(snapshot.atr, 4) : "-"} />
+              <Metric label={`ADX ${config?.adx_period ?? 14}`} value={snapshot ? formatNumber(snapshot.adx) : "-"} detail={`Min ${config?.adx_min ?? 20}`} />
+              <Metric label={`ATR ${config?.adx_period ?? 14}`} value={snapshot ? formatNumber(snapshot.atr, 4) : "-"} />
               <Metric
                 label="Funding"
                 value={snapshot ? `${formatNumber(Number(snapshot.funding_rate) * 100, 4)}%` : "-"}

@@ -106,8 +106,9 @@ def evaluate_market_conditions(
     oi_series: list[float] | None = None,
     bias_candles: list[dict] | None = None,
 ) -> tuple[IndicatorResult, SignalResult, list[str], object, object, list[str], dict]:
-    signal_indicators = calculate_indicators(signal_candles)
-    trend_indicators = calculate_indicators(trend_candles)
+    adx_period = int(config.adx_period)
+    signal_indicators = calculate_indicators(signal_candles, period=adx_period)
+    trend_indicators = calculate_indicators(trend_candles, period=adx_period)
     oi_values = oi_series or _oi_series(config, metrics)
     trend_state = detect_trend_state(
         signal_indicators,
@@ -121,7 +122,7 @@ def evaluate_market_conditions(
     )
     bias_4h_state = None
     if bias_candles:
-        bias_indicators = calculate_indicators(bias_candles)
+        bias_indicators = calculate_indicators(bias_candles, period=adx_period)
         bias_4h_state = detect_trend_state(bias_indicators, float(config.adx_min), oi_values)
     signal = score_signal(
         signal_indicators,

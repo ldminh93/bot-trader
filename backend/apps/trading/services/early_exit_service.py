@@ -93,7 +93,8 @@ def evaluate_early_exit(
             if candles_since_entry < grace:
                 return EarlyExitDecision(False, [])
 
-    indicators = calculate_indicators(closed_candles)
+    adx_period = int(config.adx_period) if hasattr(config, "adx_period") else 14
+    indicators = calculate_indicators(closed_candles, period=adx_period)
     metrics = client.market_metrics(trade.symbol, "15m")
     recent = indicators.candles[-4:]
     recent_deltas = [float(candle["delta"]) for candle in recent[-3:]]
