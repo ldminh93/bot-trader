@@ -77,6 +77,7 @@ export function DashboardConsole() {
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [liveSync, setLiveSync] = useState<LiveSyncHealth | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
+  const [binanceBalance, setBinanceBalance] = useState<number | null>(null);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
   const [nextCycle, setNextCycle] = useState(5);
   const cycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -138,6 +139,21 @@ export function DashboardConsole() {
     const timer = window.setInterval(refreshOpportunities, 20_000);
     return () => window.clearInterval(timer);
   }, [refreshOpportunities]);
+
+  const refreshBinanceBalance = useCallback(async () => {
+    try {
+      const result = await api.binanceBalance();
+      setBinanceBalance(result.balance);
+    } catch {
+      setBinanceBalance(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshBinanceBalance();
+    const timer = window.setInterval(refreshBinanceBalance, 30_000);
+    return () => window.clearInterval(timer);
+  }, [refreshBinanceBalance]);
 
   async function toggleBot() {
     if (!config || !symbol) return;
@@ -515,9 +531,11 @@ export function DashboardConsole() {
                 </div>
                 <div className="grid grid-cols-3 border-b border-[var(--line)]">
                   <Metric
-                    label="Balance"
-                    value={`${formatNumber(stats.current_balance ?? 0)} USDT`}
-                    detail={`peak ${formatNumber(stats.peak_balance ?? 0)} USDT`}
+                    label={binanceBalance !== null ? "Balance (Binance)" : "Balance"}
+                    value={`${formatNumber(binanceBalance ?? stats.current_balance ?? 0)} USDT`}
+                    detail={binanceBalance !== null
+                      ? `simulated ${formatNumber(stats.current_balance ?? 0)} USDT · peak ${formatNumber(stats.peak_balance ?? 0)} USDT`
+                      : `peak ${formatNumber(stats.peak_balance ?? 0)} USDT`}
                   />
                   <Metric
                     label="Drawdown"

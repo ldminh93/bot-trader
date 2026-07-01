@@ -4,22 +4,26 @@ from apps.trading.models import MarketSnapshot, TradingBotConfig
 
 
 def grade_from_context(confidence_score: int, alignment: str, signal: str, regime: str) -> str:
+    """
+    confidence_score already bakes in alignment (+8) and confirmed-trend (+6) bonuses
+    (see execution_profile_service.build_execution_profile), so grading must not re-add
+    an alignment bonus or it inflates nearly every qualifying entry to grade A regardless
+    of outcome. Only regime is applied here as an independent adjustment.
+    """
     if signal == "NO_TRADE":
         return "D"
     score = int(confidence_score or 0)
-    if alignment == "aligned":
-        score += 8
-    if regime == "EXPANSION":
-        score += 8
-    elif regime == "TRENDING":
+    if regime in {"CHOPPY", "HIGH_VOLATILITY"}:
+        score -= 15
+    elif regime == "PULLBACK":
+        score -= 5
+    elif regime == "EXPANSION":
         score += 5
-    elif regime in {"CHOPPY", "HIGH_VOLATILITY"}:
-        score -= 10
-    if score >= 125:
+    if score >= 118:
         return "A"
     if score >= 105:
         return "B"
-    if score >= 90:
+    if score >= 92:
         return "C"
     return "D"
 

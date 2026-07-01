@@ -531,6 +531,63 @@ export function SettingsConsole() {
                 </div>
               </div>
 
+              {/* Loss protection controls */}
+              <div className="sm:col-span-2 border-t border-[var(--line)] pt-3">
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--muted)]">Loss protection controls</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Re-entry cooldown (candles)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max="50"
+                      step="1"
+                      value={config.sl_cooldown_candles ?? 0}
+                      onChange={(event) => setConfig({ ...config, sl_cooldown_candles: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      Candles to wait before re-entering this symbol after a stop-loss hit. 0 disables the cooldown.
+                    </span>
+                  </Field>
+                  <Field label="Max consecutive losses">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max="10"
+                      step="1"
+                      value={config.max_consecutive_losses ?? 0}
+                      onChange={(event) => setConfig({ ...config, max_consecutive_losses: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      Pause new entries on this symbol after N losses in a row. 0 disables the circuit breaker.
+                    </span>
+                  </Field>
+                  <Field label="Circuit breaker duration (hours)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0.5"
+                      max="48"
+                      step="0.5"
+                      value={config.circuit_breaker_hours ?? 4}
+                      onChange={(event) => setConfig({ ...config, circuit_breaker_hours: event.target.value })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      How long entries stay blocked once the consecutive-loss circuit breaker trips.
+                    </span>
+                  </Field>
+                  <Toggle
+                    label="Auto-suppress losing tags"
+                    checked={config.auto_suppress_losing_tags ?? false}
+                    onChange={(value) => setConfig({ ...config, auto_suppress_losing_tags: value })}
+                  />
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+                  Auto-suppress blocks entries whose setup tag (e.g. <code className="rounded bg-[var(--surface-raised)] px-1">state:confirmed_uptrend</code>) has &lt;40% win rate over its last 20+ closed trades.
+                </p>
+              </div>
+
               <div className="sm:col-span-2">
                 <Toggle
                   label="Live trading for all scanner coins"

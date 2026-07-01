@@ -49,7 +49,7 @@ class TradingBotConfig(models.Model):
         default=14,
         help_text="Lookback period (candles) used to calculate ADX/ATR. Was hardcoded to 14.",
     )
-    atr_multiplier_sl = models.DecimalField(max_digits=6, decimal_places=2, default=0.25)
+    atr_multiplier_sl = models.DecimalField(max_digits=6, decimal_places=2, default=0.5)
     atr_multiplier_tp = models.DecimalField(max_digits=6, decimal_places=2, default=3)
     use_trailing_stop = models.BooleanField(default=True)
     trailing_atr_multiplier = models.DecimalField(max_digits=6, decimal_places=2, default=1.2)
@@ -84,7 +84,7 @@ class TradingBotConfig(models.Model):
         help_text="Require 4H trend to align with the signal before entering.",
     )
     auto_suppress_losing_tags = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Block entries when a setup tag has <40% win rate over 20+ recent trades.",
     )
     funding_rate_threshold = models.DecimalField(
@@ -94,7 +94,7 @@ class TradingBotConfig(models.Model):
         help_text="Block LONG when funding > threshold, SHORT when < -threshold (raw decimal, e.g. 0.0005 = 0.05%). 0 = disabled.",
     )
     sl_cooldown_candles = models.PositiveSmallIntegerField(
-        default=0,
+        default=4,
         help_text="Candles to wait before re-entering after a stop loss hit. 0 = disabled.",
     )
     atr_spike_max_ratio = models.DecimalField(
@@ -116,7 +116,7 @@ class TradingBotConfig(models.Model):
         help_text="Percentage of planned quantity to enter initially (e.g. 50 = half size). Rest added on confirmation.",
     )
     max_consecutive_losses = models.PositiveSmallIntegerField(
-        default=0,
+        default=2,
         help_text="Pause new entries after N consecutive losses on this symbol. 0 = disabled.",
     )
     circuit_breaker_hours = models.DecimalField(
