@@ -107,6 +107,12 @@ export function TradesConsole() {
                     ))}
                   </ul>
                 </div>
+                {selectedTrade.status === "CLOSED" ? (
+                  <div className="rounded-[var(--radius)] border border-[var(--line)] p-3 text-xs">
+                    <p className="font-semibold">Close reason</p>
+                    <p className="mt-2 leading-5 text-[var(--muted)]">{selectedTrade.close_reason || "-"}</p>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (

@@ -180,6 +180,18 @@ export function SettingsConsole() {
     }
   }
 
+  async function syncBalance() {
+    if (!config) return;
+    setError("");
+    try {
+      const result = await api.binanceBalance();
+      setConfig({ ...config, paper_balance: String(result.balance) });
+      setMessage(`Synced ${result.balance.toFixed(2)} USDT from Binance. Click Save to apply.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to fetch balance from Binance");
+    }
+  }
+
   async function saveDiscordAlerts(event: FormEvent) {
     event.preventDefault();
     if (!discordConfig) return;
@@ -309,7 +321,13 @@ export function SettingsConsole() {
                 </select>
               </Field>
               <Field label="Paper balance (USDT)">
-                <input className={inputClass} type="number" min="100" value={config.paper_balance} onChange={(event) => setConfig({ ...config, paper_balance: event.target.value })} />
+                <div className="flex gap-2">
+                  <input className={inputClass} type="number" min="100" value={config.paper_balance} onChange={(event) => setConfig({ ...config, paper_balance: event.target.value })} />
+                  <Button type="button" variant="secondary" onClick={syncBalance}>Sync from Binance</Button>
+                </div>
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Fetches your live Binance futures balance and fills this field. Save to apply it.
+                </span>
               </Field>
               <Field label="Position margin (USDT)">
                 <input

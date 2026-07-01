@@ -526,6 +526,34 @@ class ConnectionTestView(APIView):
         return Response(service.test_connection())
 
 
+class BinanceBalanceView(APIView):
+    def get(self, request):
+        credential = UserBinanceCredential.objects.filter(user=request.user, is_active=True).first()
+        if not credential:
+            return Response({"detail": "No active Binance credential"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            secret = decrypt_secret(credential.api_secret_encrypted)
+        except ValueError:
+            return Response(
+                {
+                    "detail": (
+                        "Stored Binance credential was encrypted with a different key. "
+                        "Save the API key and secret again."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        service = BinanceService(credential.api_key, secret)
+        try:
+            balance = service.account_balance()
+        except Exception:
+            return Response(
+                {"detail": "Could not fetch balance from Binance."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"balance": balance})
+
+
 class SystemStatusView(APIView):
     permission_classes = [permissions.AllowAny]
 

@@ -144,6 +144,7 @@ export const api = {
       body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret, is_active: true }),
     }),
   testConnection: () => request<{ connected: boolean; message: string }>("/binance/connection-test"),
+  binanceBalance: () => request<{ balance: number }>("/binance/balance"),
   discordAlerts: () => request<DiscordAlertConfig>("/alerts/discord"),
   saveDiscordAlerts: (body: Partial<DiscordAlertConfig> & { webhook_url?: string }) =>
     request<DiscordAlertConfig>("/alerts/discord", { method: "PUT", body: JSON.stringify(body) }),

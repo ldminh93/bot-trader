@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     BacktestView,
+    BinanceBalanceView,
     BotClosePositionView,
     BotConfigView,
     BotKillSwitchView,
@@ -36,6 +37,7 @@ urlpatterns = [
     path("logs", LogsView.as_view()),
     path("binance/credentials", CredentialView.as_view()),
     path("binance/connection-test", ConnectionTestView.as_view()),
+    path("binance/balance", BinanceBalanceView.as_view()),
     path("alerts/discord", DiscordAlertConfigView.as_view()),
     path("status", SystemStatusView.as_view()),
 ]
