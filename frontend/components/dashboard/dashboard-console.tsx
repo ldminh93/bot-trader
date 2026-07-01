@@ -341,7 +341,7 @@ export function DashboardConsole() {
               />
             </section>
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(330px,0.75fr)]">
               <Panel className="min-w-0">
                 <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / draggable history</span>} />
                 <div className="h-[295px] w-full overflow-hidden sm:h-[345px]">
@@ -353,7 +353,7 @@ export function DashboardConsole() {
                 </div>
               </Panel>
 
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader
                   title="Signal engine"
                   action={snapshot ? (
@@ -389,7 +389,7 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
-            <Panel>
+            <Panel className="min-w-0">
               <PanelHeader
                 title="Higher-timeframe bias"
                 action={snapshot?.payload.higher_timeframe_bias ? (
@@ -434,7 +434,7 @@ export function DashboardConsole() {
               </div>
             </Panel>
 
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_0.9fr]">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_0.9fr]">
               <Panel className="min-w-0">
                 <PanelHeader title="Order flow" />
                 <div className="grid grid-cols-2 border-b border-[var(--line)]">
@@ -520,7 +520,7 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[1fr_1fr]">
               <Panel className="min-w-0">
                 <PanelHeader title="Performance" />
                 <div className="grid grid-cols-2 border-b border-[var(--line)] sm:grid-cols-4">
@@ -569,7 +569,7 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
-            <Panel>
+            <Panel className="min-w-0">
               <PanelHeader
                 title="Opportunity scoreboard"
                 action={<span className="text-[10px] text-[var(--muted)]">Ranked by setup quality</span>}
@@ -599,7 +599,7 @@ export function DashboardConsole() {
               </div>
             </Panel>
 
-            <Panel>
+            <Panel className="min-w-0">
               <PanelHeader
                 title="Why not trade?"
                 action={<span className="text-[10px] text-[var(--muted)]">Current blockers by scanner coin</span>}
@@ -620,7 +620,7 @@ export function DashboardConsole() {
               </div>
             </Panel>
 
-            <Panel>
+            <Panel className="min-w-0">
               <PanelHeader
                 title="Live sync health"
                 action={(
@@ -651,7 +651,7 @@ export function DashboardConsole() {
               </div>
             </Panel>
 
-            <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[1fr_1fr]">
               <Panel className="min-w-0">
                 <PanelHeader
                   title="PnL attribution"
@@ -662,7 +662,7 @@ export function DashboardConsole() {
                 </div>
               </Panel>
 
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader
                   title="Analytics"
                   action={<span className="text-[10px] text-[var(--muted)]">Journal, setup tags, and timing breakdowns</span>}
@@ -690,7 +690,7 @@ export function DashboardConsole() {
                 </div>
               </Panel>
 
-              <Panel>
+              <Panel className="min-w-0">
                 <PanelHeader
                   title="Backtest"
                   action={(
@@ -740,7 +740,7 @@ export function DashboardConsole() {
               </Panel>
             </div>
 
-            <Panel>
+            <Panel className="min-w-0">
               <PanelHeader title="Recent trades" />
               <TradeTable trades={trades} limit={8} />
             </Panel>

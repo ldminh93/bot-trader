@@ -50,21 +50,21 @@ export function TradesConsole() {
           <Stat label="Closed trades" value={String(stats?.trades ?? 0)} />
           <Stat label="Average return" value={`${formatNumber(stats?.average_pnl_percent ?? 0)}%`} tone={pnlColor(stats?.average_pnl_percent ?? 0)} />
         </section>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Panel>
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+          <Panel className="min-w-0">
             <PanelHeader title="Profit curve" />
             <div className="h-64 p-2">{stats?.daily.length ? <ProfitChart stats={stats} /> : <Empty />}</div>
           </Panel>
-          <Panel>
+          <Panel className="min-w-0">
             <PanelHeader title="Daily PnL" />
             <div className="h-64 p-2">{stats?.daily.length ? <DailyPnlChart stats={stats} /> : <Empty />}</div>
           </Panel>
         </div>
-        <Panel>
+        <Panel className="min-w-0">
           <PanelHeader title="All trades" />
           <TradeTable trades={trades} onSelect={(trade) => setSelectedTradeId(trade.id)} selectedTradeId={selectedTrade?.id ?? null} />
         </Panel>
-        <Panel>
+        <Panel className="min-w-0">
           <PanelHeader
             title="Trade replay"
             action={selectedTrade?.status === "CLOSED" ? (

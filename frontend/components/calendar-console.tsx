@@ -172,9 +172,9 @@ export function CalendarConsole() {
           </div>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[1fr_360px]">
           {/* Calendar grid */}
-          <Panel>
+          <Panel className="min-w-0">
             <div className="p-3">
               {/* Day-of-week headers */}
               <div className="mb-1 grid grid-cols-7 gap-1">
@@ -252,7 +252,7 @@ export function CalendarConsole() {
           </Panel>
 
           {/* Day detail panel */}
-          <Panel className="h-fit">
+          <Panel className="h-fit min-w-0">
             <PanelHeader
               title={selectedDate
                 ? new Date(selectedDate + "T00:00:00").toLocaleDateString("default", { weekday: "long", month: "long", day: "numeric", year: "numeric" })

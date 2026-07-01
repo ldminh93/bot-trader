@@ -229,8 +229,8 @@ export function SettingsConsole() {
           {error || message}
         </div>
       )}
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <Panel>
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Panel className="min-w-0">
           <PanelHeader
             title="Scanner coins"
             action={<span className="font-mono text-[10px] text-[var(--muted)]">{configs.filter((item) => item.is_running).length} active / {configs.length} total</span>}
@@ -635,8 +635,8 @@ export function SettingsConsole() {
           )}
         </Panel>
 
-        <div className="grid content-start gap-4">
-          <Panel>
+        <div className="grid min-w-0 content-start gap-4">
+          <Panel className="min-w-0">
             <PanelHeader title="Binance API credential" />
             <form onSubmit={saveCredential} className="grid gap-4 p-4">
               <p className="text-sm leading-6 text-[var(--muted)]">
@@ -654,7 +654,7 @@ export function SettingsConsole() {
               </div>
             </form>
           </Panel>
-          <Panel className="border-[var(--accent)]/30 bg-[var(--accent)]/[0.04]">
+          <Panel className="min-w-0 border-[var(--accent)]/30 bg-[var(--accent)]/[0.04]">
             <div className="p-4">
               <p className="font-semibold text-[var(--accent)]">Live trading safety lock</p>
               <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
@@ -664,7 +664,7 @@ export function SettingsConsole() {
               </p>
             </div>
           </Panel>
-          <Panel>
+          <Panel className="min-w-0">
             <PanelHeader title="Discord alerts" />
             <form onSubmit={saveDiscordAlerts} className="grid gap-4 p-4">
               <Field label="Webhook URL">

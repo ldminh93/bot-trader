@@ -22,7 +22,7 @@ export function LogsConsole() {
   const visible = filter === "ALL" ? logs : logs.filter((log) => log.level === filter);
   return (
     <PageFrame title="Bot logs" description="Market decisions, safety blocks, execution events, and errors.">
-      <Panel>
+      <Panel className="min-w-0">
         <PanelHeader
           title="Event history"
           action={
