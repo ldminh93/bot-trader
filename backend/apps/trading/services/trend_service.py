@@ -59,6 +59,21 @@ def is_cvd_falling(cvd_series: Sequence[float], lookback: int = 3) -> bool:
     return len(values) >= 2 and values[-1] < values[0]
 
 
+def is_bullish_reversal_pattern(
+    candles: Sequence[dict],
+    red_count: int = 3,
+    green_count: int = 2,
+) -> bool:
+    needed = red_count + green_count
+    if len(candles) < needed:
+        return False
+    window = candles[-needed:]
+    reds, greens = window[:red_count], window[red_count:]
+    return all(float(c["close"]) < float(c["open"]) for c in reds) and all(
+        float(c["close"]) > float(c["open"]) for c in greens
+    )
+
+
 def are_mas_compressed(
     ma7: float,
     ma25: float,

@@ -176,6 +176,10 @@ class BinanceService:
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return []
 
+    def mark_price(self, symbol: str) -> Decimal:
+        data = self._get("/fapi/v1/premiumIndex", {"symbol": symbol.upper()})
+        return Decimal(str(data["markPrice"]))
+
     def symbol_rules(self, symbol: str) -> SymbolRules:
         data = self._get("/fapi/v1/exchangeInfo")
         item = next(entry for entry in data["symbols"] if entry["symbol"] == symbol.upper())

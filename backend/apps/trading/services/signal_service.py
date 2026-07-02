@@ -4,12 +4,15 @@ from .indicator_service import IndicatorResult
 from .trend_service import (
     TrendState,
     calculate_slope,
+    is_bullish_reversal_pattern,
     is_cvd_falling,
     is_cvd_rising,
     is_delta_negative,
     is_delta_positive,
     risk_multiplier_for_state,
 )
+
+SIDEWAY_REVERSAL_RISK_MULTIPLIER = 0.5
 
 MAX_ENTRY_DISTANCE_ATR = 1.0
 DEFAULT_ENTRY_SCORE_THRESHOLD = 85
@@ -177,6 +180,44 @@ def score_signal(
 
     multiplier = risk_multiplier_for_state(state)
     if state == TrendState.SIDEWAY:
+        if (
+            enable_long
+            and is_bullish_reversal_pattern(candles)
+            and signal_data.volume > signal_data.volume_ma20
+            and deltas[-1] > 0
+        ):
+            location_reason = (
+                entry_location_block_reason(
+                    "LONG",
+                    signal_data.price,
+                    signal_data.ma7,
+                    signal_data.ma25,
+                    signal_data.atr,
+                    max_entry_distance_atr,
+                )
+                if pullback_entry_enabled
+                else None
+            )
+            if location_reason:
+                return SignalResult(
+                    "NO_TRADE",
+                    long_score,
+                    short_score,
+                    [location_reason],
+                    state.value,
+                    0.0,
+                )
+            return SignalResult(
+                "LONG",
+                long_score,
+                short_score,
+                [
+                    "bullish reversal: 3 red candles then 2 green candles "
+                    "with rising volume and positive delta"
+                ],
+                state.value,
+                SIDEWAY_REVERSAL_RISK_MULTIPLIER,
+            )
         return SignalResult(
             "NO_TRADE",
             long_score,

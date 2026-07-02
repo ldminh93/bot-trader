@@ -86,6 +86,55 @@ def test_sideway_state_blocks_high_score():
     assert signal.risk_multiplier == 0
 
 
+def sideway_reversal_candles():
+    return [
+        {"open": 100, "close": 98, "delta": -1, "cvd": 10, "ma7": 97, "ma25": 97, "ma99": 96},
+        {"open": 98, "close": 96, "delta": -1, "cvd": 9, "ma7": 97, "ma25": 97, "ma99": 96},
+        {"open": 96, "close": 94, "delta": -1, "cvd": 8, "ma7": 97, "ma25": 97, "ma99": 96},
+        {"open": 94, "close": 96, "delta": 1, "cvd": 9, "ma7": 97, "ma25": 97, "ma99": 96},
+        {"open": 96, "close": 99, "delta": 1, "cvd": 11, "ma7": 97, "ma25": 97, "ma99": 96},
+    ]
+
+
+def test_sideway_bullish_reversal_allows_long_entry():
+    indicators = entry_ready_indicators()
+    signal = score_signal(
+        replace(
+            indicators,
+            price=indicators.ma7 + indicators.atr * 0.1,
+            volume=200.0,
+            volume_ma20=100.0,
+            candles=sideway_reversal_candles(),
+        ),
+        trend_state=TrendState.SIDEWAY,
+        open_interest_change_percent=0.0,
+        funding_rate=0.0001,
+        top_ratio_direction=0.0,
+    )
+    assert signal.signal == "LONG"
+    assert signal.risk_multiplier == 0.5
+    assert "bullish reversal" in signal.reasons[0]
+
+
+def test_sideway_reversal_pattern_without_volume_confirmation_blocks_entry():
+    indicators = entry_ready_indicators()
+    signal = score_signal(
+        replace(
+            indicators,
+            price=indicators.ma7 + indicators.atr * 0.1,
+            volume=100.0,
+            volume_ma20=200.0,
+            candles=sideway_reversal_candles(),
+        ),
+        trend_state=TrendState.SIDEWAY,
+        open_interest_change_percent=0.0,
+        funding_rate=0.0001,
+        top_ratio_direction=0.0,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert signal.reasons == ["trend state is SIDEWAY"]
+
+
 def test_weak_uptrend_no_longer_allows_new_entry():
     indicators = entry_ready_indicators()
     signal = score_signal(

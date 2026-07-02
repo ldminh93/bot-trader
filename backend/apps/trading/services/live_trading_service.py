@@ -17,6 +17,22 @@ class ExistingExchangePosition(RuntimeError):
     pass
 
 
+def _safe_stop_price(side: str, stop_price: Decimal, mark_price: Decimal, tick: Decimal, buffer_ticks: int = 2) -> Decimal:
+    """Keep a STOP_MARKET trigger on the side of mark price that won't fire immediately."""
+    buffer = tick * buffer_ticks
+    if side == "LONG":
+        return min(stop_price, mark_price - buffer)
+    return max(stop_price, mark_price + buffer)
+
+
+def _safe_take_profit_price(side: str, target_price: Decimal, mark_price: Decimal, tick: Decimal, buffer_ticks: int = 2) -> Decimal:
+    """Keep a TAKE_PROFIT_MARKET trigger on the side of mark price that won't fire immediately."""
+    buffer = tick * buffer_ticks
+    if side == "LONG":
+        return max(target_price, mark_price + buffer)
+    return min(target_price, mark_price - buffer)
+
+
 class LiveTradingService:
     def __init__(self, credential, config) -> None:
         if not settings.ENABLE_LIVE_TRADING:
@@ -93,12 +109,23 @@ class LiveTradingService:
         )
         tick = tick_size or rules.tick_size
         step = step_size or rules.step_size
+        mark_price = self.client.mark_price(self.config.symbol)
         normalized_stop = (
             Decimal(str(stop_loss)) / tick
+        ).to_integral_value(rounding=ROUND_DOWN) * tick
+        normalized_stop = (
+            _safe_stop_price(side, normalized_stop, mark_price, tick) / tick
         ).to_integral_value(rounding=ROUND_DOWN) * tick
         normalized_take_profits = tuple(
             (Decimal(str(target)) / tick).to_integral_value(rounding=ROUND_DOWN) * tick
             for target in take_profits
+        )
+        normalized_take_profits = tuple(
+            (_safe_take_profit_price(side, target, mark_price, tick) / tick).to_integral_value(
+                rounding=ROUND_DOWN
+            )
+            * tick
+            for target in normalized_take_profits
         )
         tp1_quantity = (
             quantity * Decimal("0.30") / step
@@ -220,7 +247,11 @@ class LiveTradingService:
         step = rules.step_size
         close_side = "SELL" if trade.side == Trade.Side.LONG else "BUY"
         nonce = int(time.time() * 1000)
+        mark_price = self.client.mark_price(self.config.symbol)
         normalized_sl = (trade.stop_loss / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+        normalized_sl = (
+            _safe_stop_price(trade.side, normalized_sl, mark_price, tick) / tick
+        ).to_integral_value(rounding=ROUND_DOWN) * tick
 
         self.client.cancel_all_algo_orders(self.config.symbol)
 
@@ -247,6 +278,9 @@ class LiveTradingService:
             remaining_tps.append((trade.take_profit_3, tp3_qty, "tp3"))
         for tp_price, tp_qty, label in remaining_tps:
             normalized_tp = (tp_price / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+            normalized_tp = (
+                _safe_take_profit_price(trade.side, normalized_tp, mark_price, tick) / tick
+            ).to_integral_value(rounding=ROUND_DOWN) * tick
             normalized_qty = (tp_qty / step).to_integral_value(rounding=ROUND_DOWN) * step
             if normalized_qty > 0:
                 self.client.place_close_algo_order(

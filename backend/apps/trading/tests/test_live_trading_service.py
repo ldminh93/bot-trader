@@ -33,6 +33,7 @@ def service_with_client() -> LiveTradingService:
         "executedQty": "0.100",
     }
     service.client.position_amount.return_value = Decimal("0")
+    service.client.mark_price.return_value = Decimal("100.00")
     return service
 
 
