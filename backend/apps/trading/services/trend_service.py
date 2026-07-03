@@ -27,6 +27,17 @@ def is_oi_increasing(oi_series: Sequence[float], lookback: int = 3) -> bool:
     return len(values) >= 2 and values[-1] > values[0]
 
 
+def is_oi_meaningfully_decreasing(
+    oi_series: Sequence[float],
+    threshold_percent: float = 15.0,
+) -> bool:
+    values = [float(value) for value in oi_series if value is not None]
+    if len(values) < 2 or values[0] == 0:
+        return False
+    change_percent = (values[-1] - values[0]) / values[0] * 100
+    return change_percent <= -threshold_percent
+
+
 def is_oi_flat(
     oi_series: Sequence[float],
     lookback: int = 5,
@@ -119,7 +130,7 @@ def detect_trend_state(
     ma25_slope = calculate_slope(ma25_series)
     ma99_slope = calculate_slope(ma99_series)
     oi_increasing = is_oi_increasing(oi_series)
-    oi_decreasing = len(oi_series) >= 2 and float(oi_series[-1]) < float(oi_series[0])
+    oi_decreasing = is_oi_meaningfully_decreasing(oi_series)
     oi_flat = is_oi_flat(oi_series)
     delta_positive = is_delta_positive(delta_series)
     delta_negative = is_delta_negative(delta_series)
@@ -245,7 +256,7 @@ def explain_trend_state(
             reasons.append(f"delta turned negative ({format_compact(delta_series[-1])})")
         if is_cvd_falling(cvd_series):
             reasons.append(f"CVD is falling ({format_compact(cvd_series[-1])})")
-        if len(oi_series) >= 2 and float(oi_series[-1]) < float(oi_series[0]):
+        if is_oi_meaningfully_decreasing(oi_series):
             reasons.append(
                 f"open interest is decreasing ({format_compact(oi_series[0])} → "
                 f"{format_compact(oi_series[-1])})"
@@ -260,7 +271,7 @@ def explain_trend_state(
             reasons.append(f"delta turned positive ({format_compact(delta_series[-1])})")
         if is_cvd_rising(cvd_series):
             reasons.append(f"CVD is rising ({format_compact(cvd_series[-1])})")
-        if len(oi_series) >= 2 and float(oi_series[-1]) < float(oi_series[0]):
+        if is_oi_meaningfully_decreasing(oi_series):
             reasons.append(
                 f"open interest is decreasing ({format_compact(oi_series[0])} → "
                 f"{format_compact(oi_series[-1])})"
