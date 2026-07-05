@@ -472,6 +472,29 @@ export function SettingsConsole() {
                 </p>
               </div>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
+                <div>
+                  <Toggle
+                    label="Require MA7 slope"
+                    checked={config.require_ma7_slope_confirmation ?? false}
+                    onChange={(value) => setConfig({ ...config, require_ma7_slope_confirmation: value })}
+                  />
+                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                    Block LONG when MA7 slope has flattened or turned down (and SHORT when it has turned up), even if the trend
+                    is otherwise confirmed.
+                  </p>
+                </div>
+                <div>
+                  <Toggle
+                    label="Require funding"
+                    checked={config.require_funding_confirmation ?? false}
+                    onChange={(value) => setConfig({ ...config, require_funding_confirmation: value })}
+                  />
+                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                    Block entries when funding is outside the acceptable band, avoiding crowded/overheated positioning.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
                 <Toggle
                   label="Auto regime mode"
                   checked={config.auto_regime_enabled}

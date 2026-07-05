@@ -7,8 +7,13 @@ from .binance_service import BinanceService
 from .execution_profile_service import build_execution_profile
 from .indicator_service import IndicatorResult, calculate_indicators
 from .opportunity_service import grade_from_context, opportunity_score
-from .signal_service import SignalResult, score_signal
-from .trend_service import detect_trend_state, explain_trend_state
+from .signal_service import (
+    LONG_FUNDING_ACCEPTABLE_RANGE,
+    SHORT_FUNDING_ACCEPTABLE_RANGE,
+    SignalResult,
+    score_signal,
+)
+from .trend_service import calculate_slope, detect_trend_state, explain_trend_state
 
 
 @dataclass(frozen=True)
@@ -170,6 +175,25 @@ def evaluate_market_conditions(
                 extra_reasons.append("open interest is not increasing")
         if config.require_volume_confirmation and signal_indicators.volume <= signal_indicators.volume_ma20:
             extra_reasons.append("volume is not above volume MA20")
+        if getattr(config, "require_ma7_slope_confirmation", False):
+            ma7_series = [
+                row["ma7"] for row in signal_indicators.candles if row.get("ma7") is not None
+            ]
+            ma7_slope = calculate_slope(ma7_series)
+            if signal.signal == "LONG" and ma7_slope <= 0:
+                extra_reasons.append("LONG requires MA7 slope to be positive")
+            elif signal.signal == "SHORT" and ma7_slope >= 0:
+                extra_reasons.append("SHORT requires MA7 slope to be negative")
+        if getattr(config, "require_funding_confirmation", False):
+            funding_rate = metrics["funding_rate"]
+            if signal.signal == "LONG" and not (
+                LONG_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= LONG_FUNDING_ACCEPTABLE_RANGE[1]
+            ):
+                extra_reasons.append("LONG requires funding to be within the acceptable band")
+            elif signal.signal == "SHORT" and not (
+                SHORT_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= SHORT_FUNDING_ACCEPTABLE_RANGE[1]
+            ):
+                extra_reasons.append("SHORT requires funding to be within the acceptable band")
         if extra_reasons:
             signal = replace(
                 signal,

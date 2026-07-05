@@ -19,6 +19,9 @@ DEFAULT_ENTRY_SCORE_THRESHOLD = 85
 EARLY_ENTRY_SCORE_THRESHOLD = DEFAULT_ENTRY_SCORE_THRESHOLD
 CONFIRMED_ENTRY_SCORE_THRESHOLD = DEFAULT_ENTRY_SCORE_THRESHOLD
 
+LONG_FUNDING_ACCEPTABLE_RANGE = (-0.0003, 0.0005)
+SHORT_FUNDING_ACCEPTABLE_RANGE = (-0.0005, 0.0003)
+
 
 @dataclass(frozen=True)
 class SignalResult:
@@ -160,10 +163,10 @@ def score_signal(
         short_score += 15
         long_reasons.append("open interest is increasing")
         short_reasons.append("open interest is increasing")
-    if -0.0003 <= funding_rate <= 0.0005:
+    if LONG_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= LONG_FUNDING_ACCEPTABLE_RANGE[1]:
         long_score += 8
         long_reasons.append("funding is acceptable")
-    if -0.0005 <= funding_rate <= 0.0003:
+    if SHORT_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= SHORT_FUNDING_ACCEPTABLE_RANGE[1]:
         short_score += 8
         short_reasons.append("funding is acceptable")
     if top_ratio_direction > 0:

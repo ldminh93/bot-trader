@@ -151,6 +151,14 @@ class TradingBotConfig(models.Model):
         default=False,
         help_text="Require higher TF to be CONFIRMED_UPTREND/DOWNTREND (not weak/early). Blocks entries on weak trends.",
     )
+    require_ma7_slope_confirmation = models.BooleanField(
+        default=False,
+        help_text="Require MA7 slope to point in the trade direction. Blocks entries where MA7 has flattened or turned against the trade.",
+    )
+    require_funding_confirmation = models.BooleanField(
+        default=False,
+        help_text="Require funding rate to be within the acceptable band. Blocks entries into crowded/overheated funding.",
+    )
     tp3_trailing_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,

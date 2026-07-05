@@ -35,6 +35,8 @@ export interface BotConfig {
   early_exit_min_conditions: number;
   early_exit_grace_candles: number;
   require_confirmed_higher_tf: boolean;
+  require_ma7_slope_confirmation: boolean;
+  require_funding_confirmation: boolean;
   sl_cooldown_candles: number;
   max_consecutive_losses: number;
   circuit_breaker_hours: string;
