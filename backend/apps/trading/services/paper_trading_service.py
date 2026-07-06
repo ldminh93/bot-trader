@@ -3,9 +3,29 @@ from decimal import Decimal
 from django.utils import timezone
 
 from apps.trading.models import Trade
+from .binance_service import BinanceService
 from .discord_alert_service import send_trade_replay_export
+from .indicator_service import calculate_indicators
 
 TAKER_FEE_RATE = Decimal("0.0005")
+
+
+def refresh_replay_candles(trade: Trade) -> None:
+    """
+    replay_payload["candles"] is captured once at entry time and never extends
+    forward on its own, so the replay chart has no candle data near the close —
+    refetch a fresh window so the exit candle is actually in range.
+    """
+    timeframe = (trade.replay_payload or {}).get("entry_timeframe", "15m")
+    try:
+        klines = BinanceService().fetch_klines(trade.symbol, timeframe, limit=150)
+        if len(klines) >= 100:
+            trade.replay_payload = {
+                **(trade.replay_payload or {}),
+                "candles": calculate_indicators(klines).candles,
+            }
+    except Exception:
+        pass
 
 
 def _apply_profit_steps(
@@ -203,6 +223,7 @@ class PaperTradingService:
             if margin_basis
             else 0
         )
+        refresh_replay_candles(trade)
         trade.save()
         send_trade_replay_export(trade)
         return trade

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -8,9 +9,13 @@ from apps.trading.models import Trade, TradingBotConfig
 from apps.trading.services.paper_trading_service import PaperTradingService
 from apps.trading.services.risk_service import calculate_risk_plan
 
+from .test_indicators import make_candles
+
 
 @pytest.mark.django_db
-def test_paper_trade_opens_and_closes_with_fees():
+@patch("apps.trading.services.paper_trading_service.BinanceService.fetch_klines")
+def test_paper_trade_opens_and_closes_with_fees(fetch_klines):
+    fetch_klines.return_value = make_candles()
     user = get_user_model().objects.create_user("trader@example.com", password="secure-pass")
     config = TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
     plan = calculate_risk_plan(

@@ -77,6 +77,34 @@ function Candlestick({
   );
 }
 
+interface ExitFlagProps {
+  cx?: number;
+  cy?: number;
+  isWin: boolean;
+}
+
+function ExitFlag({ cx = 0, cy = 0, isWin }: ExitFlagProps) {
+  const color = isWin ? "#43c987" : "#f06464";
+  return (
+    <g aria-label={isWin ? "Winning exit" : "Losing exit"}>
+      <line x1={cx} y1={cy - 14} x2={cx} y2={cy + 14} stroke={color} strokeWidth={1.5} strokeDasharray="2 2" />
+      <rect
+        x={cx - 5}
+        y={cy - 5}
+        width={10}
+        height={10}
+        fill="#111418"
+        stroke={color}
+        strokeWidth={2}
+        transform={`rotate(45 ${cx} ${cy})`}
+      />
+      <text x={cx} y={cy - 20} fill={color} fontSize={10} fontWeight={700} textAnchor="middle">
+        {isWin ? "WIN" : "LOSS"}
+      </text>
+    </g>
+  );
+}
+
 interface PositionFlagProps {
   cx?: number;
   cy?: number;
@@ -148,6 +176,15 @@ export function PriceChart({
     ? data.reduce((closest, candle) => {
         const openedAt = new Date(position.opened_at).getTime();
         return Math.abs(candle.timestamp - openedAt) < Math.abs(closest.timestamp - openedAt)
+          ? candle
+          : closest;
+      })
+    : null;
+
+  const closeCandle = position && position.status === "CLOSED" && position.closed_at && data.length
+    ? data.reduce((closest, candle) => {
+        const closedAt = new Date(position.closed_at!).getTime();
+        return Math.abs(candle.timestamp - closedAt) < Math.abs(closest.timestamp - closedAt)
           ? candle
           : closest;
       })
@@ -301,6 +338,14 @@ export function PriceChart({
                 y={Number(position.entry_price)}
                 ifOverflow="extendDomain"
                 shape={<PositionFlag side={position.side} />}
+              />
+            )}
+            {position && closeCandle && position.exit_price && (
+              <ReferenceDot
+                x={closeCandle.timestamp}
+                y={Number(position.exit_price)}
+                ifOverflow="extendDomain"
+                shape={<ExitFlag isWin={Number(position.realized_pnl) > 0} />}
               />
             )}
           </ComposedChart>
