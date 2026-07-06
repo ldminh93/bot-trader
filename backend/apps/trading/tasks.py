@@ -84,6 +84,25 @@ def _suppressed_tags(config: TradingBotConfig, setup_tags: list[str]) -> list[st
     return suppressed
 
 
+def _is_symbol_losing(config: TradingBotConfig) -> bool:
+    """True when this symbol's last 20+ closed trades have a win rate below 40%."""
+    MIN_TRADES = 20
+    MIN_WIN_RATE = 0.40
+    pnl_values = list(
+        Trade.objects.filter(
+            user=config.user,
+            symbol=config.symbol,
+            status=Trade.Status.CLOSED,
+        )
+        .order_by("-opened_at")
+        .values_list("realized_pnl", flat=True)[:MIN_TRADES]
+    )
+    if len(pnl_values) < MIN_TRADES:
+        return False
+    wins = sum(1 for pnl in pnl_values if float(pnl) > 0)
+    return wins / len(pnl_values) < MIN_WIN_RATE
+
+
 def daily_loss_reached(config: TradingBotConfig) -> bool:
     today = timezone.now().date()
     realized = (
@@ -314,6 +333,27 @@ def process_config(config: TradingBotConfig) -> None:
                 BotLog.Level.INFO,
                 f"Entry skipped: setup tag(s) {', '.join(bad_tags)} have <40% win rate "
                 f"over the last 20 trades.",
+            )
+            return
+
+    # Auto-suppress symbols with poor historical win rate
+    if config.auto_suppress_losing_symbols and _is_symbol_losing(config):
+        create_log(
+            config,
+            BotLog.Level.INFO,
+            f"Entry skipped: {config.symbol} has <40% win rate over its last 20 trades.",
+        )
+        return
+
+    # Minimum confidence filter
+    if config.min_confidence_to_trade > 0:
+        confidence_score = int(snapshot.payload.get("confidence_score", 0))
+        if confidence_score < config.min_confidence_to_trade:
+            create_log(
+                config,
+                BotLog.Level.INFO,
+                f"Entry skipped: confidence {confidence_score} is below minimum "
+                f"{config.min_confidence_to_trade}.",
             )
             return
 

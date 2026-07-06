@@ -33,10 +33,65 @@ def _aggregate(label: str, rows: list[Trade]) -> dict:
     }
 
 
+RECENT_TRADE_WINDOW = 20
+
+
+def _profit_factor(rows: list[Trade]) -> float | None:
+    """Gross wins / gross losses. None when there are no losses to divide by (undefined, not infinite)."""
+    gross_win = sum(_as_float(row.realized_pnl) for row in rows if _as_float(row.realized_pnl) > 0)
+    gross_loss = sum(-_as_float(row.realized_pnl) for row in rows if _as_float(row.realized_pnl) < 0)
+    if gross_loss == 0:
+        return None
+    return gross_win / gross_loss
+
+
+def _avg_hold_minutes(rows: list[Trade]) -> float:
+    durations = [
+        (row.closed_at - row.opened_at).total_seconds() / 60
+        for row in rows
+        if row.closed_at and row.opened_at
+    ]
+    return sum(durations) / len(durations) if durations else 0.0
+
+
+def _symbol_detail(symbol: str, rows: list[Trade]) -> dict:
+    base = _aggregate(symbol, rows)
+    recent_rows = sorted(rows, key=lambda row: row.opened_at or row.closed_at, reverse=True)[
+        :RECENT_TRADE_WINDOW
+    ]
+    recent = _aggregate(symbol, recent_rows)
+    pnls = [_as_float(row.realized_pnl) for row in rows]
+    wins = [pnl for pnl in pnls if pnl > 0]
+    losses = [pnl for pnl in pnls if pnl < 0]
+    long_rows = [row for row in rows if row.side == Trade.Side.LONG]
+    short_rows = [row for row in rows if row.side == Trade.Side.SHORT]
+    long_stats = _aggregate(symbol, long_rows)
+    short_stats = _aggregate(symbol, short_rows)
+    base.update(
+        {
+            "recent_win_rate": recent["win_rate"],
+            "recent_trades": len(recent_rows),
+            "profit_factor": _profit_factor(rows),
+            "average_win": sum(wins) / len(wins) if wins else 0.0,
+            "average_loss": sum(losses) / len(losses) if losses else 0.0,
+            "best_trade": max(pnls) if pnls else 0.0,
+            "worst_trade": min(pnls) if pnls else 0.0,
+            "avg_hold_minutes": _avg_hold_minutes(rows),
+            "long_trades": long_stats["trades"],
+            "long_win_rate": long_stats["win_rate"],
+            "long_pnl": long_stats["realized_pnl"],
+            "short_trades": short_stats["trades"],
+            "short_win_rate": short_stats["win_rate"],
+            "short_pnl": short_stats["realized_pnl"],
+        }
+    )
+    return base
+
+
 def build_trade_analytics(user) -> dict:
     closed = list(Trade.objects.filter(user=user, status=Trade.Status.CLOSED))
     by_symbol = sorted(
-        (_aggregate(symbol, rows) for symbol, rows in _bucket(closed, lambda row: row.symbol).items()),
+        (_symbol_detail(symbol, rows) for symbol, rows in _bucket(closed, lambda row: row.symbol).items()),
         key=lambda item: item["realized_pnl"],
         reverse=True,
     )

@@ -82,7 +82,10 @@ export function SettingsConsole() {
         live_trading_message: _msg,
         ...strategy
       } = config;
-      await Promise.all(others.map((other) => api.saveConfig({ ...strategy, symbol: other.symbol })));
+      await Promise.all([
+        api.saveConfig(config),
+        ...others.map((other) => api.saveConfig({ ...strategy, symbol: other.symbol })),
+      ]);
       const refreshed = await api.configs();
       setConfigs(refreshed);
       setConfig(refreshed.find((c) => c.id === config.id) ?? null);
@@ -605,9 +608,29 @@ export function SettingsConsole() {
                     checked={config.auto_suppress_losing_tags ?? false}
                     onChange={(value) => setConfig({ ...config, auto_suppress_losing_tags: value })}
                   />
+                  <Toggle
+                    label="Auto-suppress losing symbols"
+                    checked={config.auto_suppress_losing_symbols ?? false}
+                    onChange={(value) => setConfig({ ...config, auto_suppress_losing_symbols: value })}
+                  />
+                  <Field label="Minimum confidence to trade">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max="160"
+                      step="1"
+                      value={config.min_confidence_to_trade ?? 0}
+                      onChange={(event) => setConfig({ ...config, min_confidence_to_trade: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      Block entries below this confidence score (sizing input, not just entry score). 0 disables the filter.
+                    </span>
+                  </Field>
                 </div>
                 <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
                   Auto-suppress blocks entries whose setup tag (e.g. <code className="rounded bg-[var(--surface-raised)] px-1">state:confirmed_uptrend</code>) has &lt;40% win rate over its last 20+ closed trades.
+                  Auto-suppress losing symbols applies the same &lt;40%/20-trade rule per coin instead of per tag.
                 </p>
               </div>
 

@@ -9,6 +9,7 @@ import {
   Stop,
   Warning,
 } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -18,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { api } from "@/lib/api";
-import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, OpportunityItem, TrendState } from "@/lib/types";
+import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, OpportunityItem, SymbolAnalyticsBucket, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
 const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
@@ -668,10 +669,16 @@ export function DashboardConsole() {
                   action={<span className="text-[10px] text-[var(--muted)]">Journal, setup tags, and timing breakdowns</span>}
                 />
                 <div className="grid gap-4 p-4 md:grid-cols-2">
-                  <AnalyticsBlock title="By symbol" rows={stats.analytics.by_symbol} />
-                  <AnalyticsBlock title="By side" rows={stats.analytics.by_side} />
-                  <AnalyticsBlock title="By close reason" rows={stats.analytics.by_close_reason} />
-                  <AnalyticsBlock title="By grade" rows={stats.analytics.by_grade} />
+                  <div className="rounded-[var(--radius)] border border-[var(--line)] md:col-span-2">
+                    <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                      <span>By symbol</span>
+                      <span className="normal-case font-normal">Sorted by total PnL — which tokens to keep, trim, or drop</span>
+                    </div>
+                    <SymbolDetailTable rows={stats.analytics.by_symbol} />
+                  </div>
+                  <AnalyticsBlock title="By side" rows={stats.analytics.by_side} filterKey="side" />
+                  <AnalyticsBlock title="By close reason" rows={stats.analytics.by_close_reason} filterKey="close_reason" />
+                  <AnalyticsBlock title="By grade" rows={stats.analytics.by_grade} filterKey="grade" />
                   <div className="rounded-[var(--radius)] border border-[var(--line)] md:col-span-2">
                     <div className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
                       Best entry hour
@@ -751,7 +758,12 @@ export function DashboardConsole() {
   );
 }
 
+function tradesFilterHref(params: Record<string, string>) {
+  return `/trades?${new URLSearchParams(params).toString()}`;
+}
+
 function HourHeatmap({ rows }: { rows: AnalyticsBucket[] }) {
+  const router = useRouter();
   const byHour = new Map(rows.map((r) => [r.label, r]));
   return (
     <div>
@@ -767,10 +779,12 @@ function HourHeatmap({ rows }: { rows: AnalyticsBucket[] }) {
           return (
             <div
               key={h}
+              role={row ? "button" : undefined}
+              onClick={row ? () => router.push(tradesFilterHref({ hour: String(h).padStart(2, "0") })) : undefined}
               title={row
-                ? `${key} — ${row.trades} trades, ${row.win_rate.toFixed(0)}% WR, ${row.realized_pnl >= 0 ? "+" : ""}${row.realized_pnl.toFixed(2)} USDT`
+                ? `${key} — ${row.trades} trades, ${row.win_rate.toFixed(0)}% WR, ${row.realized_pnl >= 0 ? "+" : ""}${row.realized_pnl.toFixed(2)} USDT — click to filter trades`
                 : `${key} — no trades`}
-              className={`${bg} flex flex-col items-center justify-center rounded py-1.5 text-center`}
+              className={`${bg} flex flex-col items-center justify-center rounded py-1.5 text-center ${row ? "cursor-pointer hover:opacity-80" : ""}`}
             >
               <span className="text-[9px] font-semibold text-[var(--text)]">{String(h).padStart(2, "0")}</span>
               {row ? <span className="text-[8px] text-[var(--muted)]">{row.trades}</span> : null}
@@ -788,7 +802,107 @@ function HourHeatmap({ rows }: { rows: AnalyticsBucket[] }) {
   );
 }
 
+function formatHoldTime(minutes: number) {
+  if (!minutes) return "-";
+  if (minutes < 60) return `${minutes.toFixed(0)}m`;
+  return `${(minutes / 60).toFixed(1)}h`;
+}
+
+function WinRateCell({ value }: { value: number }) {
+  return (
+    <span className={value >= 50 ? "text-[var(--positive)]" : "text-[var(--negative)]"}>
+      {value.toFixed(0)}%
+    </span>
+  );
+}
+
+function PnlCell({ value }: { value: number }) {
+  return (
+    <span className={`font-mono ${value >= 0 ? "text-[var(--positive)]" : "text-[var(--negative)]"}`}>
+      {value >= 0 ? "+" : ""}{value.toFixed(2)}
+    </span>
+  );
+}
+
+function SymbolDetailTable({ rows }: { rows: SymbolAnalyticsBucket[] }) {
+  const router = useRouter();
+  const sorted = [...rows].sort((a, b) => b.realized_pnl - a.realized_pnl);
+  if (!sorted.length) return <div className="grid min-h-24 place-items-center text-xs text-[var(--muted)]">No symbol data yet.</div>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="text-[10px] uppercase tracking-[0.08em] text-[var(--muted)]">
+          <tr className="border-b border-[var(--line)]">
+            <th className="px-3 py-2 text-left">Symbol</th>
+            <th className="px-3 py-2 text-right">Trades</th>
+            <th className="px-3 py-2 text-right">Win %</th>
+            <th className="px-3 py-2 text-right" title="Win rate over the last 20 trades, vs. lifetime — shows whether the edge is fresh or stale">Recent win %</th>
+            <th className="px-3 py-2 text-right">PnL</th>
+            <th className="px-3 py-2 text-right" title="Gross wins ÷ gross losses. Below 1 means losses outweigh wins.">Profit factor</th>
+            <th className="px-3 py-2 text-right" title="Average winning trade / average losing trade">Avg W / L</th>
+            <th className="px-3 py-2 text-right" title="Single best and worst closed trade">Best / worst</th>
+            <th className="px-3 py-2 text-right">Long PnL</th>
+            <th className="px-3 py-2 text-right">Short PnL</th>
+            <th className="px-3 py-2 text-right">Avg hold</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row) => (
+            <tr
+              key={row.label}
+              onClick={() => router.push(tradesFilterHref({ symbol: row.label }))}
+              className="cursor-pointer border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]"
+            >
+              <td className="px-3 py-2 font-mono text-[10px]">{row.label}</td>
+              <td className="px-3 py-2 text-right text-[var(--muted)]">{row.trades}</td>
+              <td className="px-3 py-2 text-right"><WinRateCell value={row.win_rate} /></td>
+              <td className="px-3 py-2 text-right">
+                <WinRateCell value={row.recent_win_rate} />
+                <span className="ml-1 text-[var(--muted)]">({row.recent_trades})</span>
+              </td>
+              <td className="px-3 py-2 text-right font-semibold"><PnlCell value={row.realized_pnl} /></td>
+              <td className="px-3 py-2 text-right font-mono">
+                {row.profit_factor === null ? (row.average_win > 0 ? "∞" : "-") : row.profit_factor.toFixed(2)}
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                <span className="text-[var(--positive)]">+{row.average_win.toFixed(2)}</span>
+                {" / "}
+                <span className="text-[var(--negative)]">{row.average_loss.toFixed(2)}</span>
+              </td>
+              <td className="px-3 py-2 text-right font-mono">
+                <span className="text-[var(--positive)]">+{row.best_trade.toFixed(2)}</span>
+                {" / "}
+                <span className="text-[var(--negative)]">{row.worst_trade.toFixed(2)}</span>
+              </td>
+              <td className="px-3 py-2 text-right">
+                {row.long_trades ? (
+                  <>
+                    <PnlCell value={row.long_pnl} /> <span className="text-[var(--muted)]">({row.long_trades})</span>
+                  </>
+                ) : (
+                  <span className="text-[var(--muted)]">-</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right">
+                {row.short_trades ? (
+                  <>
+                    <PnlCell value={row.short_pnl} /> <span className="text-[var(--muted)]">({row.short_trades})</span>
+                  </>
+                ) : (
+                  <span className="text-[var(--muted)]">-</span>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right text-[var(--muted)]">{formatHoldTime(row.avg_hold_minutes)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TagPnlTable({ rows }: { rows: AnalyticsBucket[] }) {
+  const router = useRouter();
   const sorted = [...rows].sort((a, b) => b.realized_pnl - a.realized_pnl).slice(0, 15);
   if (!sorted.length) return <div className="grid min-h-24 place-items-center text-xs text-[var(--muted)]">No tag data yet.</div>;
   return (
@@ -804,7 +918,11 @@ function TagPnlTable({ rows }: { rows: AnalyticsBucket[] }) {
         </thead>
         <tbody>
           {sorted.map((row) => (
-            <tr key={row.label} className="border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]">
+            <tr
+              key={row.label}
+              onClick={() => router.push(tradesFilterHref({ tag: row.label }))}
+              className="cursor-pointer border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]"
+            >
               <td className="max-w-[200px] truncate px-3 py-2 font-mono text-[10px]">{row.label}</td>
               <td className="px-3 py-2 text-right text-[var(--muted)]">{row.trades}</td>
               <td className="px-3 py-2 text-right">
@@ -831,7 +949,16 @@ function TagPnlTable({ rows }: { rows: AnalyticsBucket[] }) {
   );
 }
 
-function AnalyticsBlock({ title, rows }: { title: string; rows: AnalyticsBucket[] }) {
+function AnalyticsBlock({
+  title,
+  rows,
+  filterKey,
+}: {
+  title: string;
+  rows: AnalyticsBucket[];
+  filterKey?: "side" | "close_reason" | "grade";
+}) {
+  const router = useRouter();
   return (
     <div className="rounded-[var(--radius)] border border-[var(--line)]">
       <div className="border-b border-[var(--line)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
@@ -839,7 +966,13 @@ function AnalyticsBlock({ title, rows }: { title: string; rows: AnalyticsBucket[
       </div>
       <div className="grid">
         {(rows.length ? rows.slice(0, 5) : [{ label: "No data", trades: 0, win_rate: 0, realized_pnl: 0, average_realized_pnl: 0 }]).map((row) => (
-          <div key={row.label} className="grid grid-cols-[1.5fr_0.6fr_0.7fr_0.8fr] gap-2 border-b border-[var(--line)] px-3 py-2 text-xs last:border-0">
+          <div
+            key={row.label}
+            onClick={filterKey && row.trades ? () => router.push(tradesFilterHref({ [filterKey]: row.label })) : undefined}
+            className={`grid grid-cols-[1.5fr_0.6fr_0.7fr_0.8fr] gap-2 border-b border-[var(--line)] px-3 py-2 text-xs last:border-0 ${
+              filterKey && row.trades ? "cursor-pointer hover:bg-[var(--surface-raised)]" : ""
+            }`}
+          >
             <span className="truncate">{row.label}</span>
             <span className="font-mono text-[var(--muted)]">{row.trades}</span>
             <span className="font-mono">{formatNumber(row.win_rate)}%</span>

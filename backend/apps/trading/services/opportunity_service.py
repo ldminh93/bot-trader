@@ -3,12 +3,23 @@ from django.utils import timezone
 from apps.trading.models import MarketSnapshot, TradingBotConfig
 
 
-def grade_from_context(confidence_score: int, alignment: str, signal: str, regime: str) -> str:
+def grade_from_context(
+    confidence_score: int,
+    alignment: str,
+    signal: str,
+    regime: str,
+    entry_score_threshold: int = 85,
+) -> str:
     """
     confidence_score already bakes in alignment (+8) and confirmed-trend (+6) bonuses
     (see execution_profile_service.build_execution_profile), so grading must not re-add
     an alignment bonus or it inflates nearly every qualifying entry to grade A regardless
     of outcome. Only regime is applied here as an independent adjustment.
+
+    Bands are relative to entry_score_threshold (the floor a trade must already clear to
+    fire) rather than fixed absolute numbers — fixed bands sat below what confidence
+    bonuses push nearly every qualifying trade past, which made grade A cover almost
+    every trade taken regardless of outcome.
     """
     if signal == "NO_TRADE":
         return "D"
@@ -19,11 +30,12 @@ def grade_from_context(confidence_score: int, alignment: str, signal: str, regim
         score -= 5
     elif regime == "EXPANSION":
         score += 5
-    if score >= 118:
+    margin = score - int(entry_score_threshold)
+    if margin >= 40:
         return "A"
-    if score >= 105:
+    if margin >= 25:
         return "B"
-    if score >= 92:
+    if margin >= 10:
         return "C"
     return "D"
 
@@ -87,6 +99,7 @@ def build_opportunity_scoreboard(user) -> list[dict]:
             alignment,
             payload.get("signal", "NO_TRADE"),
             regime,
+            int(config.entry_score_threshold),
         )
         age_seconds = int((timezone.now() - snapshot.created_at).total_seconds())
         rows.append(

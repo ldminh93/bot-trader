@@ -247,6 +247,7 @@ def evaluate_market_conditions(
         execution.alignment_score,
         signal.signal,
         execution.regime,
+        int(config.entry_score_threshold),
     )
     context["trend_4h"] = bias_4h_state.value if bias_4h_state is not None else None
     context["ma7_slope_pct"] = _ma_slope_pct(signal_indicators.candles, "ma7", 5)

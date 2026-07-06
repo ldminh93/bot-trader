@@ -41,6 +41,8 @@ export interface BotConfig {
   max_consecutive_losses: number;
   circuit_breaker_hours: string;
   auto_suppress_losing_tags: boolean;
+  auto_suppress_losing_symbols: boolean;
+  min_confidence_to_trade: number;
 }
 
 export interface Candle {
@@ -187,6 +189,23 @@ export interface AnalyticsBucket {
   average_realized_pnl: number;
 }
 
+export interface SymbolAnalyticsBucket extends AnalyticsBucket {
+  recent_win_rate: number;
+  recent_trades: number;
+  profit_factor: number | null;
+  average_win: number;
+  average_loss: number;
+  best_trade: number;
+  worst_trade: number;
+  avg_hold_minutes: number;
+  long_trades: number;
+  long_win_rate: number;
+  long_pnl: number;
+  short_trades: number;
+  short_win_rate: number;
+  short_pnl: number;
+}
+
 export interface BlockReasonStat {
   reason: string;
   count: number;
@@ -291,7 +310,7 @@ export interface TradeStats {
   drawdown_pct: number;
   daily: { day: string; pnl: number }[];
   analytics: {
-    by_symbol: AnalyticsBucket[];
+    by_symbol: SymbolAnalyticsBucket[];
     by_side: AnalyticsBucket[];
     by_hour: AnalyticsBucket[];
     by_close_reason: AnalyticsBucket[];

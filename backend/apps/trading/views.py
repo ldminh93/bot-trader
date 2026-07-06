@@ -91,6 +91,8 @@ class BotConfigView(APIView):
                 "require_confirmed_higher_tf",
                 "require_ma7_slope_confirmation",
                 "require_funding_confirmation",
+                "min_confidence_to_trade",
+                "auto_suppress_losing_symbols",
                 "auto_regime_enabled",
                 "confidence_leverage_enabled",
                 "use_closed_candle_confirmation",

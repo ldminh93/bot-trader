@@ -107,6 +107,14 @@ class TradingBotConfig(models.Model):
         default=0,
         help_text="Minimum number of timeframes (0-3) aligned with signal direction. 0 = disabled.",
     )
+    min_confidence_to_trade = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Block entries below this confidence score. 0 = disabled.",
+    )
+    auto_suppress_losing_symbols = models.BooleanField(
+        default=False,
+        help_text="Block entries on this symbol when its last 20+ closed trades have <40% win rate.",
+    )
     partial_entry_enabled = models.BooleanField(
         default=False,
         help_text="Enter at partial_entry_size_pct% first; scale in the rest when price confirms above/below MA7.",

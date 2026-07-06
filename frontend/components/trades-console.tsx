@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import { DailyPnlChart, PriceChart, ProfitChart } from "@/components/dashboard/market-charts";
 import { TradeTable } from "@/components/dashboard/trade-table";
@@ -10,17 +11,79 @@ import { api, getToken } from "@/lib/api";
 import type { Trade, TradeStats } from "@/lib/types";
 import { formatNumber, pnlColor } from "@/lib/utils";
 
+const FILTER_KEYS = ["symbol", "side", "close_reason", "grade", "tag", "hour"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
+const FILTER_LABELS: Record<FilterKey, string> = {
+  symbol: "Symbol",
+  side: "Side",
+  close_reason: "Close reason",
+  grade: "Grade",
+  tag: "Setup tag",
+  hour: "Entry hour (UTC)",
+};
+
+function readFilters(): Record<FilterKey, string> {
+  const params = new URLSearchParams(window.location.search);
+  const result = {} as Record<FilterKey, string>;
+  for (const key of FILTER_KEYS) {
+    result[key] = params.get(key) ?? "";
+  }
+  return result;
+}
+
+function matchesFilters(trade: Trade, filters: Record<FilterKey, string>): boolean {
+  if (filters.symbol && trade.symbol !== filters.symbol) return false;
+  if (filters.side && trade.side !== filters.side) return false;
+  if (filters.close_reason) {
+    if (filters.close_reason === "No close reason") {
+      if (trade.close_reason) return false;
+    } else if (!trade.close_reason.startsWith(filters.close_reason)) {
+      return false;
+    }
+  }
+  if (filters.grade && !(trade.setup_tags || []).includes(`grade:${filters.grade}`)) return false;
+  if (filters.tag && !(trade.setup_tags || []).includes(filters.tag)) return false;
+  if (filters.hour) {
+    const hour = trade.opened_at ? new Date(trade.opened_at).getUTCHours() : -1;
+    if (String(hour).padStart(2, "0") !== filters.hour) return false;
+  }
+  return true;
+}
+
+function computeDailyPnl(trades: Trade[]): { day: string; pnl: number }[] {
+  const byDay = new Map<string, number>();
+  for (const trade of trades) {
+    if (trade.status !== "CLOSED" || !trade.closed_at) continue;
+    const day = trade.closed_at.slice(0, 10);
+    byDay.set(day, (byDay.get(day) ?? 0) + Number(trade.realized_pnl));
+  }
+  return Array.from(byDay.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, pnl]) => ({ day, pnl }));
+}
+
 export function TradesConsole() {
+  const router = useRouter();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [stats, setStats] = useState<TradeStats | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [filters, setFilters] = useState<Record<FilterKey, string>>({
+    symbol: "",
+    side: "",
+    close_reason: "",
+    grade: "",
+    tag: "",
+    hour: "",
+  });
 
   useEffect(() => {
     if (!getToken()) {
       window.location.href = "/login";
       return;
     }
+    setFilters(readFilters());
     Promise.all([api.trades(), api.stats()]).then(([nextTrades, nextStats]) => {
       setTrades(nextTrades);
       setStats(nextStats);
@@ -28,7 +91,38 @@ export function TradesConsole() {
     });
   }, []);
 
-  const selectedTrade = trades.find((trade) => trade.id === selectedTradeId) ?? trades[0] ?? null;
+  const activeFilters = FILTER_KEYS.filter((key) => filters[key]);
+
+  const filteredTrades = useMemo(
+    () => (activeFilters.length ? trades.filter((trade) => matchesFilters(trade, filters)) : trades),
+    [trades, filters, activeFilters.length]
+  );
+
+  const filteredStats = useMemo(() => {
+    if (!stats) return stats;
+    if (!activeFilters.length) return stats;
+    const closed = filteredTrades.filter((trade) => trade.status === "CLOSED");
+    const wins = closed.filter((trade) => Number(trade.realized_pnl) > 0).length;
+    const totalPnl = closed.reduce((sum, trade) => sum + Number(trade.realized_pnl), 0);
+    const avgPct = closed.length
+      ? closed.reduce((sum, trade) => sum + Number(trade.pnl_percent), 0) / closed.length
+      : 0;
+    return {
+      ...stats,
+      total_profit: totalPnl,
+      trades: closed.length,
+      win_rate: closed.length ? (wins / closed.length) * 100 : 0,
+      average_pnl_percent: avgPct,
+      daily: computeDailyPnl(filteredTrades),
+    };
+  }, [stats, filteredTrades, activeFilters.length]);
+
+  function clearFilters() {
+    router.push("/trades");
+    setFilters({ symbol: "", side: "", close_reason: "", grade: "", tag: "", hour: "" });
+  }
+
+  const selectedTrade = filteredTrades.find((trade) => trade.id === selectedTradeId) ?? filteredTrades[0] ?? null;
 
   async function exportReplay() {
     if (!selectedTrade) return;
@@ -44,25 +138,42 @@ export function TradesConsole() {
             {message}
           </div>
         )}
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[var(--accent)]/40 bg-[var(--accent)]/10 p-3 text-xs">
+            <span className="font-semibold text-[var(--text)]">Filtered by:</span>
+            {activeFilters.map((key) => (
+              <span key={key} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2 py-1 font-mono">
+                {FILTER_LABELS[key]}: {filters[key]}
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="ml-auto font-semibold text-[var(--accent)] hover:underline"
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
         <section className="grid overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] grid-cols-2 lg:grid-cols-4">
-          <Stat label="Total PnL" value={`${formatNumber(stats?.total_profit ?? 0)} USDT`} tone={pnlColor(stats?.total_profit ?? 0)} />
-          <Stat label="Win rate" value={`${formatNumber(stats?.win_rate ?? 0)}%`} />
-          <Stat label="Closed trades" value={String(stats?.trades ?? 0)} />
-          <Stat label="Average return" value={`${formatNumber(stats?.average_pnl_percent ?? 0)}%`} tone={pnlColor(stats?.average_pnl_percent ?? 0)} />
+          <Stat label="Total PnL" value={`${formatNumber(filteredStats?.total_profit ?? 0)} USDT`} tone={pnlColor(filteredStats?.total_profit ?? 0)} />
+          <Stat label="Win rate" value={`${formatNumber(filteredStats?.win_rate ?? 0)}%`} />
+          <Stat label="Closed trades" value={String(filteredStats?.trades ?? 0)} />
+          <Stat label="Average return" value={`${formatNumber(filteredStats?.average_pnl_percent ?? 0)}%`} tone={pnlColor(filteredStats?.average_pnl_percent ?? 0)} />
         </section>
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           <Panel className="min-w-0">
             <PanelHeader title="Profit curve" />
-            <div className="h-64 p-2">{stats?.daily.length ? <ProfitChart stats={stats} /> : <Empty />}</div>
+            <div className="h-64 p-2">{filteredStats?.daily.length ? <ProfitChart stats={filteredStats} /> : <Empty />}</div>
           </Panel>
           <Panel className="min-w-0">
             <PanelHeader title="Daily PnL" />
-            <div className="h-64 p-2">{stats?.daily.length ? <DailyPnlChart stats={stats} /> : <Empty />}</div>
+            <div className="h-64 p-2">{filteredStats?.daily.length ? <DailyPnlChart stats={filteredStats} /> : <Empty />}</div>
           </Panel>
         </div>
         <Panel className="min-w-0">
           <PanelHeader title="All trades" />
-          <TradeTable trades={trades} onSelect={(trade) => setSelectedTradeId(trade.id)} selectedTradeId={selectedTrade?.id ?? null} />
+          <TradeTable trades={filteredTrades} onSelect={(trade) => setSelectedTradeId(trade.id)} selectedTradeId={selectedTrade?.id ?? null} />
         </Panel>
         <Panel className="min-w-0">
           <PanelHeader
