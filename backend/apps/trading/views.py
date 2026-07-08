@@ -9,8 +9,17 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig, UserBinanceCredential, UserDiscordAlertConfig
+from .models import (
+    AutoScannerSettings,
+    BotLog,
+    MarketSnapshot,
+    Trade,
+    TradingBotConfig,
+    UserBinanceCredential,
+    UserDiscordAlertConfig,
+)
 from .serializers import (
+    AutoScannerSettingsSerializer,
     BotLogSerializer,
     CredentialSerializer,
     DiscordAlertConfigSerializer,
@@ -346,6 +355,19 @@ class MarketTopMoversView(APIView):
         quote_asset = request.query_params.get("quote", "USDT").upper()
         result = BinanceService().fetch_top_movers(limit=limit, quote_asset=quote_asset)
         return Response(result)
+
+
+class AutoScannerSettingsView(APIView):
+    def get(self, request):
+        settings_obj, _ = AutoScannerSettings.objects.get_or_create(user=request.user)
+        return Response(AutoScannerSettingsSerializer(settings_obj).data)
+
+    def put(self, request):
+        settings_obj, _ = AutoScannerSettings.objects.get_or_create(user=request.user)
+        serializer = AutoScannerSettingsSerializer(settings_obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        saved = serializer.save()
+        return Response(AutoScannerSettingsSerializer(saved).data)
 
 
 class TradesView(APIView):

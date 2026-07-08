@@ -2,7 +2,7 @@ import re
 
 from rest_framework import serializers
 
-from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig, UserDiscordAlertConfig
+from .models import AutoScannerSettings, BotLog, MarketSnapshot, Trade, TradingBotConfig, UserDiscordAlertConfig
 
 
 class TradingBotConfigSerializer(serializers.ModelSerializer):
@@ -101,6 +101,20 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         if value < 0.2 or value > 5:
             raise serializers.ValidationError("Max entry distance must be between 0.2 ATR and 5 ATR")
         return value
+
+
+class AutoScannerSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AutoScannerSettings
+        fields = ("enabled", "top_n", "quote_asset")
+
+    def validate_top_n(self, value: int) -> int:
+        if value < 1 or value > 30:
+            raise serializers.ValidationError("Top N must be between 1 and 30")
+        return value
+
+    def validate_quote_asset(self, value: str) -> str:
+        return value.strip().upper()
 
 
 class MarketSnapshotSerializer(serializers.ModelSerializer):

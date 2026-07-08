@@ -110,7 +110,11 @@ CELERY_BEAT_SCHEDULE = {
     "run-active-bots": {
         "task": "apps.trading.tasks.run_active_bots",
         "schedule": 5.0,
-    }
+    },
+    "auto-register-top-movers": {
+        "task": "apps.trading.tasks.auto_register_top_movers",
+        "schedule": 900.0,
+    },
 }
 
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"

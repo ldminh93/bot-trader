@@ -229,6 +229,12 @@ export interface TopMoversResult {
   losers: TopMover[];
 }
 
+export interface AutoScannerSettings {
+  enabled: boolean;
+  top_n: number;
+  quote_asset: string;
+}
+
 export interface OpportunityItem {
   symbol: string;
   timeframe: string;

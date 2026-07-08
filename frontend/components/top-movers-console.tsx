@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api } from "@/lib/api";
-import type { TopMover, TopMoversResult } from "@/lib/types";
+import type { AutoScannerSettings, TopMover, TopMoversResult } from "@/lib/types";
 import { formatCompact, formatNumber } from "@/lib/utils";
 
 type Tab = "gainers" | "losers";
@@ -76,6 +76,8 @@ export function TopMoversConsole() {
   const [showGainers, setShowGainers] = useState(true);
   const [showLosers, setShowLosers] = useState(true);
   const [tab, setTab] = useState<Tab>("gainers");
+  const [autoSettings, setAutoSettings] = useState<AutoScannerSettings | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
 
   useEffect(() => {
     const cfg = readMoversConfig();
@@ -104,6 +106,25 @@ export function TopMoversConsole() {
     setLoading(true);
     load();
   }, [load]);
+
+  useEffect(() => {
+    api.autoScannerSettings().then(setAutoSettings).catch(() => {});
+  }, []);
+
+  const saveAutoSettings = useCallback(async (next: Partial<AutoScannerSettings>) => {
+    if (!autoSettings) return;
+    const merged = { ...autoSettings, ...next };
+    setAutoSettings(merged);
+    setAutoSaving(true);
+    try {
+      const saved = await api.saveAutoScannerSettings(next);
+      setAutoSettings(saved);
+    } catch {
+      setAutoSettings(autoSettings);
+    } finally {
+      setAutoSaving(false);
+    }
+  }, [autoSettings]);
 
   const rows = data ? data[tab] : [];
 
@@ -135,6 +156,35 @@ export function TopMoversConsole() {
             </button>
           </div>
         </div>
+
+        {autoSettings && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={autoSettings.enabled}
+                disabled={autoSaving}
+                onChange={(e) => saveAutoSettings({ enabled: e.target.checked })}
+                className="size-4 accent-[var(--accent)]"
+              />
+              Auto-register top movers to scanner
+            </label>
+            <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
+              Top
+              <select
+                className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] px-2 py-1 text-xs font-medium text-[var(--text)] focus:outline-none"
+                value={autoSettings.top_n}
+                disabled={autoSaving}
+                onChange={(e) => saveAutoSettings({ top_n: Number(e.target.value) })}
+              >
+                {[3, 5, 10, 15, 20].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              gainers &amp; losers, added inactive for review every 15 min.
+            </div>
+          </div>
+        )}
 
         {!showGainers && !showLosers ? (
           <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-4 py-8 text-center text-sm text-[var(--muted)]">

@@ -28,6 +28,18 @@ class UserDiscordAlertConfig(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class AutoScannerSettings(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="auto_scanner_settings")
+    enabled = models.BooleanField(default=False)
+    top_n = models.PositiveSmallIntegerField(
+        default=5,
+        help_text="Number of top gainers and top losers to auto-register per run.",
+    )
+    quote_asset = models.CharField(max_length=12, default="USDT")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class TradingBotConfig(models.Model):
     class MarginType(models.TextChoices):
         ISOLATED = "isolated", "Isolated"

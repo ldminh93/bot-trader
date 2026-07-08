@@ -8,8 +8,9 @@ from django.db.models import Sum
 from django.utils import timezone
 from redis import Redis
 
-from .models import BotLog, MarketSnapshot, Trade, TradingBotConfig
+from .models import AutoScannerSettings, BotLog, MarketSnapshot, Trade, TradingBotConfig
 from .serializers import BotLogSerializer, MarketSnapshotSerializer, TradeSerializer
+from .services.binance_service import BinanceService
 from .services.paper_trading_service import PaperTradingService
 from .services.live_trading_service import ExistingExchangePosition, LiveTradingService
 from .services.early_exit_service import (
@@ -620,6 +621,37 @@ def process_config(config: TradingBotConfig) -> None:
         f"confidence {snapshot.payload.get('confidence_score', 0)}{partial_note}.",
     )
     broadcast_user_update(config.user_id, "position", TradeSerializer(trade).data)
+
+
+@shared_task
+def auto_register_top_movers() -> None:
+    for settings_obj in AutoScannerSettings.objects.filter(enabled=True).select_related("user"):
+        try:
+            movers = BinanceService().fetch_top_movers(
+                limit=settings_obj.top_n, quote_asset=settings_obj.quote_asset
+            )
+        except Exception:
+            logger.exception("Failed to fetch top movers for user %s", settings_obj.user_id)
+            continue
+        for side, items in (("gainer", movers["gainers"]), ("loser", movers["losers"])):
+            for item in items:
+                symbol = item["symbol"]
+                config, created = TradingBotConfig.objects.get_or_create(
+                    user=settings_obj.user, symbol=symbol
+                )
+                if created:
+                    message = (
+                        f"Coin auto-registered to scanner from top {side} "
+                        f"({item['price_change_percent']:.2f}%)."
+                    )
+                    log = BotLog.objects.create(
+                        user=settings_obj.user,
+                        symbol=symbol,
+                        level=BotLog.Level.INFO,
+                        message=message,
+                    )
+                    broadcast_user_update(settings_obj.user_id, "log", BotLogSerializer(log).data)
+                    send_discord_alert(settings_obj.user, symbol, BotLog.Level.INFO, message)
 
 
 @shared_task

@@ -1,4 +1,5 @@
 import type {
+  AutoScannerSettings,
   BacktestResult,
   BotConfig,
   BotLog,
@@ -136,6 +137,9 @@ export const api = {
   opportunities: () => request<OpportunityItem[]>("/market/opportunities"),
   topMovers: (limit = 20, quote = "USDT") =>
     request<TopMoversResult>(`/market/top-movers?limit=${limit}&quote=${quote}`),
+  autoScannerSettings: () => request<AutoScannerSettings>("/scanner/auto-settings"),
+  saveAutoScannerSettings: (body: Partial<AutoScannerSettings>) =>
+    request<AutoScannerSettings>("/scanner/auto-settings", { method: "PUT", body: JSON.stringify(body) }),
   trades: (symbol?: string) => request<Trade[]>(`/trades${symbol ? `?symbol=${symbol}` : ""}`),
   exportReplay: (tradeId: number) =>
     request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),
