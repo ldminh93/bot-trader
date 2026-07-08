@@ -39,6 +39,8 @@ export function SettingsConsole() {
       }
     }
   }, []);
+
+  useEffect(() => {
     if (!getToken()) {
       window.location.href = "/login";
       return;
