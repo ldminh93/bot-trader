@@ -340,6 +340,14 @@ class OpportunityScoreboardView(APIView):
         return Response(build_opportunity_scoreboard(request.user))
 
 
+class MarketTopMoversView(APIView):
+    def get(self, request):
+        limit = min(int(request.query_params.get("limit", 20)), 50)
+        quote_asset = request.query_params.get("quote", "USDT").upper()
+        result = BinanceService().fetch_top_movers(limit=limit, quote_asset=quote_asset)
+        return Response(result)
+
+
 class TradesView(APIView):
     def get(self, request):
         trades = Trade.objects.filter(user=request.user)

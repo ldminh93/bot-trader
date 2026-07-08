@@ -206,6 +206,36 @@ class BinanceService:
             raise ValueError("Order is below Binance minimum notional")
         return normalized_price, normalized_quantity
 
+    def fetch_top_movers(self, limit: int = 20, quote_asset: str = "USDT") -> dict:
+        """Return top gainers and losers from Binance Futures 24hr ticker data."""
+        try:
+            tickers = self._get("/fapi/v1/ticker/24hr")
+        except (httpx.HTTPError, ValueError, KeyError):
+            return {"gainers": [], "losers": []}
+
+        filtered = [
+            {
+                "symbol": t["symbol"],
+                "price": float(t["lastPrice"]),
+                "price_change_percent": float(t["priceChangePercent"]),
+                "price_change": float(t["priceChange"]),
+                "high": float(t["highPrice"]),
+                "low": float(t["lowPrice"]),
+                "volume": float(t["volume"]),
+                "quote_volume": float(t["quoteVolume"]),
+            }
+            for t in tickers
+            if isinstance(t, dict)
+            and t.get("symbol", "").endswith(quote_asset)
+            and t.get("lastPrice")
+        ]
+
+        sorted_by_change = sorted(filtered, key=lambda x: x["price_change_percent"], reverse=True)
+        gainers = sorted_by_change[:limit]
+        losers = sorted_by_change[-limit:][::-1]
+
+        return {"gainers": gainers, "losers": losers}
+
     def test_connection(self) -> dict:
         if not self.api_key:
             return {"connected": False, "message": "No API key configured"}

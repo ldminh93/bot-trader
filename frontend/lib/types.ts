@@ -213,6 +213,22 @@ export interface BlockReasonStat {
   last_seen: string;
 }
 
+export interface TopMover {
+  symbol: string;
+  price: number;
+  price_change_percent: number;
+  price_change: number;
+  high: number;
+  low: number;
+  volume: number;
+  quote_volume: number;
+}
+
+export interface TopMoversResult {
+  gainers: TopMover[];
+  losers: TopMover[];
+}
+
 export interface OpportunityItem {
   symbol: string;
   timeframe: string;

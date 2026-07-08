@@ -7,6 +7,7 @@ import type {
   LiveSyncHealth,
   MarketSnapshot,
   OpportunityItem,
+  TopMoversResult,
   Trade,
   TradeStats,
 } from "./types";
@@ -133,6 +134,8 @@ export const api = {
     request<BacktestResult>("/bot/backtest", { method: "POST", body: JSON.stringify({ symbol, limit }) }),
   snapshot: (symbol: string) => request<MarketSnapshot>(`/market/snapshot?symbol=${symbol}`),
   opportunities: () => request<OpportunityItem[]>("/market/opportunities"),
+  topMovers: (limit = 20, quote = "USDT") =>
+    request<TopMoversResult>(`/market/top-movers?limit=${limit}&quote=${quote}`),
   trades: (symbol?: string) => request<Trade[]>(`/trades${symbol ? `?symbol=${symbol}` : ""}`),
   exportReplay: (tradeId: number) =>
     request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),

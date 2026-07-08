@@ -1,6 +1,6 @@
 "use client";
 
-import { FloppyDisk, Key, Plus, ShieldCheck, Trash, Warning } from "@phosphor-icons/react";
+import { FloppyDisk, Key, Plus, ShieldCheck, TrendDown, TrendUp, Trash, Warning } from "@phosphor-icons/react";
 import { FormEvent, useEffect, useState } from "react";
 
 import { PageFrame } from "@/components/page-frame";
@@ -24,8 +24,21 @@ export function SettingsConsole() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [confirmApplyAll, setConfirmApplyAll] = useState(false);
+  const [showGainers, setShowGainers] = useState(true);
+  const [showLosers, setShowLosers] = useState(true);
 
   useEffect(() => {
+    const stored = localStorage.getItem("top_movers_config");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as { showGainers?: boolean; showLosers?: boolean };
+        setShowGainers(parsed.showGainers !== false);
+        setShowLosers(parsed.showLosers !== false);
+      } catch {
+        // ignore malformed storage
+      }
+    }
+  }, []);
     if (!getToken()) {
       window.location.href = "/login";
       return;
@@ -220,6 +233,13 @@ export function SettingsConsole() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Discord alert test failed");
     }
+  }
+
+  function saveTopMoversConfig(next: { showGainers: boolean; showLosers: boolean }) {
+    localStorage.setItem("top_movers_config", JSON.stringify(next));
+    setShowGainers(next.showGainers);
+    setShowLosers(next.showLosers);
+    setMessage("Top Movers display settings saved.");
   }
 
   const riskPreview = config ? buildRiskPreview(config) : null;
@@ -711,6 +731,34 @@ export function SettingsConsole() {
             </div>
           </Panel>
           <Panel className="min-w-0">
+            <PanelHeader title="Top Movers display" />
+            <div className="grid gap-3 p-4">
+              <p className="text-xs leading-5 text-[var(--muted)]">
+                Control which lists appear on the Top Movers page. Disabling a list hides it from view but does not affect scanning.
+              </p>
+              <Toggle
+                label={
+                  <span className="flex items-center gap-2">
+                    <TrendUp size={14} className="text-[var(--positive)]" />
+                    Show Gainers list
+                  </span>
+                }
+                checked={showGainers}
+                onChange={(value) => saveTopMoversConfig({ showGainers: value, showLosers })}
+              />
+              <Toggle
+                label={
+                  <span className="flex items-center gap-2">
+                    <TrendDown size={14} className="text-[var(--negative)]" />
+                    Show Losers list
+                  </span>
+                }
+                checked={showLosers}
+                onChange={(value) => saveTopMoversConfig({ showGainers, showLosers: value })}
+              />
+            </div>
+          </Panel>
+          <Panel className="min-w-0">
             <PanelHeader title="Discord alerts" />
             <form onSubmit={saveDiscordAlerts} className="grid gap-4 p-4">
               <Field label="Webhook URL">
@@ -794,7 +842,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="grid gap-2 text-xs font-semibold text-[var(--muted)]">{label}{children}</label>;
 }
 
-function Toggle({ label, checked, disabled = false, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
+function Toggle({ label, checked, disabled = false, onChange }: { label: React.ReactNode; checked: boolean; disabled?: boolean; onChange: (value: boolean) => void }) {
   return (
     <label className={`flex h-11 items-center justify-between rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] px-3 text-sm font-semibold ${disabled ? "opacity-50" : ""}`}>
       {label}

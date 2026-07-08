@@ -8,6 +8,7 @@ import {
   Pulse,
   SignOut,
   SquaresFour,
+  TrendUp,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/dashboard", label: "Overview", icon: SquaresFour },
   { href: "/trades", label: "Trades", icon: ChartLineUp },
+  { href: "/top-movers", label: "Top Movers", icon: TrendUp },
   { href: "/calendar", label: "Calendar", icon: CalendarBlank },
   { href: "/logs", label: "Logs", icon: ListBullets },
   { href: "/settings", label: "Settings", icon: GearSix },
