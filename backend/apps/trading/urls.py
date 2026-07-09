@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AutoScannerSettingsView,
+    AutoScannerSyncView,
     BacktestView,
     BinanceBalanceView,
     BotClosePositionView,
@@ -26,6 +27,7 @@ from .views import (
 urlpatterns = [
     path("bot/config", BotConfigView.as_view()),
     path("scanner/auto-settings", AutoScannerSettingsView.as_view()),
+    path("scanner/sync", AutoScannerSyncView.as_view()),
     path("bot/start", BotStartView.as_view()),
     path("bot/stop", BotStopView.as_view()),
     path("bot/close-position", BotClosePositionView.as_view()),

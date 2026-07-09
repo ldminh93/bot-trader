@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -28,6 +29,7 @@ from .serializers import (
     TradingBotConfigSerializer,
 )
 from .services.analytics_service import build_trade_analytics
+from .services.auto_scanner_service import sync_top_movers_to_scanner
 from .services.backtest_service import run_backtest
 from .services.binance_service import BinanceService
 from .services.credential_service import decrypt_secret, encrypt_secret
@@ -370,12 +372,21 @@ class AutoScannerSettingsView(APIView):
         return Response(AutoScannerSettingsSerializer(saved).data)
 
 
+class AutoScannerSyncView(APIView):
+    def post(self, request):
+        result = sync_top_movers_to_scanner(request.user)
+        return Response(result)
+
+
 class TradesView(APIView):
     def get(self, request):
         trades = Trade.objects.filter(user=request.user)
         symbol = request.query_params.get("symbol")
         if symbol:
             trades = trades.filter(symbol=symbol.upper())
+        date = request.query_params.get("date")
+        if date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            trades = trades.filter(opened_at__date=date)
         return Response(TradeSerializer(trades[:200], many=True).data)
 
 

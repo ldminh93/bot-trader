@@ -76,6 +76,10 @@ class TradingBotConfig(models.Model):
     pullback_entry_enabled = models.BooleanField(default=True)
     max_entry_distance_atr = models.DecimalField(max_digits=6, decimal_places=2, default=1)
     is_running = models.BooleanField(default=False)
+    auto_registered = models.BooleanField(
+        default=False,
+        help_text="True if this config was created by the top-movers auto-scanner (eligible for sync removal).",
+    )
     live_mode_requested = models.BooleanField(default=False)
     paper_balance = models.DecimalField(max_digits=20, decimal_places=8, default=10000)
     position_margin_usdt = models.DecimalField(

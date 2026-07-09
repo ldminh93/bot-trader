@@ -23,6 +23,14 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   hour: "Entry hour (UTC)",
 };
 
+function todayLocalDate(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function readFilters(): Record<FilterKey, string> {
   const params = new URLSearchParams(window.location.search);
   const result = {} as Record<FilterKey, string>;
@@ -69,6 +77,8 @@ export function TradesConsole() {
   const [stats, setStats] = useState<TradeStats | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [date, setDate] = useState(todayLocalDate());
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Record<FilterKey, string>>({
     symbol: "",
     side: "",
@@ -84,14 +94,20 @@ export function TradesConsole() {
       return;
     }
     setFilters(readFilters());
-    Promise.all([api.trades(), api.stats()]).then(([nextTrades, nextStats]) => {
-      setTrades(nextTrades);
-      setStats(nextStats);
-      setSelectedTradeId(nextTrades[0]?.id ?? null);
-    });
+    api.stats().then(setStats);
   }, []);
 
+  useEffect(() => {
+    setLoading(true);
+    api.trades(undefined, date || undefined).then((nextTrades) => {
+      setTrades(nextTrades);
+      setSelectedTradeId(nextTrades[0]?.id ?? null);
+      setLoading(false);
+    });
+  }, [date]);
+
   const activeFilters = FILTER_KEYS.filter((key) => filters[key]);
+  const isDateScoped = date !== "";
 
   const filteredTrades = useMemo(
     () => (activeFilters.length ? trades.filter((trade) => matchesFilters(trade, filters)) : trades),
@@ -100,7 +116,7 @@ export function TradesConsole() {
 
   const filteredStats = useMemo(() => {
     if (!stats) return stats;
-    if (!activeFilters.length) return stats;
+    if (!activeFilters.length && !isDateScoped) return stats;
     const closed = filteredTrades.filter((trade) => trade.status === "CLOSED");
     const wins = closed.filter((trade) => Number(trade.realized_pnl) > 0).length;
     const totalPnl = closed.reduce((sum, trade) => sum + Number(trade.realized_pnl), 0);
@@ -115,7 +131,7 @@ export function TradesConsole() {
       average_pnl_percent: avgPct,
       daily: computeDailyPnl(filteredTrades),
     };
-  }, [stats, filteredTrades, activeFilters.length]);
+  }, [stats, filteredTrades, activeFilters.length, isDateScoped]);
 
   function clearFilters() {
     router.push("/trades");
@@ -138,6 +154,32 @@ export function TradesConsole() {
             {message}
           </div>
         )}
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+          <span className="font-semibold text-[var(--text)]">Date:</span>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] px-2 py-1 text-xs font-mono text-[var(--text)] focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => setDate(todayLocalDate())}
+            className="rounded-full border border-[var(--line)] px-2 py-1 font-semibold text-[var(--muted)] hover:text-[var(--text)]"
+          >
+            Today
+          </button>
+          {isDateScoped && (
+            <button
+              type="button"
+              onClick={() => setDate("")}
+              className="ml-auto font-semibold text-[var(--accent)] hover:underline"
+            >
+              Show all time
+            </button>
+          )}
+          {loading && <span className="text-[var(--muted)]">Loading…</span>}
+        </div>
         {activeFilters.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[var(--accent)]/40 bg-[var(--accent)]/10 p-3 text-xs">
             <span className="font-semibold text-[var(--text)]">Filtered by:</span>

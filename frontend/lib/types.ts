@@ -235,6 +235,12 @@ export interface AutoScannerSettings {
   quote_asset: string;
 }
 
+export interface AutoScannerSyncResult {
+  added: string[];
+  removed: string[];
+  skipped: string[];
+}
+
 export interface OpportunityItem {
   symbol: string;
   timeframe: string;

@@ -1,5 +1,6 @@
 import type {
   AutoScannerSettings,
+  AutoScannerSyncResult,
   BacktestResult,
   BotConfig,
   BotLog,
@@ -140,7 +141,14 @@ export const api = {
   autoScannerSettings: () => request<AutoScannerSettings>("/scanner/auto-settings"),
   saveAutoScannerSettings: (body: Partial<AutoScannerSettings>) =>
     request<AutoScannerSettings>("/scanner/auto-settings", { method: "PUT", body: JSON.stringify(body) }),
-  trades: (symbol?: string) => request<Trade[]>(`/trades${symbol ? `?symbol=${symbol}` : ""}`),
+  syncAutoScanner: () => request<AutoScannerSyncResult>("/scanner/sync", { method: "POST" }),
+  trades: (symbol?: string, date?: string) => {
+    const params = new URLSearchParams();
+    if (symbol) params.set("symbol", symbol);
+    if (date) params.set("date", date);
+    const query = params.toString();
+    return request<Trade[]>(`/trades${query ? `?${query}` : ""}`);
+  },
   exportReplay: (tradeId: number) =>
     request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),
   stats: () => request<TradeStats>("/trades/stats"),
