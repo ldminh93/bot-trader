@@ -53,5 +53,14 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 symbol,
                 f"Coin auto-registered and scanning started from top {side} ({price_change_percent:.2f}%).",
             )
+        elif config.auto_registered and not config.is_running:
+            config.is_running = True
+            config.save(update_fields=["is_running"])
+            added.append(symbol)
+            _log(
+                user,
+                symbol,
+                f"Scanning started for auto-registered coin (top {side}, {price_change_percent:.2f}%).",
+            )
 
     return {"added": added, "removed": removed, "skipped": skipped}
