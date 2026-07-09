@@ -198,7 +198,7 @@ export function TopMoversConsole() {
                     <option key={n} value={n}>{n}</option>
                   ))}
                 </select>
-                gainers &amp; losers, auto-synced every 15 min.
+                gainers &amp; losers, auto-synced every 15 min (scanning starts immediately).
                 <button
                   onClick={runSync}
                   disabled={syncing}
@@ -217,7 +217,7 @@ export function TopMoversConsole() {
                 Added {syncResult.added.length ? syncResult.added.join(", ") : "none"} · Removed{" "}
                 {syncResult.removed.length ? syncResult.removed.join(", ") : "none"}
                 {syncResult.skipped.length > 0 && (
-                  <> · Kept (open position/running): {syncResult.skipped.join(", ")}</>
+                  <> · Kept (open position): {syncResult.skipped.join(", ")}</>
                 )}
               </p>
             )}

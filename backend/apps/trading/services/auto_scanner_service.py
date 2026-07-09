@@ -34,7 +34,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
         has_open_position = Trade.objects.filter(
             user=user, symbol=config.symbol, status=Trade.Status.OPEN
         ).exists()
-        if has_open_position or config.is_running:
+        if has_open_position:
             skipped.append(config.symbol)
             continue
         symbol = config.symbol
@@ -44,14 +44,14 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
 
     for symbol, (side, price_change_percent) in desired.items():
         config, created = TradingBotConfig.objects.get_or_create(
-            user=user, symbol=symbol, defaults={"auto_registered": True}
+            user=user, symbol=symbol, defaults={"auto_registered": True, "is_running": True}
         )
         if created:
             added.append(symbol)
             _log(
                 user,
                 symbol,
-                f"Coin auto-registered to scanner from top {side} ({price_change_percent:.2f}%).",
+                f"Coin auto-registered and scanning started from top {side} ({price_change_percent:.2f}%).",
             )
 
     return {"added": added, "removed": removed, "skipped": skipped}
