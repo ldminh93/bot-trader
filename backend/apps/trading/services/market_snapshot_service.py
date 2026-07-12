@@ -140,6 +140,7 @@ def evaluate_market_conditions(
         int(config.entry_score_threshold),
         config.pullback_entry_enabled,
         float(config.max_entry_distance_atr),
+        oi_values,
     )
     trend_reasons = explain_trend_state(
         signal_indicators,

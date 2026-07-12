@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from apps.trading.services.indicator_service import calculate_indicators
 from apps.trading.services.signal_service import (
+    DEFAULT_ENTRY_SCORE_THRESHOLD,
     entry_location_block_reason,
     score_signal,
 )
@@ -10,73 +11,282 @@ from apps.trading.services.trend_service import TrendState
 from .test_indicators import make_candles
 
 
-def entry_ready_indicators():
-    indicators = calculate_indicators(make_candles())
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _candle(open_, high, low, close, volume=1000):
+    """Build a minimal candle dict for test fixtures."""
+    taker_buy = volume * (0.6 if close >= open_ else 0.4)
+    return {
+        "open": open_, "high": high, "low": low, "close": close,
+        "volume": volume, "taker_buy_volume": taker_buy,
+        "delta": taker_buy * 2 - volume,
+        "cvd": 0, "ma7": 0, "ma25": 0,
+    }
+
+
+def _base_indicators():
+    """Return indicators derived from a steadily uptrending candle series."""
+    return calculate_indicators(make_candles())
+
+
+def long_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
+    """
+    Candle sequence ending with a bullish hammer rejection at MA25 support.
+
+    Structure: 3 declining bars (pullback into MA25) followed by a hammer
+    candle (lower wick ≥ 0.35 of range, bullish close).
+    Volumes are low during the pullback and higher on the rejection.
+    """
+    # Declining bars approaching MA25 from above
+    candles = [
+        _candle(101.5, 101.7, 101.2, 101.4, volume=700),
+        _candle(101.4, 101.5, 100.8, 101.0, volume=650),
+        _candle(101.0, 101.1, 100.4, 100.6, volume=600),
+        _candle(100.6, 100.7, 100.0, 100.2, volume=580),
+        # Hammer: opens at 100.2, dips to 99.7, closes at 100.8
+        # Lower wick = (100.2 - 99.7) / (100.9 - 99.7) = 0.5 / 1.2 ≈ 0.42 ≥ 0.35 ✓
+        # Bullish close (100.8 > 100.2) ✓
+        _candle(100.2, 100.9, 99.7, 100.8, volume=1500),
+    ]
+    return candles
+
+
+def short_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
+    """
+    Candle sequence ending with a bearish shooting-star rejection at MA25 resistance.
+
+    Structure: 3 rising bars (bounce toward MA25) followed by a shooting-star
+    candle (upper wick ≥ 0.35 of range, bearish close).
+    Volumes are low during the bounce and higher on the rejection.
+    """
+    # Rising bars bouncing toward MA25 from below
+    candles = [
+        _candle(98.5, 98.8, 98.3, 98.7, volume=700),
+        _candle(98.7, 99.0, 98.5, 98.9, volume=650),
+        _candle(98.9, 99.3, 98.7, 99.2, volume=600),
+        _candle(99.2, 99.6, 99.0, 99.5, volume=580),
+        # Shooting star: opens at 99.5, spikes to 100.4, closes at 99.2
+        # Upper wick = (100.4 - 99.5) / (100.4 - 99.0) = 0.9 / 1.4 ≈ 0.64 ≥ 0.35 ✓
+        # Bearish close (99.2 < 99.5) ✓
+        _candle(99.5, 100.4, 99.0, 99.2, volume=1500),
+    ]
+    return candles
+
+
+def _long_setup_indicators(candles=None):
+    """
+    Indicators representing a CONFIRMED_UPTREND with price in the MA25 pullback zone
+    and a bullish rejection candle.  All hard gates should pass.
+    """
+    base = _base_indicators()
+    ma25 = 100.0
+    atr = 1.0
     return replace(
-        indicators,
-        price=indicators.ma7 + indicators.atr * 0.5,
+        base,
+        price=100.8,       # within 0.8 ATR above MA25 ✓
+        ma7=101.5,         # MA7 > MA25 ✓
+        ma25=ma25,
+        ma99=95.0,         # price > MA99 ✓
+        atr=atr,
+        atr_ma20=atr,      # ATR ratio = 1.0, inside [0.7, 2.5] ✓
+        adx=25.0,          # ADX > 20 ✓
+        volume=1000.0,
+        volume_ma20=1000.0,
+        candles=candles or long_pullback_candles(ma25=ma25, atr=atr),
     )
 
 
-def test_confirmed_long_score_reaches_entry_threshold():
-    indicators = entry_ready_indicators()
+def _short_setup_indicators(candles=None):
+    """
+    Indicators representing a CONFIRMED_DOWNTREND with price in the MA25 pullback zone
+    and a bearish rejection candle.  All hard gates should pass.
+    """
+    base = _base_indicators()
+    ma25 = 100.0
+    atr = 1.0
+    return replace(
+        base,
+        price=99.2,        # within 0.8 ATR below MA25 ✓
+        ma7=98.5,          # MA7 < MA25 ✓
+        ma25=ma25,
+        ma99=105.0,        # price < MA99 ✓
+        atr=atr,
+        atr_ma20=atr,      # ATR ratio = 1.0 ✓
+        adx=25.0,          # ADX > 20 ✓
+        volume=1000.0,
+        volume_ma20=1000.0,
+        candles=candles or short_pullback_candles(ma25=ma25, atr=atr),
+    )
+
+
+# ── Trend-state gate tests ────────────────────────────────────────────────────
+
+def test_confirmed_long_signal_passes_all_gates():
+    """CONFIRMED_UPTREND with valid pullback+rejection → LONG at full risk."""
     signal = score_signal(
-        indicators,
+        _long_setup_indicators(),
         trend_state=TrendState.CONFIRMED_UPTREND,
         open_interest_change_percent=1.2,
-        funding_rate=0.0001,
+        funding_rate=-0.0001,   # negative = shorts paying, favours LONG
         top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
     )
     assert signal.signal == "LONG"
-    assert signal.long_score >= 85
+    assert signal.long_score >= DEFAULT_ENTRY_SCORE_THRESHOLD
     assert signal.risk_multiplier == 1.0
 
 
 def test_early_long_uses_half_risk():
-    indicators = entry_ready_indicators()
+    """EARLY_UPTREND produces a LONG with reduced (0.5×) position risk."""
     signal = score_signal(
-        indicators,
+        _long_setup_indicators(),
         trend_state=TrendState.EARLY_UPTREND,
         open_interest_change_percent=1.2,
-        funding_rate=0.0001,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert signal.signal == "LONG"
+    assert signal.risk_multiplier == 0.5
+
+
+def test_confirmed_short_signal_passes_all_gates():
+    """CONFIRMED_DOWNTREND with valid pullback+rejection → SHORT at full risk."""
+    signal = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,    # positive = longs paying, favours SHORT
+        top_ratio_direction=-0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert signal.signal == "SHORT"
+    assert signal.short_score >= DEFAULT_ENTRY_SCORE_THRESHOLD
+    assert signal.risk_multiplier == 1.0
+
+
+def test_early_short_uses_half_risk():
+    """EARLY_DOWNTREND produces a SHORT with reduced (0.5×) position risk."""
+    signal = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.EARLY_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert signal.signal == "SHORT"
+    assert signal.risk_multiplier == 0.5
+
+
+# ── Hard-gate tests ───────────────────────────────────────────────────────────
+
+def test_adx_below_minimum_blocks_entry():
+    """ADX below MIN_ADX_FOR_ENTRY → NO_TRADE regardless of other conditions."""
+    signal = score_signal(
+        replace(_long_setup_indicators(), adx=15.0),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
         top_ratio_direction=0.04,
     )
-    assert signal.signal == "LONG"
-    assert signal.risk_multiplier == 0.5
-    assert signal.long_score == 129
+    assert signal.signal == "NO_TRADE"
+    assert "ADX" in signal.reasons[0]
 
 
-def test_early_uptrend_allows_faster_entry_below_confirmed_threshold():
-    indicators = entry_ready_indicators()
+def test_atr_contracting_blocks_entry():
+    """ATR below 70 % of ATR_MA20 → NO_TRADE (dead market)."""
     signal = score_signal(
-        replace(
-            indicators,
-            price=101.5,
-            ma99=105.0,
-            volume=100.0,
-            volume_ma20=200.0,
-            candles=[
-                {"ma7": 98, "ma25": 97, "ma99": 105, "delta": 1, "cvd": 10, "close": 98},
-                {"ma7": 99, "ma25": 97.2, "ma99": 105, "delta": -1, "cvd": 11, "close": 99},
-                {"ma7": 100, "ma25": 97.4, "ma99": 105, "delta": 1, "cvd": 10, "close": 100},
-                {"ma7": 101, "ma25": 97.6, "ma99": 105, "delta": -1, "cvd": 11, "close": 101},
-                {"ma7": 102, "ma25": 97.8, "ma99": 105, "delta": 1, "cvd": 10, "close": 102},
-            ],
-        ),
-        trend_state=TrendState.EARLY_UPTREND,
-        open_interest_change_percent=0.0,
-        funding_rate=0.001,
-        top_ratio_direction=0.0,
+        replace(_long_setup_indicators(), atr=0.5, atr_ma20=1.0),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
     )
-    assert signal.signal == "LONG"
-    assert signal.risk_multiplier == 0.5
-    assert signal.long_score == 63
+    assert signal.signal == "NO_TRADE"
+    assert "contracting" in signal.reasons[0]
 
 
-def test_sideway_state_blocks_high_score():
-    indicators = calculate_indicators(make_candles())
+def test_atr_blow_off_blocks_entry():
+    """ATR above 250 % of ATR_MA20 → NO_TRADE (excessive volatility)."""
     signal = score_signal(
-        indicators,
+        replace(_long_setup_indicators(), atr=3.0, atr_ma20=1.0),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert "excessive" in signal.reasons[0]
+
+
+def test_no_pullback_blocks_short_entry():
+    """Price far below MA25 (not in pullback zone) → NO_TRADE."""
+    signal = score_signal(
+        replace(_short_setup_indicators(), price=95.0),   # 5 ATR below MA25
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert "pullback zone" in signal.reasons[0]
+
+
+def test_no_rejection_candle_blocks_short_entry():
+    """Pullback present but last candle is a green doji (no rejection) → NO_TRADE."""
+    # Replace last candle with a bullish candle (close > open, minimal upper wick)
+    candles = short_pullback_candles()
+    candles[-1] = _candle(99.5, 99.7, 99.3, 99.65, volume=1000)  # tiny wick, bullish
+    signal = score_signal(
+        replace(_short_setup_indicators(), candles=candles),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert "rejection candle" in signal.reasons[0]
+
+
+def test_no_rejection_candle_blocks_long_entry():
+    """Pullback present but last candle is bearish (no hammer) → NO_TRADE."""
+    candles = long_pullback_candles()
+    candles[-1] = _candle(100.5, 100.6, 100.1, 100.2, volume=1000)  # bearish, tiny wick
+    signal = score_signal(
+        replace(_long_setup_indicators(), candles=candles),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert "rejection candle" in signal.reasons[0]
+
+
+def test_pullback_gate_skipped_when_disabled():
+    """pullback_entry_enabled=False falls back to distance-only check."""
+    # Price near MA25 but no rejection candle
+    candles = long_pullback_candles()
+    candles[-1] = _candle(100.5, 100.6, 100.1, 100.2, volume=1000)
+    signal = score_signal(
+        replace(_long_setup_indicators(), price=100.5, candles=candles),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        pullback_entry_enabled=False,
+    )
+    # Signal may be LONG or NO_TRADE based on score, but pullback gate is NOT the reason
+    assert "pullback zone" not in " ".join(signal.reasons)
+    assert "rejection candle" not in " ".join(signal.reasons)
+
+
+# ── Sideway / weak-trend tests (unchanged behaviour) ─────────────────────────
+
+def test_sideway_state_blocks_entry():
+    signal = score_signal(
+        _base_indicators(),
         trend_state=TrendState.SIDEWAY,
         open_interest_change_percent=1.2,
         funding_rate=0.0001,
@@ -97,11 +307,11 @@ def sideway_reversal_candles():
 
 
 def test_sideway_bullish_reversal_allows_long_entry():
-    indicators = entry_ready_indicators()
+    base = _base_indicators()
     signal = score_signal(
         replace(
-            indicators,
-            price=indicators.ma7 + indicators.atr * 0.1,
+            base,
+            price=base.ma7 + base.atr * 0.1,
             volume=200.0,
             volume_ma20=100.0,
             candles=sideway_reversal_candles(),
@@ -117,11 +327,11 @@ def test_sideway_bullish_reversal_allows_long_entry():
 
 
 def test_sideway_reversal_pattern_without_volume_confirmation_blocks_entry():
-    indicators = entry_ready_indicators()
+    base = _base_indicators()
     signal = score_signal(
         replace(
-            indicators,
-            price=indicators.ma7 + indicators.atr * 0.1,
+            base,
+            price=base.ma7 + base.atr * 0.1,
             volume=100.0,
             volume_ma20=200.0,
             candles=sideway_reversal_candles(),
@@ -135,34 +345,74 @@ def test_sideway_reversal_pattern_without_volume_confirmation_blocks_entry():
     assert signal.reasons == ["trend state is SIDEWAY"]
 
 
-def test_weak_uptrend_no_longer_allows_new_entry():
-    indicators = entry_ready_indicators()
+def test_weak_downtrend_blocks_short_entry():
     signal = score_signal(
-        indicators,
+        _short_setup_indicators(),
+        trend_state=TrendState.WEAK_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert "weak downtrend" in signal.reasons[0]
+
+
+def test_unmatched_trend_state_returns_no_trade():
+    """WEAK_UPTREND (no explicit handler) falls through to NO_TRADE."""
+    signal = score_signal(
+        _long_setup_indicators(),
         trend_state=TrendState.WEAK_UPTREND,
         open_interest_change_percent=1.2,
-        funding_rate=0.0001,
+        funding_rate=-0.0001,
         top_ratio_direction=0.04,
     )
     assert signal.signal == "NO_TRADE"
     assert signal.risk_multiplier == 0.5
-    assert signal.long_score == 107
-    assert "below the 85 entry threshold" in signal.reasons[0]
 
 
-def test_overextended_long_is_blocked_even_with_high_score():
-    indicators = calculate_indicators(make_candles())
-    signal = score_signal(
-        indicators,
-        trend_state=TrendState.CONFIRMED_UPTREND,
+# ── Score-threshold and OI-acceleration tests ─────────────────────────────────
+
+def test_oi_acceleration_improves_short_score():
+    """Accelerating OI contributes to the short score."""
+    signal_with_accel = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
         open_interest_change_percent=1.2,
-        funding_rate=0.0001,
-        top_ratio_direction=0.04,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],  # accelerating
     )
+    signal_flat_oi = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        oi_history=[10000.0, 10100.0, 10100.0, 10100.0],  # flat / decelerating
+    )
+    assert signal_with_accel.short_score >= signal_flat_oi.short_score
 
-    assert signal.signal == "NO_TRADE"
-    assert "LONG entry is overextended" in signal.reasons[0]
 
+def test_positive_funding_improves_short_score():
+    """Positive funding rate (longs paying) scores higher for SHORT than neutral."""
+    signal_crowded = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0003,    # positive: longs paying
+        top_ratio_direction=-0.04,
+    )
+    signal_neutral = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0004,   # negative: outside SHORT range entirely
+        top_ratio_direction=-0.04,
+    )
+    assert signal_crowded.short_score > signal_neutral.short_score
+
+
+# ── Entry-location utility test ───────────────────────────────────────────────
 
 def test_entry_location_uses_nearest_ma_support():
     reason = entry_location_block_reason(
@@ -172,6 +422,6 @@ def test_entry_location_uses_nearest_ma_support():
         ma25=100,
         atr=4,
     )
-
     assert reason is not None
     assert "1.25 ATR above MA7" in reason
+

@@ -70,6 +70,27 @@ def is_cvd_falling(cvd_series: Sequence[float], lookback: int = 3) -> bool:
     return len(values) >= 2 and values[-1] < values[0]
 
 
+def calculate_cvd_slope(cvd_series: Sequence[float], lookback: int = 5) -> float:
+    """
+    Return the normalised slope of CVD over the last ``lookback`` candles.
+
+    Normalisation: slope / mean(|cvd|) so that the magnitude is comparable
+    across assets with very different cumulative volume profiles.
+
+    A negative slope confirms that selling pressure is consistently dominating
+    across multiple candles — a stronger signal than a single-candle check.
+    Returns 0.0 when insufficient data is available.
+    """
+    values = [float(v) for v in cvd_series if v is not None][-lookback:]
+    if len(values) < 2:
+        return 0.0
+    raw_slope = (values[-1] - values[0]) / max(len(values) - 1, 1)
+    mean_abs = sum(abs(v) for v in values) / len(values)
+    if mean_abs < 1e-10:
+        return 0.0
+    return raw_slope / mean_abs
+
+
 def is_bullish_reversal_pattern(
     candles: Sequence[dict],
     red_count: int = 3,
