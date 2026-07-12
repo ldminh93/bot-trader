@@ -93,8 +93,8 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         return value
 
     def validate_entry_score_threshold(self, value: int) -> int:
-        if value < 60 or value > 150:
-            raise serializers.ValidationError("Entry score threshold must be between 60 and 150")
+        if value < 20 or value > 90:
+            raise serializers.ValidationError("Entry score threshold must be between 20 and 90")
         return value
 
     def validate_max_entry_distance_atr(self, value):

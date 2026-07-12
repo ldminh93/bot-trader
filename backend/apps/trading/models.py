@@ -54,7 +54,7 @@ class TradingBotConfig(models.Model):
     risk_per_trade_percent = models.DecimalField(max_digits=5, decimal_places=2, default=1)
     max_daily_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=3)
     max_margin_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=20)
-    entry_score_threshold = models.PositiveSmallIntegerField(default=85)
+    entry_score_threshold = models.PositiveSmallIntegerField(default=55)
     max_open_positions = models.PositiveSmallIntegerField(default=5)
     adx_min = models.DecimalField(max_digits=6, decimal_places=2, default=20)
     adx_period = models.PositiveSmallIntegerField(

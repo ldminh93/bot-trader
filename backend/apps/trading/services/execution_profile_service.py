@@ -97,13 +97,17 @@ def build_execution_profile(
 
     tp_factor = 1.0
     leverage_factor = 1.0
-    if confidence >= 115:
+    # Confidence bands rescaled to the new 0-90 signal score + small bonuses
+    # (aligned +8, volume +4, OI +5, trend +6 = max ~113 for a perfect setup).
+    # Old bands were 115/100/90 for a 0-137 scale; new equivalent at ~80% gives
+    # 92/80/72.  Values below 72 are weak / blocked setups.
+    if confidence >= 92:
         tp_factor += 0.3
         leverage_factor = 1.0
-    elif confidence >= 100:
+    elif confidence >= 80:
         tp_factor += 0.15
         leverage_factor = 0.85
-    elif confidence >= 90:
+    elif confidence >= 72:
         tp_factor += 0.05
         leverage_factor = 0.7
     else:

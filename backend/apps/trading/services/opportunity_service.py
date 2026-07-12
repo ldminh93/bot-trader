@@ -8,18 +8,18 @@ def grade_from_context(
     alignment: str,
     signal: str,
     regime: str,
-    entry_score_threshold: int = 85,
+    entry_score_threshold: int = 55,
 ) -> str:
     """
-    confidence_score already bakes in alignment (+8) and confirmed-trend (+6) bonuses
-    (see execution_profile_service.build_execution_profile), so grading must not re-add
-    an alignment bonus or it inflates nearly every qualifying entry to grade A regardless
-    of outcome. Only regime is applied here as an independent adjustment.
+    Grade a setup relative to how far its confidence_score sits above the
+    entry_score_threshold (the floor a trade must clear to fire).
 
-    Bands are relative to entry_score_threshold (the floor a trade must already clear to
-    fire) rather than fixed absolute numbers — fixed bands sat below what confidence
-    bonuses push nearly every qualifying trade past, which made grade A cover almost
-    every trade taken regardless of outcome.
+    Scoring scale changed in 0025_rescale_entry_score_threshold:
+      Old max ≈ 137, old default threshold = 85.
+      New max  =  90, new default threshold = 55.
+
+    Bands are margin above threshold so they scale automatically with any
+    custom threshold value a user sets.
     """
     if signal == "NO_TRADE":
         return "D"
@@ -31,11 +31,11 @@ def grade_from_context(
     elif regime == "EXPANSION":
         score += 5
     margin = score - int(entry_score_threshold)
-    if margin >= 40:
+    if margin >= 30:
         return "A"
-    if margin >= 25:
+    if margin >= 18:
         return "B"
-    if margin >= 10:
+    if margin >= 8:
         return "C"
     return "D"
 

@@ -285,24 +285,60 @@ def score_signal(
     # ─────────────────────────────────────────────────────────────────────────
     if enable_short and state in {TrendState.EARLY_DOWNTREND, TrendState.CONFIRMED_DOWNTREND}:
 
-        # Hard Gate G2: MA alignment
+        # ── Compute base quality score FIRST (pre-gate) ──────────────────────
+        # These conditions can be evaluated regardless of whether the pullback
+        # gate passes.  Carrying this score through NO_TRADE returns ensures the
+        # scoreboard always shows a meaningful relative ranking — "how close is
+        # this symbol to a qualifying SHORT?" — rather than a flat zero.
+        short_score = 0
+        short_reasons: list[str] = []
+
+        cvd_slope = calculate_cvd_slope(cvds, lookback=5)
+        if cvd_slope < 0:
+            short_score += 20
+            short_reasons.append("CVD slope is falling (sustained selling flow)")
+
+        if is_delta_negative(deltas, lookback=3):
+            short_score += 15
+            short_reasons.append("last 3 deltas are negative")
+        elif is_delta_negative(deltas, lookback=2):
+            short_score += 12
+            short_reasons.append("last 2 deltas are negative")
+
+        if oi_accel > 0:
+            short_score += 12
+            short_reasons.append(f"open interest is accelerating (+{oi_accel:.6f})")
+
+        if funding_rate > 0:
+            short_score += 8
+            short_reasons.append(f"funding rate is positive ({funding_rate:.4%}); longs paying")
+        elif SHORT_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= SHORT_FUNDING_ACCEPTABLE_RANGE[1]:
+            short_score += 4
+            short_reasons.append("funding rate is in acceptable range")
+
+        if top_ratio_direction < 0:
+            short_score += 7
+            short_reasons.append("top trader position ratio is falling")
+
+        if state == TrendState.CONFIRMED_DOWNTREND:
+            short_score += 8
+            short_reasons.append("confirmed downtrend")
+
+        # ── Hard Gate G2: MA alignment ────────────────────────────────────────
         if signal_data.ma7 >= signal_data.ma25:
             return SignalResult(
-                "NO_TRADE", 0, 0,
+                "NO_TRADE", 0, short_score,
                 ["SHORT requires MA7 < MA25"],
                 state.value, multiplier,
             )
 
-        # Hard Gate G3: macro direction
+        # ── Hard Gate G3: macro direction ─────────────────────────────────────
         if signal_data.price >= signal_data.ma99:
             return SignalResult(
-                "NO_TRADE", 0, 0,
+                "NO_TRADE", 0, short_score,
                 ["SHORT requires price below MA99"],
                 state.value, multiplier,
             )
-
-        short_score = 0
-        short_reasons: list[str] = []
 
         if pullback_entry_enabled:
             eq = detect_short_entry_quality(
@@ -315,7 +351,7 @@ def score_signal(
             # Hard Gate G6: pullback zone
             if not eq.has_pullback:
                 return SignalResult(
-                    "NO_TRADE", 0, 0,
+                    "NO_TRADE", 0, short_score,
                     [
                         f"SHORT entry blocked: price is not in the MA25 pullback zone "
                         f"(price {signal_data.price:.4f}, MA25 {signal_data.ma25:.4f})"
@@ -326,7 +362,7 @@ def score_signal(
             # Hard Gate G7: rejection candle
             if not eq.has_rejection_candle:
                 return SignalResult(
-                    "NO_TRADE", 0, 0,
+                    "NO_TRADE", 0, short_score,
                     [
                         f"SHORT entry blocked: no bearish rejection candle at MA25 "
                         f"(upper wick ratio {eq.rejection_wick_ratio:.2f})"
@@ -334,7 +370,7 @@ def score_signal(
                     state.value, multiplier,
                 )
 
-            # Score A: volume pattern
+            # Score: volume pattern (only meaningful after pullback confirmed)
             if eq.vol_pullback_ratio < 0.85:
                 short_score += 10
                 short_reasons.append(
@@ -356,46 +392,7 @@ def score_signal(
                 max_entry_distance_atr,
             )
             if location_reason:
-                return SignalResult("NO_TRADE", 0, 0, [location_reason], state.value, multiplier)
-
-        # Score B: CVD slope (5-candle sustained distribution)
-        cvd_slope = calculate_cvd_slope(cvds, lookback=5)
-        if cvd_slope < 0:
-            short_score += 20
-            short_reasons.append("CVD slope is falling (sustained selling flow)")
-
-        # Score C: delta pressure
-        if is_delta_negative(deltas, lookback=3):
-            short_score += 15
-            short_reasons.append("last 3 deltas are negative")
-        elif is_delta_negative(deltas, lookback=2):
-            short_score += 12
-            short_reasons.append("last 2 deltas are negative")
-
-        # Score D: OI acceleration
-        if oi_accel > 0:
-            short_score += 12
-            short_reasons.append(
-                f"open interest is accelerating (+{oi_accel:.6f})"
-            )
-
-        # Score E: funding rate (directional — crowded long favours short)
-        if funding_rate > 0:
-            short_score += 8
-            short_reasons.append(f"funding rate is positive ({funding_rate:.4%}); longs paying")
-        elif SHORT_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= SHORT_FUNDING_ACCEPTABLE_RANGE[1]:
-            short_score += 4
-            short_reasons.append("funding rate is in acceptable range")
-
-        # Score F: top trader positioning
-        if top_ratio_direction < 0:
-            short_score += 7
-            short_reasons.append("top trader position ratio is falling")
-
-        # Score G: trend quality bonus
-        if state == TrendState.CONFIRMED_DOWNTREND:
-            short_score += 8
-            short_reasons.append("confirmed downtrend")
+                return SignalResult("NO_TRADE", 0, short_score, [location_reason], state.value, multiplier)
 
         if short_score >= entry_score_threshold:
             return SignalResult(
@@ -412,74 +409,9 @@ def score_signal(
     # ─────────────────────────────────────────────────────────────────────────
     if enable_long and state in {TrendState.EARLY_UPTREND, TrendState.CONFIRMED_UPTREND}:
 
-        # Hard Gate G2: MA alignment
-        if signal_data.ma7 <= signal_data.ma25:
-            return SignalResult(
-                "NO_TRADE", 0, 0,
-                ["LONG requires MA7 > MA25"],
-                state.value, multiplier,
-            )
-
-        # Hard Gate G3: macro direction
-        if signal_data.price <= signal_data.ma99:
-            return SignalResult(
-                "NO_TRADE", 0, 0,
-                ["LONG requires price above MA99"],
-                state.value, multiplier,
-            )
-
+        # ── Compute base quality score FIRST (pre-gate) ──────────────────────
         long_score = 0
         long_reasons: list[str] = []
-
-        if pullback_entry_enabled:
-            eq = detect_long_entry_quality(
-                candles,
-                atr,
-                signal_data.ma25,
-                signal_data.volume_ma20,
-            )
-
-            if not eq.has_pullback:
-                return SignalResult(
-                    "NO_TRADE", 0, 0,
-                    [
-                        f"LONG entry blocked: price is not in the MA25 pullback zone "
-                        f"(price {signal_data.price:.4f}, MA25 {signal_data.ma25:.4f})"
-                    ],
-                    state.value, multiplier,
-                )
-
-            if not eq.has_rejection_candle:
-                return SignalResult(
-                    "NO_TRADE", 0, 0,
-                    [
-                        f"LONG entry blocked: no bullish rejection candle at MA25 "
-                        f"(lower wick ratio {eq.rejection_wick_ratio:.2f})"
-                    ],
-                    state.value, multiplier,
-                )
-
-            if eq.vol_pullback_ratio < 0.85:
-                long_score += 10
-                long_reasons.append(
-                    f"low pullback volume ({eq.vol_pullback_ratio:.2f}× vol_ma20)"
-                )
-            if eq.vol_rejection_ratio > 1.2:
-                long_score += 10
-                long_reasons.append(
-                    f"high rejection volume ({eq.vol_rejection_ratio:.2f}× vol_ma20)"
-                )
-        else:
-            location_reason = entry_location_block_reason(
-                "LONG",
-                signal_data.price,
-                signal_data.ma7,
-                signal_data.ma25,
-                atr,
-                max_entry_distance_atr,
-            )
-            if location_reason:
-                return SignalResult("NO_TRADE", 0, 0, [location_reason], state.value, multiplier)
 
         cvd_slope = calculate_cvd_slope(cvds, lookback=5)
         if cvd_slope > 0:
@@ -511,6 +443,73 @@ def score_signal(
         if state == TrendState.CONFIRMED_UPTREND:
             long_score += 8
             long_reasons.append("confirmed uptrend")
+
+        # ── Hard Gate G2: MA alignment ────────────────────────────────────────
+        if signal_data.ma7 <= signal_data.ma25:
+            return SignalResult(
+                "NO_TRADE", long_score, 0,
+                ["LONG requires MA7 > MA25"],
+                state.value, multiplier,
+            )
+
+        # ── Hard Gate G3: macro direction ─────────────────────────────────────
+        if signal_data.price <= signal_data.ma99:
+            return SignalResult(
+                "NO_TRADE", long_score, 0,
+                ["LONG requires price above MA99"],
+                state.value, multiplier,
+            )
+
+        if pullback_entry_enabled:
+            eq = detect_long_entry_quality(
+                candles,
+                atr,
+                signal_data.ma25,
+                signal_data.volume_ma20,
+            )
+
+            if not eq.has_pullback:
+                return SignalResult(
+                    "NO_TRADE", long_score, 0,
+                    [
+                        f"LONG entry blocked: price is not in the MA25 pullback zone "
+                        f"(price {signal_data.price:.4f}, MA25 {signal_data.ma25:.4f})"
+                    ],
+                    state.value, multiplier,
+                )
+
+            if not eq.has_rejection_candle:
+                return SignalResult(
+                    "NO_TRADE", long_score, 0,
+                    [
+                        f"LONG entry blocked: no bullish rejection candle at MA25 "
+                        f"(lower wick ratio {eq.rejection_wick_ratio:.2f})"
+                    ],
+                    state.value, multiplier,
+                )
+
+            # Score: volume pattern (only meaningful after pullback confirmed)
+            if eq.vol_pullback_ratio < 0.85:
+                long_score += 10
+                long_reasons.append(
+                    f"low pullback volume ({eq.vol_pullback_ratio:.2f}× vol_ma20)"
+                )
+            if eq.vol_rejection_ratio > 1.2:
+                long_score += 10
+                long_reasons.append(
+                    f"high rejection volume ({eq.vol_rejection_ratio:.2f}× vol_ma20)"
+                )
+        else:
+            location_reason = entry_location_block_reason(
+                "LONG",
+                signal_data.price,
+                signal_data.ma7,
+                signal_data.ma25,
+                atr,
+                max_entry_distance_atr,
+            )
+            if location_reason:
+                return SignalResult("NO_TRADE", long_score, 0, [location_reason], state.value, multiplier)
 
         if long_score >= entry_score_threshold:
             return SignalResult(
