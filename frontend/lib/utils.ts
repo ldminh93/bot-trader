@@ -13,6 +13,21 @@ export function formatNumber(value: number | string | null | undefined, digits =
   }).format(parsed);
 }
 
+/**
+ * Format a price/quantity-like value with enough decimal places to stay
+ * distinguishable for sub-$1 assets (e.g. a 0.0001-priced coin needs 8
+ * decimals, not 2-4, or entry/stop/TP all round to the same displayed value).
+ */
+export function formatPrice(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0);
+  const abs = Math.abs(parsed);
+  let digits = 2;
+  if (abs > 0 && abs < 1) {
+    digits = Math.min(8, Math.max(4, 4 - Math.floor(Math.log10(abs))));
+  }
+  return formatNumber(parsed, digits);
+}
+
 export function formatCompact(value: number | string | null | undefined) {
   return new Intl.NumberFormat("en-US", {
     notation: "compact",

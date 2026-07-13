@@ -19,7 +19,7 @@ import {
 } from "recharts";
 
 import type { Candle, Trade, TradeStats } from "@/lib/types";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, formatPrice } from "@/lib/utils";
 
 const tooltipStyle = {
   background: "#171b20",
@@ -306,7 +306,7 @@ export function PriceChart({
               tickLine={false}
               axisLine={false}
               domain={["dataMin", "dataMax"]}
-              tickFormatter={(value) => formatNumber(value, value < 1 ? 4 : 0)}
+              tickFormatter={(value) => formatPrice(value)}
               fontSize={10}
             />
             <Tooltip
@@ -319,11 +319,11 @@ export function PriceChart({
                 if (name === "Candle") {
                   const candle = item.payload as Candle;
                   return [
-                    `O ${formatNumber(candle.open, 4)}  H ${formatNumber(candle.high, 4)}  L ${formatNumber(candle.low, 4)}  C ${formatNumber(candle.close, 4)}`,
+                    `O ${formatPrice(candle.open)}  H ${formatPrice(candle.high)}  L ${formatPrice(candle.low)}  C ${formatPrice(candle.close)}`,
                     "OHLC",
                   ];
                 }
-                return [formatNumber(Number(value), 4), name];
+                return [formatPrice(Number(value)), name];
               }}
             />
             <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />

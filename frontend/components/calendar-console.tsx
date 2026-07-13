@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api } from "@/lib/api";
 import type { Trade } from "@/lib/types";
-import { formatNumber, pnlColor } from "@/lib/utils";
+import { formatNumber, formatPrice, pnlColor } from "@/lib/utils";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -330,9 +330,9 @@ export function CalendarConsole() {
                         </div>
 
                         <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] text-[var(--muted)]">
-                          <span>Entry <span className="font-mono text-[var(--text)]">{formatNumber(Number(trade.entry_price), 4)}</span></span>
+                          <span>Entry <span className="font-mono text-[var(--text)]">{formatPrice(trade.entry_price)}</span></span>
                           {trade.exit_price ? (
-                            <span>Exit <span className="font-mono text-[var(--text)]">{formatNumber(Number(trade.exit_price), 4)}</span></span>
+                            <span>Exit <span className="font-mono text-[var(--text)]">{formatPrice(trade.exit_price)}</span></span>
                           ) : null}
                           <span>x{trade.leverage} · ROI <span className={`font-mono ${pnlColor(trade.pnl_percent)}`}>{formatNumber(trade.pnl_percent)}%</span></span>
                           {trade.close_reason ? <span className="col-span-2">{trade.close_reason}</span> : null}

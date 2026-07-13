@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api } from "@/lib/api";
 import type { AutoScannerSettings, AutoScannerSyncResult, TopMover, TopMoversResult } from "@/lib/types";
-import { formatCompact, formatNumber } from "@/lib/utils";
+import { formatCompact, formatNumber, formatPrice } from "@/lib/utils";
 
 type Tab = "gainers" | "losers";
 
@@ -45,12 +45,12 @@ function MoverRow({ mover, rank }: { mover: TopMover; rank: number }) {
       <div className="text-right hidden sm:block">
         <p className="text-[10px] text-[var(--muted)]">24h H/L</p>
         <p className="text-[11px] font-mono">
-          {formatNumber(mover.high)} / {formatNumber(mover.low)}
+          {formatPrice(mover.high)} / {formatPrice(mover.low)}
         </p>
       </div>
       <div className="text-right">
         <p className="text-[10px] text-[var(--muted)]">Price</p>
-        <p className="text-[11px] font-mono">${formatNumber(mover.price)}</p>
+        <p className="text-[11px] font-mono">${formatPrice(mover.price)}</p>
       </div>
       <div className={`text-right min-w-[4.5rem] ${changeColor}`}>
         <div className="flex items-center justify-end gap-0.5">
@@ -60,7 +60,7 @@ function MoverRow({ mover, rank }: { mover: TopMover; rank: number }) {
           </span>
         </div>
         <p className="text-[10px] font-mono opacity-75">
-          {isGain ? "+" : ""}{formatNumber(mover.price_change)}
+          {isGain ? "+" : ""}{formatPrice(mover.price_change)}
         </p>
       </div>
     </div>

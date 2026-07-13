@@ -1,5 +1,5 @@
 import type { Trade } from "@/lib/types";
-import { formatNumber, pnlColor } from "@/lib/utils";
+import { formatNumber, formatPrice, pnlColor } from "@/lib/utils";
 
 function tradeGrade(trade: Trade): string {
   const fromPayload = trade.replay_payload?.trade_grade;
@@ -66,9 +66,9 @@ export function TradeTable({
               <td className={`px-3 py-3 font-bold ${trade.side === "LONG" ? "text-[var(--positive)]" : "text-[var(--negative)]"}`}>
                 {trade.side}
               </td>
-              <td className="px-3 py-3 font-mono">{formatNumber(trade.entry_price, 4)}</td>
+              <td className="px-3 py-3 font-mono">{formatPrice(trade.entry_price)}</td>
               <td className="px-3 py-3 font-mono">x{trade.leverage}</td>
-              <td className="px-3 py-3 font-mono">{trade.exit_price ? formatNumber(trade.exit_price, 4) : "-"}</td>
+              <td className="px-3 py-3 font-mono">{trade.exit_price ? formatPrice(trade.exit_price) : "-"}</td>
               <td className={`px-3 py-3 font-mono font-semibold ${pnlColor(Number(trade.realized_pnl) + Number(trade.unrealized_pnl))}`}>
                 {formatNumber(Number(trade.realized_pnl) + Number(trade.unrealized_pnl))}
               </td>

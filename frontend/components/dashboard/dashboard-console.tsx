@@ -20,7 +20,7 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { api } from "@/lib/api";
 import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, OpportunityItem, SymbolAnalyticsBucket, TrendState } from "@/lib/types";
-import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
+import { formatCompact, formatNumber, formatPrice, pnlColor } from "@/lib/utils";
 
 const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
 const LEVERAGE_OPTIONS = [1, 3, 5, 10, 20];
@@ -275,7 +275,7 @@ export function DashboardConsole() {
               <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
                 <p className="text-[9px] uppercase tracking-[0.1em] text-[var(--muted)]">Price</p>
                 <p className="mt-1 font-mono text-sm font-bold">
-                  {snapshot ? formatNumber(snapshot.price, Number(snapshot.price) < 1 ? 6 : 2) : "-"}
+                  {snapshot ? formatPrice(snapshot.price) : "-"}
                 </p>
               </div>
               <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
@@ -286,7 +286,7 @@ export function DashboardConsole() {
               </div>
             </div>
             <div className="hidden items-baseline gap-2 md:flex">
-              <span className="font-mono text-lg font-bold">{snapshot ? formatNumber(snapshot.price, Number(snapshot.price) < 1 ? 6 : 2) : "-"}</span>
+              <span className="font-mono text-lg font-bold">{snapshot ? formatPrice(snapshot.price) : "-"}</span>
               <span className={pnlColor(snapshot?.open_interest_change_percent ?? 0)}>
                 {snapshot ? `${formatNumber(snapshot.open_interest_change_percent)}% OI` : "Waiting for data"}
               </span>
@@ -330,11 +330,11 @@ export function DashboardConsole() {
               <Metric label={`${config?.timeframe_signal ?? "Signal"} state`} value={snapshot?.trend.replaceAll("_", " ") ?? "-"} />
               <Metric label={`${config?.timeframe_trend ?? "1h"} state`} value={snapshot?.payload.trend_1h.replaceAll("_", " ") ?? "-"} />
               <Metric label="Risk multiplier" value={`${formatNumber((snapshot?.payload.risk_multiplier ?? 0) * 100, 0)}%`} />
-              <Metric label="MA7" value={snapshot ? formatNumber(snapshot.ma7, 4) : "-"} />
-              <Metric label="MA25" value={snapshot ? formatNumber(snapshot.ma25, 4) : "-"} />
-              <Metric label="MA99" value={snapshot ? formatNumber(snapshot.ma99, 4) : "-"} />
+              <Metric label="MA7" value={snapshot ? formatPrice(snapshot.ma7) : "-"} />
+              <Metric label="MA25" value={snapshot ? formatPrice(snapshot.ma25) : "-"} />
+              <Metric label="MA99" value={snapshot ? formatPrice(snapshot.ma99) : "-"} />
               <Metric label={`ADX ${config?.adx_period ?? 14}`} value={snapshot ? formatNumber(snapshot.adx) : "-"} detail={`Min ${config?.adx_min ?? 20}`} />
-              <Metric label={`ATR ${config?.adx_period ?? 14}`} value={snapshot ? formatNumber(snapshot.atr, 4) : "-"} />
+              <Metric label={`ATR ${config?.adx_period ?? 14}`} value={snapshot ? formatPrice(snapshot.atr) : "-"} />
               <Metric
                 label="Funding"
                 value={snapshot ? `${formatNumber(Number(snapshot.funding_rate) * 100, 4)}%` : "-"}
@@ -479,7 +479,7 @@ export function DashboardConsole() {
                 {openPosition ? (
                   <div>
                     <div className="grid grid-cols-2">
-                      <Metric label="Entry" value={formatNumber(openPosition.entry_price, 4)} />
+                      <Metric label="Entry" value={formatPrice(openPosition.entry_price)} />
                       <Metric label="Quantity" value={formatNumber(openPosition.remaining_quantity, 5)} />
                       <Metric label="Leverage" value={`x${openPosition.leverage}`} detail={config?.margin_type.toUpperCase()} />
                       <Metric
@@ -493,8 +493,8 @@ export function DashboardConsole() {
                           Number(openPosition.entry_price) * Number(openPosition.remaining_quantity),
                         )} USDT`}
                       />
-                      <Metric label="Stop loss" value={formatNumber(openPosition.stop_loss, 4)} />
-                      <Metric label="TP1 / TP2" value={`${formatNumber(openPosition.take_profit_1, 3)} / ${formatNumber(openPosition.take_profit_2, 3)}`} />
+                      <Metric label="Stop loss" value={formatPrice(openPosition.stop_loss)} />
+                      <Metric label="TP1 / TP2" value={`${formatPrice(openPosition.take_profit_1)} / ${formatPrice(openPosition.take_profit_2)}`} />
                       <Metric label="Unrealized PnL" value={`${formatNumber(openPosition.unrealized_pnl)} USDT`} tone={pnlColor(openPosition.unrealized_pnl)} />
                       <Metric
                         label="Margin ROI"
