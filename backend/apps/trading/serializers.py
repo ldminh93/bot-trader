@@ -14,6 +14,8 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         exclude = ("user",)
         read_only_fields = (
             "is_running",
+            "auto_registered",
+            "top_mover_side",
             "created_at",
             "updated_at",
             "live_trading_available",

@@ -27,6 +27,8 @@ export interface BotConfig {
   pullback_entry_enabled: boolean;
   max_entry_distance_atr: string;
   is_running: boolean;
+  auto_registered: boolean;
+  top_mover_side: "gainer" | "loser" | null;
   live_mode_requested: boolean;
   live_trading_available: boolean;
   live_trading_message: string;
@@ -283,6 +285,19 @@ export interface KillSwitchResult {
   stopped: number;
   closed: string[];
   errors: { symbol: string; detail: string }[];
+}
+
+export interface PauseAllResult {
+  paused: string[];
+}
+
+export interface ScanAllResult {
+  started: string[];
+}
+
+export interface RemoveAllResult {
+  removed: string[];
+  skipped: string[];
 }
 
 export interface DiscordAlertConfig {

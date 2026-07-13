@@ -14,6 +14,13 @@ def _movers(*symbols: str) -> dict:
     }
 
 
+def _movers_with_losers(gainers: list[str], losers: list[str]) -> dict:
+    return {
+        "gainers": [{"symbol": s, "price_change_percent": 1.0} for s in gainers],
+        "losers": [{"symbol": s, "price_change_percent": -1.0} for s in losers],
+    }
+
+
 def _open_symbols(user) -> set[str]:
     return set(TradingBotConfig.objects.filter(user=user).values_list("symbol", flat=True))
 
@@ -77,3 +84,26 @@ def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
     assert result["added"] == ["BTCUSDT"]
     assert result["removed"] == []
     assert _open_symbols(user) == {"ADAUSDT", "BTCUSDT"}
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service._log")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_tags_and_updates_top_mover_side(mock_binance_cls, mock_log):
+    user = get_user_model().objects.create_user("scanner-side@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers_with_losers(["BTCUSDT"], ["ETHUSDT"])
+
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    btc = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
+    eth = TradingBotConfig.objects.get(user=user, symbol="ETHUSDT")
+    assert btc.top_mover_side == "gainer"
+    assert eth.top_mover_side == "loser"
+
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers_with_losers(["ETHUSDT"], ["BTCUSDT"])
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    btc.refresh_from_db()
+    eth.refresh_from_db()
+    assert btc.top_mover_side == "loser"
+    assert eth.top_mover_side == "gainer"

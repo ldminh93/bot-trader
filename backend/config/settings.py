@@ -90,10 +90,6 @@ REST_FRAMEWORK = {
     ),
 }
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://trade-api.publish-agent.com",
-]
-
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3333").split(",")

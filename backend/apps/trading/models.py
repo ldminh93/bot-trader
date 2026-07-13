@@ -80,6 +80,18 @@ class TradingBotConfig(models.Model):
         default=False,
         help_text="True if this config was created by the top-movers auto-scanner (eligible for sync removal).",
     )
+
+    class TopMoverSide(models.TextChoices):
+        GAINER = "gainer", "Long (top gainer)"
+        LOSER = "loser", "Short (top loser)"
+
+    top_mover_side = models.CharField(
+        max_length=8,
+        choices=TopMoverSide.choices,
+        null=True,
+        blank=True,
+        help_text="Which top-movers side (gainer/long or loser/short) this coin was registered from. Null for manually added coins.",
+    )
     live_mode_requested = models.BooleanField(default=False)
     paper_balance = models.DecimalField(max_digits=20, decimal_places=8, default=10000)
     position_margin_usdt = models.DecimalField(

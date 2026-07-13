@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from apps.trading.models import TradingBotConfig
+from apps.trading.models import Trade, TradingBotConfig
 
 
 @pytest.mark.django_db
@@ -131,6 +131,68 @@ def test_max_open_positions_is_shared_across_coin_configs():
     assert response.status_code == 200
     eth.refresh_from_db()
     assert eth.max_open_positions == 7
+
+
+@pytest.mark.django_db
+def test_pause_all_stops_every_running_coin():
+    user = get_user_model().objects.create_user("pause-all@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", is_running=True)
+    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", is_running=True)
+    TradingBotConfig.objects.create(user=user, symbol="SOLUSDT", is_running=False)
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/bot/config/pause-all")
+
+    assert response.status_code == 200
+    assert set(response.data["paused"]) == {"BTCUSDT", "ETHUSDT"}
+    assert not TradingBotConfig.objects.filter(user=user, is_running=True).exists()
+
+
+@pytest.mark.django_db
+def test_scan_all_starts_every_paused_coin():
+    user = get_user_model().objects.create_user("scan-all@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", is_running=False)
+    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", is_running=True)
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/bot/config/scan-all")
+
+    assert response.status_code == 200
+    assert response.data["started"] == ["BTCUSDT"]
+    assert not TradingBotConfig.objects.filter(user=user, is_running=False).exists()
+
+
+@pytest.mark.django_db
+def test_remove_all_deletes_configs_but_keeps_open_positions():
+    user = get_user_model().objects.create_user("remove-all@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
+    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT")
+    Trade.objects.create(
+        user=user,
+        symbol="ETHUSDT",
+        side=Trade.Side.LONG,
+        status=Trade.Status.OPEN,
+        entry_price=100,
+        quantity=1,
+        stop_loss=90,
+        take_profit_1=110,
+        take_profit_2=120,
+        take_profit_3=130,
+        open_reason="test",
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/bot/config/remove-all")
+
+    assert response.status_code == 200
+    assert response.data["removed"] == ["BTCUSDT"]
+    assert response.data["skipped"] == ["ETHUSDT"]
+    assert list(
+        TradingBotConfig.objects.filter(user=user).values_list("symbol", flat=True)
+    ) == ["ETHUSDT"]
 
 
 @pytest.mark.django_db

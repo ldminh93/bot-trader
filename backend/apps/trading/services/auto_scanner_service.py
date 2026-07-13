@@ -44,7 +44,9 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
 
     for symbol, (side, price_change_percent) in desired.items():
         config, created = TradingBotConfig.objects.get_or_create(
-            user=user, symbol=symbol, defaults={"auto_registered": True, "is_running": True}
+            user=user,
+            symbol=symbol,
+            defaults={"auto_registered": True, "is_running": True, "top_mover_side": side},
         )
         if created:
             added.append(symbol)
@@ -53,14 +55,25 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 symbol,
                 f"Coin auto-registered and scanning started from top {side} ({price_change_percent:.2f}%).",
             )
-        elif config.auto_registered and not config.is_running:
+            continue
+
+        if not config.auto_registered:
+            continue
+
+        update_fields = []
+        if config.top_mover_side != side:
+            config.top_mover_side = side
+            update_fields.append("top_mover_side")
+        if not config.is_running:
             config.is_running = True
-            config.save(update_fields=["is_running"])
+            update_fields.append("is_running")
             added.append(symbol)
             _log(
                 user,
                 symbol,
                 f"Scanning started for auto-registered coin (top {side}, {price_change_percent:.2f}%).",
             )
+        if update_fields:
+            config.save(update_fields=update_fields)
 
     return {"added": added, "removed": removed, "skipped": skipped}

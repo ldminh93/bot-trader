@@ -24,6 +24,7 @@ export function SettingsConsole() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [confirmApplyAll, setConfirmApplyAll] = useState(false);
+  const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
   const [showGainers, setShowGainers] = useState(true);
   const [showLosers, setShowLosers] = useState(true);
 
@@ -169,6 +170,58 @@ export function SettingsConsole() {
     }
   }
 
+  async function pauseAllCoins() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.pauseAllConfigs();
+      const refreshed = await api.configs();
+      setConfigs(refreshed);
+      setConfig((current) => refreshed.find((item) => item.id === current?.id) ?? refreshed[0] ?? null);
+      setMessage(`Paused ${result.paused.length} coin${result.paused.length === 1 ? "" : "s"}.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to pause all coins");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function scanAllCoins() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.scanAllConfigs();
+      const refreshed = await api.configs();
+      setConfigs(refreshed);
+      setConfig((current) => refreshed.find((item) => item.id === current?.id) ?? refreshed[0] ?? null);
+      setMessage(`Started scanning ${result.started.length} coin${result.started.length === 1 ? "" : "s"}.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to start scanning all coins");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeAllCoins() {
+    setBusy(true);
+    setError("");
+    setConfirmRemoveAll(false);
+    try {
+      const result = await api.removeAllConfigs();
+      const refreshed = await api.configs();
+      setConfigs(refreshed);
+      setConfig(refreshed[0] ?? null);
+      setMessage(
+        `Removed ${result.removed.length} coin${result.removed.length === 1 ? "" : "s"}.` +
+          (result.skipped.length ? ` Kept ${result.skipped.length} with open positions.` : ""),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to remove all coins");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveCredential(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -260,6 +313,34 @@ export function SettingsConsole() {
             title="Scanner coins"
             action={<span className="font-mono text-[10px] text-[var(--muted)]">{configs.filter((item) => item.is_running).length} active / {configs.length} total</span>}
           />
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] p-4">
+            <Button type="button" size="sm" variant="secondary" disabled={busy || !configs.length} onClick={() => void pauseAllCoins()}>
+              Pause all
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy || !configs.length} onClick={() => void scanAllCoins()}>
+              Scan all
+            </Button>
+            {!confirmRemoveAll ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                disabled={busy || !configs.length}
+                onClick={() => setConfirmRemoveAll(true)}
+              >
+                <Trash size={16} />Remove all
+              </Button>
+            ) : (
+              <>
+                <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => void removeAllCoins()}>
+                  Confirm: remove {configs.length} coin{configs.length === 1 ? "" : "s"}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmRemoveAll(false)}>
+                  Cancel
+                </Button>
+              </>
+            )}
+          </div>
           <div className="border-b border-[var(--line)] p-4">
             <form onSubmit={addCoin} className="flex flex-col gap-2 sm:flex-row">
               <input
@@ -288,7 +369,17 @@ export function SettingsConsole() {
                     onClick={() => { setConfig(item); setConfirmApplyAll(false); }}
                     className="min-w-0 flex-1 px-1 text-left"
                   >
-                    <span className="block truncate font-mono text-sm font-bold">{item.symbol}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="block truncate font-mono text-sm font-bold">{item.symbol}</span>
+                      {item.top_mover_side && (
+                        <span
+                          className={`shrink-0 rounded px-1 text-[9px] font-bold uppercase tracking-[0.05em] ${item.top_mover_side === "gainer" ? "bg-[var(--positive)]/15 text-[var(--positive)]" : "bg-[var(--negative)]/15 text-[var(--negative)]"}`}
+                          title={item.top_mover_side === "gainer" ? "Auto-registered from top gainers" : "Auto-registered from top losers"}
+                        >
+                          {item.top_mover_side === "gainer" ? "Long" : "Short"}
+                        </span>
+                      )}
+                    </span>
                     <span className={`text-[10px] font-bold uppercase tracking-[0.08em] ${item.is_running ? "text-[var(--positive)]" : "text-[var(--muted)]"}`}>
                       {item.is_running ? "Scanning" : "Paused"}
                     </span>

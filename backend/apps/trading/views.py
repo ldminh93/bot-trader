@@ -176,6 +176,49 @@ class BotConfigView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class BotConfigPauseAllView(APIView):
+    def post(self, request):
+        symbols = list(
+            TradingBotConfig.objects.filter(user=request.user, is_running=True).values_list("symbol", flat=True)
+        )
+        TradingBotConfig.objects.filter(user=request.user, is_running=True).update(is_running=False)
+        create_bot_log(request.user, "ALL", BotLog.Level.INFO, f"Paused all scanner coins ({len(symbols)}).")
+        return Response({"paused": symbols})
+
+
+class BotConfigScanAllView(APIView):
+    def post(self, request):
+        symbols = list(
+            TradingBotConfig.objects.filter(user=request.user, is_running=False).values_list("symbol", flat=True)
+        )
+        TradingBotConfig.objects.filter(user=request.user, is_running=False).update(is_running=True)
+        create_bot_log(request.user, "ALL", BotLog.Level.INFO, f"Started scanning all coins ({len(symbols)}).")
+        return Response({"started": symbols})
+
+
+class BotConfigRemoveAllView(APIView):
+    def post(self, request):
+        removed = []
+        skipped = []
+        for config in TradingBotConfig.objects.filter(user=request.user):
+            has_open_position = Trade.objects.filter(
+                user=request.user, symbol=config.symbol, status=Trade.Status.OPEN
+            ).exists()
+            if has_open_position:
+                skipped.append(config.symbol)
+                continue
+            symbol = config.symbol
+            config.delete()
+            removed.append(symbol)
+        create_bot_log(
+            request.user,
+            "ALL",
+            BotLog.Level.WARNING,
+            f"Removed all scanner coins ({len(removed)}). Kept {len(skipped)} with open positions.",
+        )
+        return Response({"removed": removed, "skipped": skipped})
+
+
 class BotStartView(APIView):
     def post(self, request):
         config = get_config(request.user, request.data.get("symbol"))
