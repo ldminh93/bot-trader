@@ -178,6 +178,62 @@ def test_early_long_uses_half_risk():
     assert signal.risk_multiplier == 0.5
 
 
+def _with_trend_history(candles, ma7=101.5, ma25=100.0, ma99=95.0):
+    """Stamp every candle with the given per-bar ma7/ma25/ma99, leaving OHLC untouched."""
+    return [{**c, "ma7": ma7, "ma25": ma25, "ma99": ma99} for c in candles]
+
+
+def test_sideway_state_recovers_long_pullback_when_trend_recently_confirmed():
+    """
+    SIDEWAY on the live bar (e.g. ADX/ATR cooled during the pullback), but the
+    recent candle history shows an intact uptrend (MA7>MA25>MA99, price>MA25)
+    that hasn't invalidated — so the pullback+rejection setup should still fire.
+    """
+    candles = _with_trend_history(long_pullback_candles(ma25=100.0, atr=1.0))
+    signal = score_signal(
+        _long_setup_indicators(candles=candles),
+        trend_state=TrendState.SIDEWAY,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert signal.signal == "LONG"
+    assert signal.risk_multiplier == 0.5
+    assert any("confirmed within the last" in reason for reason in signal.reasons)
+
+
+def test_sideway_state_recovers_short_pullback_when_trend_recently_confirmed():
+    """Mirror of the LONG recovery case for a SHORT pullback+rejection setup."""
+    candles = _with_trend_history(
+        short_pullback_candles(ma25=100.0, atr=1.0), ma7=98.5, ma25=100.0, ma99=105.0,
+    )
+    signal = score_signal(
+        _short_setup_indicators(candles=candles),
+        trend_state=TrendState.SIDEWAY,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert signal.signal == "SHORT"
+    assert signal.risk_multiplier == 0.5
+    assert any("confirmed within the last" in reason for reason in signal.reasons)
+
+
+def test_sideway_state_stays_blocked_when_trend_was_not_recently_confirmed():
+    """No recent confirmed trend in the candle history → SIDEWAY still blocks entry."""
+    signal = score_signal(
+        _long_setup_indicators(),
+        trend_state=TrendState.SIDEWAY,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert signal.signal == "NO_TRADE"
+
+
 def test_confirmed_short_signal_passes_all_gates():
     """CONFIRMED_DOWNTREND with valid pullback+rejection → SHORT at full risk."""
     signal = score_signal(
@@ -317,6 +373,11 @@ def test_pullback_gate_skipped_when_disabled():
 # ── Sideway / weak-trend tests (unchanged behaviour) ─────────────────────────
 
 def test_sideway_state_blocks_entry():
+    # _base_indicators() carries a genuinely uptrending candle history, so the
+    # pullback-recovery check (trend confirmed recently, not yet invalidated)
+    # legitimately fires here and lifts risk_multiplier off zero — but the
+    # entry is still blocked (price isn't in this fixture's MA25 zone), so
+    # the trade-blocking behaviour itself is unchanged.
     signal = score_signal(
         _base_indicators(),
         trend_state=TrendState.SIDEWAY,
@@ -325,7 +386,6 @@ def test_sideway_state_blocks_entry():
         top_ratio_direction=0.04,
     )
     assert signal.signal == "NO_TRADE"
-    assert signal.risk_multiplier == 0
 
 
 def sideway_reversal_candles():

@@ -135,6 +135,48 @@ def delta_changes_direction_frequently(
     return changes >= 2
 
 
+def trend_recently_confirmed(
+    candles: Sequence[dict],
+    direction: str,
+    lookback: int = 10,
+) -> bool:
+    """
+    Scan the last ``lookback`` candles (excluding the current bar, most
+    recent first) for one where MA7/MA25/MA99 were stacked in ``direction``
+    with price beyond MA25 — the same structural bar an EARLY/CONFIRMED
+    trend state requires. Stops as soon as a bar invalidates that structure
+    (MA7 crossing back through MA25, or price closing through MA99 against
+    ``direction``), since anything found before that point no longer holds.
+
+    This lets a pullback entry recognise "this was trending N candles ago
+    and hasn't structurally broken since" instead of requiring the
+    *current* bar to independently re-qualify as EARLY/CONFIRMED — which a
+    genuine pullback (ADX/ATR cooling, price dipping toward MA25) will
+    often fail even though the underlying trend is intact.
+    """
+    rows = [
+        row
+        for row in candles
+        if row.get("ma7") is not None and row.get("ma25") is not None and row.get("ma99") is not None
+    ]
+    if len(rows) < 2:
+        return False
+    window = list(reversed(rows[:-1][-lookback:]))
+    for row in window:
+        ma7, ma25, ma99, price = row["ma7"], row["ma25"], row["ma99"], row["close"]
+        if direction == "LONG":
+            if ma7 <= ma25 or price <= ma99:
+                return False
+            if ma25 > ma99 and price > ma25:
+                return True
+        else:
+            if ma7 >= ma25 or price >= ma99:
+                return False
+            if ma25 < ma99 and price < ma25:
+                return True
+    return False
+
+
 def detect_trend_state(
     result: IndicatorResult,
     adx_min: float,

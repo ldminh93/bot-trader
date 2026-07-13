@@ -15,6 +15,7 @@ from .trend_service import (
     is_cvd_falling,
     is_cvd_rising,
     risk_multiplier_for_state,
+    trend_recently_confirmed,
 )
 
 SIDEWAY_REVERSAL_RISK_MULTIPLIER = 0.5
@@ -44,6 +45,13 @@ ATR_REGIME_MAX_RATIO = 2.5
 # Only enter when the market is genuinely trending.  ADX < MIN_ADX means the
 # market is ranging and the trend-following logic has no edge.
 MIN_ADX_FOR_ENTRY = 20.0
+
+# ── Pullback recovery window ──────────────────────────────────────────────────
+# How many recent candles to scan for a trend that was EARLY/CONFIRMED and
+# hasn't structurally invalidated since (see trend_recently_confirmed). Lets a
+# pullback fire even when the *current* candle's ADX/ATR cooled enough to
+# reclassify the live trend state as SIDEWAY/WEAK.
+PULLBACK_RECENT_CONFIRMATION_LOOKBACK = 10
 
 # ── Funding-rate gate ──────────────────────────────────────────────────────────
 # For SHORT: positive funding means longs are paying shorts → crowded long,
@@ -234,8 +242,24 @@ def score_signal(
     cvds = [float(row["cvd"]) for row in candles]
     multiplier = risk_multiplier_for_state(state)
 
+    # ── Pullback recovery: trend confirmed recently, not yet invalidated ─────
+    long_recently_confirmed = pullback_entry_enabled and trend_recently_confirmed(
+        candles, "LONG", PULLBACK_RECENT_CONFIRMATION_LOOKBACK
+    )
+    short_recently_confirmed = pullback_entry_enabled and trend_recently_confirmed(
+        candles, "SHORT", PULLBACK_RECENT_CONFIRMATION_LOOKBACK
+    )
+    long_pullback_recovery = long_recently_confirmed and state in {
+        TrendState.SIDEWAY, TrendState.WEAK_UPTREND,
+    }
+    short_pullback_recovery = short_recently_confirmed and state in {
+        TrendState.SIDEWAY, TrendState.WEAK_DOWNTREND,
+    }
+    if long_pullback_recovery or short_pullback_recovery:
+        multiplier = max(multiplier, 0.5)
+
     # ── Sideway: special reversal pattern (unchanged logic) ──────────────────
-    if state == TrendState.SIDEWAY:
+    if state == TrendState.SIDEWAY and not long_pullback_recovery and not short_pullback_recovery:
         if (
             enable_long
             and is_bullish_reversal_pattern(candles)
@@ -265,7 +289,7 @@ def score_signal(
             )
         return SignalResult("NO_TRADE", 0, 0, ["trend state is SIDEWAY"], state.value, 0.0)
 
-    if state == TrendState.WEAK_DOWNTREND:
+    if state == TrendState.WEAK_DOWNTREND and not short_pullback_recovery:
         return SignalResult(
             "NO_TRADE", 0, 0, ["weak downtrend blocks new SHORT entries"], state.value, 0.0
         )
@@ -304,7 +328,10 @@ def score_signal(
     # ─────────────────────────────────────────────────────────────────────────
     # SHORT path
     # ─────────────────────────────────────────────────────────────────────────
-    if enable_short and state in {TrendState.EARLY_DOWNTREND, TrendState.CONFIRMED_DOWNTREND}:
+    if enable_short and (
+        state in {TrendState.EARLY_DOWNTREND, TrendState.CONFIRMED_DOWNTREND}
+        or short_pullback_recovery
+    ):
 
         # ── Compute base quality score FIRST (pre-gate) ──────────────────────
         # These conditions can be evaluated regardless of whether the pullback
@@ -358,6 +385,11 @@ def score_signal(
         if state == TrendState.CONFIRMED_DOWNTREND:
             short_score += 8
             short_reasons.append("confirmed downtrend")
+        elif short_pullback_recovery:
+            short_reasons.append(
+                f"downtrend was confirmed within the last {PULLBACK_RECENT_CONFIRMATION_LOOKBACK} "
+                f"candles and hasn't invalidated (current state: {state.value.lower()})"
+            )
 
         # ── Hard Gate G2: MA alignment ────────────────────────────────────────
         if signal_data.ma7 >= signal_data.ma25:
@@ -437,7 +469,10 @@ def score_signal(
     # ─────────────────────────────────────────────────────────────────────────
     # LONG path
     # ─────────────────────────────────────────────────────────────────────────
-    if enable_long and state in {TrendState.EARLY_UPTREND, TrendState.CONFIRMED_UPTREND}:
+    if enable_long and (
+        state in {TrendState.EARLY_UPTREND, TrendState.CONFIRMED_UPTREND}
+        or long_pullback_recovery
+    ):
 
         # ── Compute base quality score FIRST (pre-gate) ──────────────────────
         long_score = 0
@@ -484,6 +519,11 @@ def score_signal(
         if state == TrendState.CONFIRMED_UPTREND:
             long_score += 8
             long_reasons.append("confirmed uptrend")
+        elif long_pullback_recovery:
+            long_reasons.append(
+                f"uptrend was confirmed within the last {PULLBACK_RECENT_CONFIRMATION_LOOKBACK} "
+                f"candles and hasn't invalidated (current state: {state.value.lower()})"
+            )
 
         # ── Hard Gate G2: MA alignment ────────────────────────────────────────
         if signal_data.ma7 <= signal_data.ma25:

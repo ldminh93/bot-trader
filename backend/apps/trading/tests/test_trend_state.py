@@ -6,6 +6,7 @@ from apps.trading.services.trend_service import (
     calculate_slope,
     detect_trend_state,
     risk_multiplier_for_state,
+    trend_recently_confirmed,
 )
 
 from .test_indicators import make_candles
@@ -134,3 +135,54 @@ def test_risk_multiplier_by_state():
     assert risk_multiplier_for_state(TrendState.CONFIRMED_UPTREND) == 1.0
     assert risk_multiplier_for_state(TrendState.CONFIRMED_DOWNTREND) == 1.0
     assert risk_multiplier_for_state(TrendState.WEAK_UPTREND) == 0.5
+
+
+def _row(ma7, ma25, ma99, close):
+    return {"ma7": ma7, "ma25": ma25, "ma99": ma99, "close": close}
+
+
+def test_trend_recently_confirmed_finds_intact_uptrend_before_pullback():
+    # Oldest → newest: clean uptrend structure, then a shallow pullback that
+    # never crosses MA7 back through MA25 or closes below MA99.
+    candles = [
+        _row(90, 88, 80, 91),
+        _row(92, 89, 81, 93),
+        _row(94, 90, 82, 95),
+        _row(95, 91, 83, 92),  # pullback begins, still above MA25/MA99
+        _row(95, 91, 83, 91.5),  # current bar (excluded from the scan)
+    ]
+    assert trend_recently_confirmed(candles, "LONG", lookback=10) is True
+
+
+def test_trend_recently_confirmed_stops_at_invalidation():
+    # Bar index 0 looks like a confirmed uptrend, but the intervening bar
+    # index 1 closes below MA99 — that invalidation is found first (scanning
+    # newest → oldest) and the scan stops there without ever crediting index 0.
+    candles = [
+        _row(90, 88, 80, 91),   # confirmed uptrend bar (behind the invalidation)
+        _row(90, 89, 85, 84),   # invalidation: close (84) at/below MA99 (85)
+        _row(90, 89, 85, 88),   # neutral — no cross, but not yet confirmed either
+        _row(90, 89, 85, 87),   # current bar (excluded from the scan)
+    ]
+    assert trend_recently_confirmed(candles, "LONG", lookback=10) is False
+
+
+def test_trend_recently_confirmed_respects_lookback_window():
+    candles = [_row(94, 90, 82, 95)] + [_row(80, 82, 82, 79) for _ in range(5)] + [_row(80, 82, 82, 79)]
+    assert trend_recently_confirmed(candles, "LONG", lookback=3) is False
+
+
+def test_trend_recently_confirmed_mirrors_for_short():
+    candles = [
+        _row(80, 84, 90, 79),
+        _row(78, 83, 89, 77),
+        _row(76, 82, 88, 79),  # bounce begins, still below MA25/MA99
+        _row(76, 82, 88, 79.5),  # current bar (excluded from the scan)
+    ]
+    assert trend_recently_confirmed(candles, "SHORT", lookback=10) is True
+    assert trend_recently_confirmed(candles, "LONG", lookback=10) is False
+
+
+def test_trend_recently_confirmed_false_with_insufficient_data():
+    assert trend_recently_confirmed([], "LONG") is False
+    assert trend_recently_confirmed([_row(1, 1, 1, 1)], "LONG") is False
