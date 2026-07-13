@@ -94,7 +94,9 @@ def test_detects_confirmed_downtrend():
     assert detect_trend_state(result, 20, [1000, 1050]) == TrendState.CONFIRMED_DOWNTREND
 
 
-def test_adverse_delta_turns_confirmed_stack_into_weak_uptrend():
+def test_single_adverse_signal_does_not_downgrade_confirmed_stack():
+    # A single noisy candle (last delta flips negative) should NOT be enough
+    # to downgrade an otherwise healthy, fully-aligned confirmed uptrend.
     base = calculate_indicators(make_candles())
     result = with_ma_series(
         base,
@@ -103,6 +105,21 @@ def test_adverse_delta_turns_confirmed_stack_into_weak_uptrend():
         ma99_values=[100, 100.2, 100.4, 100.6, 100.8, 101, 101.2, 101.4, 101.6, 101.8],
         deltas=[10, 10, 10, 10, 10, 10, 10, 10, 10, -10],
     )
+    assert detect_trend_state(result, 20, [1000, 1050]) == TrendState.CONFIRMED_UPTREND
+
+
+def test_two_adverse_signals_turn_confirmed_stack_into_weak_uptrend():
+    # Two conflicting signals (last delta negative AND price back below MA25)
+    # should downgrade the stack to WEAK_UPTREND.
+    base = calculate_indicators(make_candles())
+    result = with_ma_series(
+        base,
+        ma7_values=[110, 111, 112, 113, 114, 115, 116, 117, 118, 119],
+        ma25_values=[105, 106, 107, 108, 109, 110, 111, 112, 113, 114],
+        ma99_values=[100, 100.2, 100.4, 100.6, 100.8, 101, 101.2, 101.4, 101.6, 101.8],
+        deltas=[10, 10, 10, 10, 10, 10, 10, 10, 10, -10],
+    )
+    result = replace(result, price=113)
     assert detect_trend_state(result, 20, [1000, 1050]) == TrendState.WEAK_UPTREND
 
 

@@ -166,27 +166,32 @@ def detect_trend_state(
     ):
         return TrendState.SIDEWAY
 
-    if (
-        result.ma7 > result.ma25
-        and (
-            delta_series[-1] < 0
-            or cvd_falling
-            or oi_decreasing
-            or result.price < result.ma25
+    # A single noisy signal (one candle's delta flip, a short CVD wiggle) is
+    # not enough to downgrade an otherwise healthy stack — require at least
+    # 2 of the 4 warning signals to agree before calling it WEAK.
+    if result.ma7 > result.ma25:
+        weak_signals = sum(
+            (
+                delta_series[-1] < 0,
+                cvd_falling,
+                oi_decreasing,
+                result.price < result.ma25,
+            )
         )
-    ):
-        return TrendState.WEAK_UPTREND
+        if weak_signals >= 2:
+            return TrendState.WEAK_UPTREND
 
-    if (
-        result.ma7 < result.ma25
-        and (
-            delta_series[-1] > 0
-            or cvd_rising
-            or oi_decreasing
-            or result.price > result.ma25
+    if result.ma7 < result.ma25:
+        weak_signals = sum(
+            (
+                delta_series[-1] > 0,
+                cvd_rising,
+                oi_decreasing,
+                result.price > result.ma25,
+            )
         )
-    ):
-        return TrendState.WEAK_DOWNTREND
+        if weak_signals >= 2:
+            return TrendState.WEAK_DOWNTREND
 
     if (
         result.ma7 > result.ma25 > result.ma99

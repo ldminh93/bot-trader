@@ -14,8 +14,6 @@ from .trend_service import (
     is_bullish_reversal_pattern,
     is_cvd_falling,
     is_cvd_rising,
-    is_delta_negative,
-    is_delta_positive,
     risk_multiplier_for_state,
 )
 
@@ -27,11 +25,11 @@ SIDEWAY_REVERSAL_RISK_MULTIPLIER = 0.5
 MAX_ENTRY_DISTANCE_ATR = 1.0
 
 # ── Score thresholds ───────────────────────────────────────────────────────────
-# Raised from 85 → 70 because the new scoring is tighter (redundant conditions
-# removed, only high-information signals retained).  A clean pullback+rejection
-# setup with CVD and delta confirmation easily reaches 70; a raw breakout
-# without a retrace cannot reach this level.
-DEFAULT_ENTRY_SCORE_THRESHOLD = 70
+# Rescaled from the old 0-137 scoring system (default 85) to the current
+# 0-90 scale (see migration 0025_rescale_entry_score_threshold). Default is
+# 55 (~61% of max 90) — a clean pullback+rejection setup with CVD and delta
+# confirmation reaches this; a raw breakout without a retrace cannot.
+DEFAULT_ENTRY_SCORE_THRESHOLD = 55
 EARLY_ENTRY_SCORE_THRESHOLD = DEFAULT_ENTRY_SCORE_THRESHOLD
 CONFIRMED_ENTRY_SCORE_THRESHOLD = DEFAULT_ENTRY_SCORE_THRESHOLD
 
@@ -107,6 +105,25 @@ def entry_score_threshold_for_state(state: TrendState) -> int:
     return DEFAULT_ENTRY_SCORE_THRESHOLD
 
 
+def _pre_pullback_series(series: list[float], pullback_candles: int) -> list[float]:
+    """
+    Slice a series to end right before the pullback bounce began.
+
+    The last ``pullback_candles + 1`` bars (the bounce itself, plus the
+    rejection candle) necessarily move counter to the prevailing trend —
+    that's what makes it a pullback. Measuring a slope-based confirmation
+    (e.g. CVD) across that same window will tend to show the bounce's
+    direction rather than the sustained flow that justifies the trade, so
+    the window must end before the bounce starts.
+    """
+    if pullback_candles <= 0:
+        return series
+    cutoff = len(series) - pullback_candles - 1
+    if cutoff < 2:
+        return series
+    return series[:cutoff]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # score_signal — redesigned entry logic
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,8 +184,12 @@ def entry_score_threshold_for_state(state: TrendState) -> int:
 #        │                              │     │ multiple candles is far more
 #        │                              │     │ signal than a 3-candle check.
 #   ─────┼──────────────────────────────┼─────┼────────────────────────────────
-#     2  │ Delta negative 3+ candles    │  15 │ Immediate selling pressure on
-#        │ (12 pts for 2 consecutive)   │     │ the rejection candle(s).
+#     2  │ Rejection candle delta < 0   │  15 │ Immediate selling pressure on
+#        │ (+8 if prior candle already │     │ the rejection candle itself.
+#        │ weakening)                   │     │ Checked on a single bar, not a
+#        │                              │     │ 2-3 candle run, since the prior
+#        │                              │     │ bounce candles necessarily have
+#        │                              │     │ the opposite-sign delta.
 #   ─────┼──────────────────────────────┼─────┼────────────────────────────────
 #     3  │ Rejection volume > 1.2×      │  10 │ Sellers showing up with size
 #        │ vol_ma20                     │     │ confirms conviction, not noise.
@@ -190,7 +211,7 @@ def entry_score_threshold_for_state(state: TrendState) -> int:
 #     8  │ Confirmed (vs Early) trend   │   8 │ Small bonus for higher-quality
 #        │                              │     │ trend context.
 #   ─────┴──────────────────────────────┴─────┴────────────────────────────────
-#   Maximum possible score: 90   Default threshold: 55
+#   Maximum possible score: 98   Default threshold: 55
 #   Minimum viable setup: CVD(20) + delta(15) + vol_pullback(10) = 45 → must
 #   add at least OI acceleration or rejection volume to clear 55.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,17 +314,31 @@ def score_signal(
         short_score = 0
         short_reasons: list[str] = []
 
-        cvd_slope = calculate_cvd_slope(cvds, lookback=5)
+        short_eq = (
+            detect_short_entry_quality(candles, atr, signal_data.ma25, signal_data.volume_ma20)
+            if pullback_entry_enabled
+            else None
+        )
+        pre_pullback_cvds = _pre_pullback_series(
+            cvds, short_eq.pullback_candles if short_eq else 0
+        )
+        cvd_slope = calculate_cvd_slope(pre_pullback_cvds, lookback=5)
         if cvd_slope < 0:
             short_score += 20
             short_reasons.append("CVD slope is falling (sustained selling flow)")
 
-        if is_delta_negative(deltas, lookback=3):
+        # NOTE: the rejection candle is a single bar (candles[-1]) preceded by
+        # a bounce with *positive* delta (that's what makes it a pullback).
+        # Checking 2-3 consecutive negative deltas here is therefore
+        # unreachable on a valid setup — only the rejection candle itself can
+        # be negative. Score that bar directly, with a small bonus if the
+        # candle immediately before it was already weakening.
+        if deltas[-1] < 0:
             short_score += 15
-            short_reasons.append("last 3 deltas are negative")
-        elif is_delta_negative(deltas, lookback=2):
-            short_score += 12
-            short_reasons.append("last 2 deltas are negative")
+            short_reasons.append("rejection candle shows negative delta (active selling)")
+            if len(deltas) >= 2 and deltas[-2] <= 0:
+                short_score += 8
+                short_reasons.append("delta was already weakening into the rejection")
 
         if oi_accel > 0:
             short_score += 12
@@ -341,12 +376,7 @@ def score_signal(
             )
 
         if pullback_entry_enabled:
-            eq = detect_short_entry_quality(
-                candles,
-                atr,
-                signal_data.ma25,
-                signal_data.volume_ma20,
-            )
+            eq = short_eq
 
             # Hard Gate G6: pullback zone
             if not eq.has_pullback:
@@ -413,17 +443,28 @@ def score_signal(
         long_score = 0
         long_reasons: list[str] = []
 
-        cvd_slope = calculate_cvd_slope(cvds, lookback=5)
+        long_eq = (
+            detect_long_entry_quality(candles, atr, signal_data.ma25, signal_data.volume_ma20)
+            if pullback_entry_enabled
+            else None
+        )
+        pre_pullback_cvds = _pre_pullback_series(
+            cvds, long_eq.pullback_candles if long_eq else 0
+        )
+        cvd_slope = calculate_cvd_slope(pre_pullback_cvds, lookback=5)
         if cvd_slope > 0:
             long_score += 20
             long_reasons.append("CVD slope is rising (sustained buying flow)")
 
-        if is_delta_positive(deltas, lookback=3):
+        # Mirror of the SHORT-path note above: the rejection candle is a
+        # single bar preceded by a bounce with *negative* delta, so checking
+        # 2-3 consecutive positive deltas is unreachable on a valid setup.
+        if deltas[-1] > 0:
             long_score += 15
-            long_reasons.append("last 3 deltas are positive")
-        elif is_delta_positive(deltas, lookback=2):
-            long_score += 12
-            long_reasons.append("last 2 deltas are positive")
+            long_reasons.append("rejection candle shows positive delta (active buying)")
+            if len(deltas) >= 2 and deltas[-2] >= 0:
+                long_score += 8
+                long_reasons.append("delta was already strengthening into the rejection")
 
         if oi_accel > 0:
             long_score += 12
@@ -461,12 +502,7 @@ def score_signal(
             )
 
         if pullback_entry_enabled:
-            eq = detect_long_entry_quality(
-                candles,
-                atr,
-                signal_data.ma25,
-                signal_data.volume_ma20,
-            )
+            eq = long_eq
 
             if not eq.has_pullback:
                 return SignalResult(

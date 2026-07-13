@@ -24,6 +24,16 @@ def _candle(open_, high, low, close, volume=1000):
     }
 
 
+def _with_cumulative_cvd(candles: list[dict]) -> list[dict]:
+    """Replace the placeholder cvd=0 with a real running total, as production does."""
+    running = 0.0
+    result = []
+    for candle in candles:
+        running += candle["delta"]
+        result.append({**candle, "cvd": running})
+    return result
+
+
 def _base_indicators():
     """Return indicators derived from a steadily uptrending candle series."""
     return calculate_indicators(make_candles())
@@ -37,8 +47,17 @@ def long_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
     candle (lower wick ≥ 0.35 of range, bullish close).
     Volumes are low during the pullback and higher on the rejection.
     """
+    # Prior uptrend (sustained buying, before the pullback into MA25 begins) —
+    # gives the CVD-slope check something realistic to measure "before the
+    # pullback" instead of landing entirely inside the pullback window.
+    prior_trend = [
+        _candle(97.0, 98.2, 96.8, 98.0, volume=900),
+        _candle(98.0, 99.2, 97.8, 99.0, volume=900),
+        _candle(99.0, 100.2, 98.8, 100.0, volume=900),
+        _candle(100.0, 101.2, 99.8, 101.0, volume=900),
+    ]
     # Declining bars approaching MA25 from above
-    candles = [
+    candles = prior_trend + [
         _candle(101.5, 101.7, 101.2, 101.4, volume=700),
         _candle(101.4, 101.5, 100.8, 101.0, volume=650),
         _candle(101.0, 101.1, 100.4, 100.6, volume=600),
@@ -48,7 +67,7 @@ def long_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
         # Bullish close (100.8 > 100.2) ✓
         _candle(100.2, 100.9, 99.7, 100.8, volume=1500),
     ]
-    return candles
+    return _with_cumulative_cvd(candles)
 
 
 def short_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
@@ -59,8 +78,17 @@ def short_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
     candle (upper wick ≥ 0.35 of range, bearish close).
     Volumes are low during the bounce and higher on the rejection.
     """
+    # Prior downtrend (sustained selling, before the bounce into MA25 begins) —
+    # gives the CVD-slope check something realistic to measure "before the
+    # pullback" instead of landing entirely inside the bounce window.
+    prior_trend = [
+        _candle(103.0, 103.2, 101.8, 102.0, volume=900),
+        _candle(102.0, 102.2, 100.8, 101.0, volume=900),
+        _candle(101.0, 101.2, 99.8, 100.0, volume=900),
+        _candle(100.0, 100.2, 98.8, 99.0, volume=900),
+    ]
     # Rising bars bouncing toward MA25 from below
-    candles = [
+    candles = prior_trend + [
         _candle(98.5, 98.8, 98.3, 98.7, volume=700),
         _candle(98.7, 99.0, 98.5, 98.9, volume=650),
         _candle(98.9, 99.3, 98.7, 99.2, volume=600),
@@ -70,7 +98,7 @@ def short_pullback_candles(ma25: float = 100.0, atr: float = 1.0) -> list[dict]:
         # Bearish close (99.2 < 99.5) ✓
         _candle(99.5, 100.4, 99.0, 99.2, volume=1500),
     ]
-    return candles
+    return _with_cumulative_cvd(candles)
 
 
 def _long_setup_indicators(candles=None):
@@ -222,8 +250,12 @@ def test_atr_blow_off_blocks_entry():
 
 def test_no_pullback_blocks_short_entry():
     """Price far below MA25 (not in pullback zone) → NO_TRADE."""
+    # price is always derived from candles[-1]["close"] in production
+    # (see IndicatorResult.price), so the last candle must move too.
+    candles = short_pullback_candles()
+    candles[-1] = _candle(96.0, 96.2, 94.7, 95.0, volume=1500)
     signal = score_signal(
-        replace(_short_setup_indicators(), price=95.0),   # 5 ATR below MA25
+        replace(_short_setup_indicators(), price=95.0, candles=candles),   # 5 ATR below MA25
         trend_state=TrendState.CONFIRMED_DOWNTREND,
         open_interest_change_percent=1.2,
         funding_rate=0.0002,
