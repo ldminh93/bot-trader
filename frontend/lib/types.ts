@@ -36,6 +36,7 @@ export interface BotConfig {
   position_margin_usdt: string | null;
   early_exit_min_conditions: number;
   early_exit_grace_candles: number;
+  early_exit_min_loss_percent: number;
   require_confirmed_higher_tf: boolean;
   require_ma7_slope_confirmation: boolean;
   require_funding_confirmation: boolean;

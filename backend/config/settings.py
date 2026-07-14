@@ -115,6 +115,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.trading.tasks.auto_register_top_movers",
         "schedule": 900.0,
     },
+    "cleanup-old-snapshots": {
+        "task": "apps.trading.tasks.cleanup_old_snapshots",
+        "schedule": 86400.0,  # once per day
+    },
 }
 
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"

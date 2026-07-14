@@ -5,6 +5,7 @@ from apps.trading.models import Trade, TradingBotConfig
 
 from .binance_service import BinanceService
 from .indicator_service import calculate_indicators
+from .trend_service import TrendState, detect_trend_state
 
 
 OPPOSITE_SCORE_CONDITION_THRESHOLD = 70
@@ -57,6 +58,16 @@ def _cvd_rising_persistently(candles: list) -> bool:
     return False
 
 
+def _oi_series_for_early_exit(metrics: dict) -> list[float]:
+    """Reconstruct a minimal 2-point OI series from the current snapshot + its % change."""
+    current = float(metrics.get("open_interest", 0) or 0)
+    if metrics.get("open_interest_change_available") and current > 0:
+        change = float(metrics["open_interest_change_percent"]) / 100
+        previous = current / (1 + change) if 1 + change else current
+        return [previous, current]
+    return [current]
+
+
 def evaluate_early_exit(
     trade: Trade,
     config: TradingBotConfig,
@@ -104,6 +115,9 @@ def evaluate_early_exit(
         metrics["open_interest_change_available"]
         and metrics["open_interest_change_percent"] < 0
     )
+    trend_state = detect_trend_state(
+        indicators, float(config.adx_min), _oi_series_for_early_exit(metrics)
+    )
     conditions: list[str] = []
 
     if trade.side == Trade.Side.LONG:
@@ -123,6 +137,8 @@ def evaluate_early_exit(
             )
         if metrics["funding_rate"] > EXTREME_FUNDING_RATE:
             conditions.append("funding is above +0.10%")
+        if trend_state in {TrendState.CONFIRMED_DOWNTREND, TrendState.EARLY_DOWNTREND}:
+            conditions.append(f"15m trend flipped to {trend_state.value.replace('_', ' ').lower()}")
     else:
         if indicators.price > indicators.ma25:
             conditions.append("15m close is above MA25")
@@ -140,14 +156,30 @@ def evaluate_early_exit(
             )
         if metrics["funding_rate"] < -EXTREME_FUNDING_RATE:
             conditions.append("funding is below -0.10%")
+        if trend_state in {TrendState.CONFIRMED_UPTREND, TrendState.EARLY_UPTREND}:
+            conditions.append(f"15m trend flipped to {trend_state.value.replace('_', ' ').lower()}")
 
     # Configurable threshold (default 3, was hardcoded 2)
     min_conditions = int(config.early_exit_min_conditions) if hasattr(config, "early_exit_min_conditions") else 3
 
+    # Minimum loss guard: suppress early exit until the trade has lost enough
+    # (prevents noise exits on tiny adverse moves near entry)
+    min_loss_pct = float(getattr(config, "early_exit_min_loss_percent", 0) or 0)
+    if min_loss_pct > 0:
+        unrealized = float(getattr(trade, "unrealized_pnl", 0) or 0)
+        if unrealized < 0:
+            entry = float(trade.entry_price)
+            qty = float(trade.quantity)
+            lev = int(trade.leverage) or 1
+            margin = entry * qty / lev
+            margin_roi_pct = (unrealized / margin * 100) if margin else 0.0
+            if margin_roi_pct > -min_loss_pct:
+                return EarlyExitDecision(False, [])
+
     # Profit guard: if the trade is currently in profit, require one extra condition
     # to avoid closing winners on short-term noise
     effective_min = min_conditions
-    if float(trade.unrealized_pnl) > 0:
+    if float(getattr(trade, "unrealized_pnl", 0) or 0) > 0:
         effective_min += 1
 
     return EarlyExitDecision(

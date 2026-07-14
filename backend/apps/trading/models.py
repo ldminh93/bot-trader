@@ -183,6 +183,12 @@ class TradingBotConfig(models.Model):
         default=2,
         help_text="Minimum 15m candles to wait after entry before early exit is allowed. 0 = no grace.",
     )
+    early_exit_min_loss_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        help_text="Early exit is suppressed until margin ROI drops below this negative threshold (e.g. 5 = -5%). 0 = disabled.",
+    )
     require_confirmed_higher_tf = models.BooleanField(
         default=False,
         help_text="Require higher TF to be CONFIRMED_UPTREND/DOWNTREND (not weak/early). Blocks entries on weak trends.",

@@ -667,6 +667,20 @@ export function SettingsConsole() {
                       Block early exit for the first N × 15 minutes after entry. Default 2 = 30 min buffer for the trade to breathe.
                     </span>
                   </Field>
+                  <Field label="Min loss before early exit (% margin ROI)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max="50"
+                      step="0.5"
+                      value={config.early_exit_min_loss_percent ?? 0}
+                      onChange={(event) => setConfig({ ...config, early_exit_min_loss_percent: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      Suppress early exit until margin ROI drops below −X%. E.g. 5 = only allow early exit once the trade is losing more than −5% on margin. 0 = disabled (always allow).
+                    </span>
+                  </Field>
                 </div>
               </div>
 

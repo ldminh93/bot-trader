@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from celery import shared_task
@@ -512,7 +513,7 @@ def process_config(config: TradingBotConfig) -> None:
     replay_payload = {
         "entry_timeframe": config.timeframe_signal,
         "trend_timeframe": config.timeframe_trend,
-        "candles": snapshot.payload.get("candles", []),
+        "candles": signal_indicators.candles,
         "signal": snapshot.payload.get("signal", signal.signal),
         "trend_state": snapshot.payload.get("trend_state"),
         "higher_timeframe_bias": snapshot.payload.get("higher_timeframe_bias", {}),
@@ -621,6 +622,15 @@ def process_config(config: TradingBotConfig) -> None:
         f"confidence {snapshot.payload.get('confidence_score', 0)}{partial_note}.",
     )
     broadcast_user_update(config.user_id, "position", TradeSerializer(trade).data)
+
+
+@shared_task
+def cleanup_old_snapshots() -> None:
+    """Delete MarketSnapshot rows older than SNAPSHOT_RETENTION_DAYS (default 7)."""
+    retention_days = getattr(settings, "SNAPSHOT_RETENTION_DAYS", 7)
+    cutoff = timezone.now() - timedelta(days=retention_days)
+    deleted, _ = MarketSnapshot.objects.filter(created_at__lt=cutoff).delete()
+    logger.info("Deleted %d stale MarketSnapshot rows (older than %d days)", deleted, retention_days)
 
 
 @shared_task

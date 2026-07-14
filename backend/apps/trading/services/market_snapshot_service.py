@@ -337,7 +337,6 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
             "setup_tags": tags,
             "open_interest_change_available": metrics["open_interest_change_available"],
             "statistics_period": metrics["statistics_period"],
-            "candles": signal_indicators.candles,
         },
     )
     return MarketEvaluation(snapshot, signal_indicators, metrics, signal)

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -66,7 +66,7 @@ def test_long_early_exit_requires_three_conditions(fetch_klines, market_metrics)
         "open_interest_change_percent": -1.2,
         "funding_rate": 0.0,
     }
-    trade = SimpleNamespace(side=Trade.Side.LONG, symbol="BTCUSDT")
+    trade = SimpleNamespace(side=Trade.Side.LONG, symbol="BTCUSDT", unrealized_pnl=0)
     config = SimpleNamespace(adx_min=20)
 
     decision = evaluate_early_exit(trade, config, long_score=10, short_score=20)
@@ -75,7 +75,7 @@ def test_long_early_exit_requires_three_conditions(fetch_klines, market_metrics)
     assert len(decision.conditions) >= 3
     assert "15m close is below MA25" in decision.conditions
     assert "last 3 candle deltas are negative" in decision.conditions
-    assert "CVD is falling" in decision.conditions
+    assert "CVD falling for 2+ consecutive candles" in decision.conditions
 
 
 @patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
@@ -87,7 +87,7 @@ def test_short_early_exit_requires_three_conditions(fetch_klines, market_metrics
         "open_interest_change_percent": -1.2,
         "funding_rate": 0.0,
     }
-    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT")
+    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT", unrealized_pnl=0)
     config = SimpleNamespace(adx_min=20)
 
     decision = evaluate_early_exit(trade, config, long_score=20, short_score=10)
@@ -96,7 +96,7 @@ def test_short_early_exit_requires_three_conditions(fetch_klines, market_metrics
     assert len(decision.conditions) >= 3
     assert "15m close is above MA25" in decision.conditions
     assert "last 3 candle deltas are positive" in decision.conditions
-    assert "CVD is rising" in decision.conditions
+    assert "CVD rising for 2+ consecutive candles" in decision.conditions
 
 
 @patch("apps.trading.services.early_exit_service.calculate_indicators")
@@ -108,15 +108,22 @@ def test_short_early_exit_can_close_on_two_adverse_conditions(
     calculate_indicators,
 ):
     fetch_klines.return_value = rising_candles()
+    # ma7/ma25/ma99 all equal (compressed) so detect_trend_state resolves to
+    # SIDEWAY here, keeping this test isolated from the trend-flip condition —
+    # it's specifically exercising the 2-condition/opposite-score path.
     calculate_indicators.return_value = SimpleNamespace(
         price=101.0,
+        ma7=100.0,
         ma25=100.0,
+        ma99=100.0,
+        atr=1.0,
+        atr_ma20=1.0,
         adx=25.0,
         candles=[
-            {"delta": -1.0, "cvd": 5.0, "close": 100.0},
-            {"delta": 1.0, "cvd": 4.0, "close": 100.0},
-            {"delta": -1.0, "cvd": 3.0, "close": 100.0},
-            {"delta": -1.0, "cvd": 2.0, "close": 101.0},
+            {"delta": -1.0, "cvd": 5.0, "close": 100.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+            {"delta": 1.0, "cvd": 4.0, "close": 100.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+            {"delta": -1.0, "cvd": 3.0, "close": 100.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+            {"delta": -1.0, "cvd": 2.0, "close": 101.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
         ],
     )
     market_metrics.return_value = {
@@ -124,8 +131,8 @@ def test_short_early_exit_can_close_on_two_adverse_conditions(
         "open_interest_change_percent": 0.0,
         "funding_rate": 0.0,
     }
-    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT")
-    config = SimpleNamespace(adx_min=20)
+    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT", unrealized_pnl=0)
+    config = SimpleNamespace(adx_min=20, early_exit_min_conditions=2)
 
     decision = evaluate_early_exit(trade, config, long_score=70, short_score=10)
 
@@ -133,6 +140,41 @@ def test_short_early_exit_can_close_on_two_adverse_conditions(
     assert len(decision.conditions) == 2
     assert "15m close is above MA25" in decision.conditions
     assert "LONG score is at least 70" in decision.conditions
+
+
+@patch("apps.trading.services.early_exit_service.calculate_indicators")
+@patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
+@patch("apps.trading.services.early_exit_service.BinanceService.fetch_klines")
+def test_short_early_exit_flags_confirmed_trend_flip(
+    fetch_klines,
+    market_metrics,
+    calculate_indicators,
+):
+    """A SHORT held while the 15m trend flips to CONFIRMED_UPTREND should be flagged."""
+    fetch_klines.return_value = rising_candles()
+    candles = [
+        {"delta": 1.0, "cvd": 1.0, "close": 105.0, "ma7": 104.0, "ma25": 101.0, "ma99": 95.0},
+        {"delta": 1.0, "cvd": 2.0, "close": 106.0, "ma7": 105.0, "ma25": 102.0, "ma99": 96.0},
+        {"delta": 1.0, "cvd": 3.0, "close": 107.0, "ma7": 106.0, "ma25": 103.0, "ma99": 97.0},
+        {"delta": 1.0, "cvd": 4.0, "close": 108.0, "ma7": 107.0, "ma25": 104.0, "ma99": 98.0},
+    ]
+    calculate_indicators.return_value = SimpleNamespace(
+        price=108.0, ma7=107.0, ma25=104.0, ma99=98.0, atr=1.0, atr_ma20=1.0, adx=25.0,
+        candles=candles,
+    )
+    market_metrics.return_value = {
+        "open_interest_change_available": True,
+        "open_interest_change_percent": 5.0,
+        "open_interest": 1000.0,
+        "funding_rate": 0.0,
+    }
+    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT", unrealized_pnl=0)
+    config = SimpleNamespace(adx_min=20)
+
+    decision = evaluate_early_exit(trade, config, long_score=10, short_score=10)
+
+    assert decision.should_close is True
+    assert "15m trend flipped to confirmed uptrend" in decision.conditions
 
 
 @patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
@@ -148,7 +190,7 @@ def test_early_exit_waits_for_new_closed_candle_after_entry(fetch_klines, market
     latest_closed_at = max(
         timezone.datetime.fromtimestamp(
             int(candle["close_timestamp"]) / 1000,
-            tz=timezone.utc,
+            tz=dt_timezone.utc,
         )
         for candle in candles
     )

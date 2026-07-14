@@ -101,7 +101,7 @@ class TradingBotConfigAdmin(admin.ModelAdmin):
                 "use_closed_candle_confirmation",
                 "auto_suppress_losing_tags", "auto_suppress_losing_symbols",
                 "partial_entry_enabled", "partial_entry_size_pct",
-                "early_exit_min_conditions", "early_exit_grace_candles",
+                "early_exit_min_conditions", "early_exit_grace_candles", "early_exit_min_loss_percent",
                 "auto_registered",
             ),
         }),
