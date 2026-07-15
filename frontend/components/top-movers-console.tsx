@@ -135,6 +135,9 @@ export function TopMoversConsole() {
     try {
       const result = await api.syncAutoScanner();
       setSyncResult(result);
+      // Refresh settings to pick up the updated last_synced_at
+      const refreshed = await api.autoScannerSettings();
+      setAutoSettings(refreshed);
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : "Sync failed");
     } finally {
@@ -211,6 +214,11 @@ export function TopMoversConsole() {
             </div>
             {syncError && (
               <p className="mt-2 text-xs text-[var(--negative)]">{syncError}</p>
+            )}
+            {autoSettings.last_synced_at && !syncError && !syncResult && (
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Last synced: {new Date(autoSettings.last_synced_at).toLocaleString()}
+              </p>
             )}
             {syncResult && !syncError && (
               <p className="mt-2 text-xs text-[var(--muted)]">

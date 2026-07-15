@@ -108,7 +108,8 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
 class AutoScannerSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = AutoScannerSettings
-        fields = ("enabled", "top_n", "quote_asset")
+        fields = ("enabled", "top_n", "quote_asset", "last_synced_at")
+        read_only_fields = ("last_synced_at",)
 
     def validate_top_n(self, value: int) -> int:
         if value < 1 or value > 30:

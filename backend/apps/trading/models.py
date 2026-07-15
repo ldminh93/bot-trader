@@ -36,6 +36,7 @@ class AutoScannerSettings(models.Model):
         help_text="Number of top gainers and top losers to auto-register per run.",
     )
     quote_asset = models.CharField(max_length=12, default="USDT")
+    last_synced_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -190,15 +191,15 @@ class TradingBotConfig(models.Model):
         help_text="Early exit is suppressed until margin ROI drops below this negative threshold (e.g. 5 = -5%). 0 = disabled.",
     )
     require_confirmed_higher_tf = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Require higher TF to be CONFIRMED_UPTREND/DOWNTREND (not weak/early). Blocks entries on weak trends.",
     )
     require_ma7_slope_confirmation = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Require MA7 slope to point in the trade direction. Blocks entries where MA7 has flattened or turned against the trade.",
     )
     require_funding_confirmation = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Require funding rate to be within the acceptable band. Blocks entries into crowded/overheated funding.",
     )
     tp3_trailing_percent = models.DecimalField(

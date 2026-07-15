@@ -13,6 +13,7 @@ def _log(user, symbol: str, message: str) -> None:
 
 
 def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str | None = None) -> dict:
+    from django.utils import timezone
     settings_obj, _ = AutoScannerSettings.objects.get_or_create(user=user)
     limit = top_n or settings_obj.top_n
     quote = (quote_asset or settings_obj.quote_asset).upper()
@@ -46,7 +47,14 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
         config, created = TradingBotConfig.objects.get_or_create(
             user=user,
             symbol=symbol,
-            defaults={"auto_registered": True, "is_running": True, "top_mover_side": side},
+            defaults={
+                "auto_registered": True,
+                "is_running": True,
+                "top_mover_side": side,
+                "require_confirmed_higher_tf": True,
+                "require_ma7_slope_confirmation": True,
+                "require_funding_confirmation": True,
+            },
         )
         if created:
             added.append(symbol)
@@ -75,5 +83,8 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
             )
         if update_fields:
             config.save(update_fields=update_fields)
+
+    settings_obj.last_synced_at = timezone.now()
+    settings_obj.save(update_fields=["last_synced_at"])
 
     return {"added": added, "removed": removed, "skipped": skipped}

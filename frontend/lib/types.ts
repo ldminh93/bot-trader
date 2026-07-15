@@ -236,6 +236,7 @@ export interface AutoScannerSettings {
   enabled: boolean;
   top_n: number;
   quote_asset: string;
+  last_synced_at: string | null;
 }
 
 export interface AutoScannerSyncResult {
