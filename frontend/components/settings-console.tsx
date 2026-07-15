@@ -581,10 +581,21 @@ export function SettingsConsole() {
                   onChange={(value) => setConfig({ ...config, require_confirmed_higher_tf: value })}
                 />
                 <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-                  Block entries when the trend timeframe shows a weak or early trend. Only allows LONG on{" "}
-                  <strong className="text-[var(--text)]">confirmed_uptrend</strong>, SHORT on{" "}
-                  <strong className="text-[var(--text)]">confirmed_downtrend</strong>. Most impactful setting for reducing{" "}
-                  <code className="rounded bg-[var(--surface-raised)] px-1">higher:weak_uptrend</code> losses.
+                  Block entries when the <strong className="text-[var(--text)]">1h trend timeframe</strong> shows a weak or early trend.
+                  Only allows LONG on <strong className="text-[var(--text)]">confirmed_uptrend</strong>, SHORT on{" "}
+                  <strong className="text-[var(--text)]">confirmed_downtrend</strong>.{" "}
+                  <span className="text-amber-400">Note: this checks the 1h only. The 15m signal TF can still be sideways → regime can still be CHOPPY. Enable "Block choppy/pullback" below to prevent that.</span>
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <Toggle
+                  label="Block choppy / pullback entries"
+                  checked={config.block_choppy_entries ?? false}
+                  onChange={(value) => setConfig({ ...config, block_choppy_entries: value })}
+                />
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  Block entries when the <strong className="text-[var(--text)]">15m signal timeframe</strong> is sideways or weakening
+                  (regime = CHOPPY or PULLBACK). Use together with "Confirmed HTF only" to ensure both timeframes are trending before entry.
                 </p>
               </div>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
@@ -616,12 +627,35 @@ export function SettingsConsole() {
                   checked={config.auto_regime_enabled}
                   onChange={(value) => setConfig({ ...config, auto_regime_enabled: value })}
                 />
-                <Toggle
-                  label="Confidence leverage"
-                  checked={config.confidence_leverage_enabled}
-                  onChange={(value) => setConfig({ ...config, confidence_leverage_enabled: value })}
-                />
+                <div>
+                  <Toggle
+                    label="Confidence leverage"
+                    checked={config.confidence_leverage_enabled}
+                    onChange={(value) => setConfig({ ...config, confidence_leverage_enabled: value })}
+                  />
+                  <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                    Scales leverage <strong>down</strong> from your configured max based on regime and confidence. e.g. x5 max → x2 in a choppy market. Set a min floor below to prevent it dropping too low.
+                  </p>
+                </div>
               </div>
+              {config.confidence_leverage_enabled && (
+                <div className="sm:col-span-2">
+                  <Field label="Min leverage floor (when confidence scaling active)">
+                    <input
+                      className={inputClass}
+                      type="number"
+                      min="0"
+                      max={config.leverage ?? 20}
+                      step="1"
+                      value={config.min_effective_leverage ?? 0}
+                      onChange={(event) => setConfig({ ...config, min_effective_leverage: Number(event.target.value) })}
+                    />
+                    <span className="font-normal leading-5 text-[var(--muted)]">
+                      Confidence scaling will not reduce leverage below this value. 0 = no floor. E.g. set to 3 if you never want to go below x3 even in choppy conditions.
+                    </span>
+                  </Field>
+                </div>
+              )}
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
                 <Toggle
                   label="Closed candle entry"

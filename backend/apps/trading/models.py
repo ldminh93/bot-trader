@@ -73,6 +73,14 @@ class TradingBotConfig(models.Model):
     require_volume_confirmation = models.BooleanField(default=False)
     auto_regime_enabled = models.BooleanField(default=True)
     confidence_leverage_enabled = models.BooleanField(default=True)
+    min_effective_leverage = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Minimum leverage when confidence scaling is active. 0 = no floor (allow full scaling).",
+    )
+    block_choppy_entries = models.BooleanField(
+        default=False,
+        help_text="Block new entries when the calculated regime is CHOPPY or PULLBACK (signal TF is sideways or weakening).",
+    )
     use_closed_candle_confirmation = models.BooleanField(default=True)
     pullback_entry_enabled = models.BooleanField(default=True)
     max_entry_distance_atr = models.DecimalField(max_digits=6, decimal_places=2, default=1)

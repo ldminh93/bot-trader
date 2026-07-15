@@ -133,7 +133,9 @@ def build_execution_profile(
         effective_leverage = int(config.leverage)
         leverage_factor = 1.0
     else:
-        effective_leverage = max(1, min(int(round(float(config.leverage) * leverage_factor)), int(config.leverage)))
+        raw = max(1, int(round(float(config.leverage) * leverage_factor)))
+        floor = int(getattr(config, "min_effective_leverage", 0) or 0)
+        effective_leverage = max(floor, min(raw, int(config.leverage)))
 
     alignment_score = "aligned" if aligned else "counter"
     return ExecutionProfile(

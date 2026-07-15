@@ -325,6 +325,18 @@ def process_config(config: TradingBotConfig) -> None:
             )
             return
 
+    # Regime filter — block entries in choppy or pullback conditions
+    if getattr(config, "block_choppy_entries", False):
+        regime = snapshot.payload.get("regime", "")
+        if regime in {"CHOPPY", "PULLBACK"}:
+            create_log(
+                config,
+                BotLog.Level.INFO,
+                f"Entry skipped: regime is {regime.lower()} — signal TF trend is not strong enough "
+                f"(state:{snapshot.trend.lower()}).",
+            )
+            return
+
     # Auto-suppress setup tags with poor historical win rate
     if config.auto_suppress_losing_tags:
         snapshot_tags = snapshot.payload.get("setup_tags", [])
