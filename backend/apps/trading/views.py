@@ -38,6 +38,7 @@ from .services.discord_alert_service import send_trade_replay_export
 from .services.health_service import build_live_sync_health
 from .services.live_trading_service import LiveTradingService
 from .services.market_snapshot_service import collect_market_snapshot
+from .services.indicator_service import calculate_indicators
 from .services.opportunity_service import build_opportunity_scoreboard
 from .services.paper_trading_service import PaperTradingService
 
@@ -325,13 +326,17 @@ class MarketSnapshotView(APIView):
     def get(self, request):
         symbol = request.query_params.get("symbol", "BTCUSDT").upper()
         config = get_config(request.user, symbol)
+        client = BinanceService()
         snapshot = MarketSnapshot.objects.filter(
             symbol=symbol,
             timeframe=config.timeframe_signal,
         ).first()
         stale_before = timezone.now() - timedelta(seconds=10)
+        live_candles: list | None = None
         if not snapshot or snapshot.created_at < stale_before:
-            snapshot = collect_market_snapshot(config).snapshot
+            evaluation = collect_market_snapshot(config)
+            snapshot = evaluation.snapshot
+            live_candles = evaluation.indicators.candles
         data = MarketSnapshotSerializer(snapshot).data
         payload = data.setdefault("payload", {})
         legacy_state_map = {
@@ -373,6 +378,12 @@ class MarketSnapshotView(APIView):
         payload.setdefault("leverage_factor", 1)
         payload.setdefault("tp_r_multiple", float(config.atr_multiplier_tp))
         payload.setdefault("candles", [])
+        if not payload["candles"]:
+            if live_candles is not None:
+                payload["candles"] = live_candles
+            else:
+                raw = client.fetch_klines(symbol, config.timeframe_signal, limit=300)
+                payload["candles"] = calculate_indicators(raw, period=int(config.adx_period)).candles
         history = MarketSnapshot.objects.filter(
             symbol=symbol,
             timeframe=config.timeframe_signal,
