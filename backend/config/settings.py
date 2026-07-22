@@ -124,3 +124,6 @@ CELERY_BEAT_SCHEDULE = {
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 ENABLE_LIVE_TRADING = os.getenv("ENABLE_LIVE_TRADING", "false").lower() == "true"
 FERNET_KEY = os.getenv("FERNET_KEY", "")
+CSRF_TRUSTED_ORIGINS = [
+    "https://trade-api.publish-agent.com",
+]
