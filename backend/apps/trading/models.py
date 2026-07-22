@@ -213,7 +213,7 @@ class TradingBotConfig(models.Model):
     tp3_trailing_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=0,
+        default=3,
         help_text="Trailing stop % after TP3 price is reached. 0 = close immediately at TP3.",
     )
     early_breakeven_r = models.DecimalField(

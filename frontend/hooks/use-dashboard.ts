@@ -143,12 +143,14 @@ export function useDashboard(symbol: string | null) {
         const nextSnapshot = await api.snapshot(symbol);
         if (selectedSymbol.current !== symbol) return;
         if (!snapshotMatchesCurrentView(nextSnapshot, nextConfig)) {
-          setSnapshot(null);
+          // Stale/mismatched poll for the view being displayed — keep showing the
+          // last good snapshot instead of blanking the chart; the next poll settles it.
           return;
         }
         setSnapshot((current) => normalizeSnapshot(nextSnapshot, current));
       } catch {
-        setSnapshot(null);
+        // Transient fetch failure — keep the last good snapshot on screen rather
+        // than unmounting/remounting the chart every time a single poll blips.
       }
       setError("");
     } catch (reason) {

@@ -538,6 +538,20 @@ export function SettingsConsole() {
               <Field label="Trailing ATR multiplier">
                 <input className={inputClass} type="number" min="0.2" max="10" step="0.1" value={config.trailing_atr_multiplier} onChange={(event) => setConfig({ ...config, trailing_atr_multiplier: event.target.value })} />
               </Field>
+              <Field label="TP3 trailing %">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="20"
+                  step="0.1"
+                  value={config.tp3_trailing_percent}
+                  onChange={(event) => setConfig({ ...config, tp3_trailing_percent: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Trail this % behind price after TP3 is reached instead of closing outright. 0 = close immediately at TP3.
+                </span>
+              </Field>
               <Field label="Max entry distance (ATR)">
                 <input
                   className={inputClass}

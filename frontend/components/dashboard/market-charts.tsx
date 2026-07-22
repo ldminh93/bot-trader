@@ -289,7 +289,7 @@ export function PriceChart({
         onPointerCancel={handlePointerUp}
         onWheel={handleWheel}
       >
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" debounce={150}>
           <ComposedChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -10 }}>
             <CartesianGrid stroke="#282e35" vertical={false} />
             <XAxis
@@ -361,7 +361,7 @@ export function FlowChart({ candles }: { candles: Candle[] }) {
     time: new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   }));
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
       <ComposedChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -12 }}>
         <CartesianGrid stroke="#282e35" vertical={false} />
         <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={38} fontSize={10} />
@@ -381,7 +381,7 @@ export function ProfitChart({ stats }: { stats: TradeStats }) {
     return { ...point, cumulative };
   });
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
       <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
         <defs>
           <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
@@ -401,7 +401,7 @@ export function ProfitChart({ stats }: { stats: TradeStats }) {
 
 export function DailyPnlChart({ stats }: { stats: TradeStats }) {
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
       <BarChart data={stats.daily} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
         <CartesianGrid stroke="#282e35" vertical={false} />
         <XAxis dataKey="day" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
@@ -434,7 +434,7 @@ export function WinRateSparkline({ trades }: { trades: Trade[] }) {
   });
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
       <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
         <defs>
           <linearGradient id="wrFill" x1="0" y1="0" x2="0" y2="1">
@@ -488,7 +488,7 @@ export function PnlAttributionChart({ trades }: { trades: Trade[] }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
       <BarChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
         <CartesianGrid stroke="#282e35" vertical={false} />
         <XAxis dataKey="day" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
@@ -515,7 +515,7 @@ export function PositioningChart({
     funding_percent: point.funding_rate * 100,
   }));
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
       <ComposedChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -10 }}>
         <CartesianGrid stroke="#282e35" vertical={false} />
         <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={38} fontSize={10} />

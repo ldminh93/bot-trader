@@ -16,6 +16,7 @@ export interface BotConfig {
   atr_multiplier_tp: string;
   use_trailing_stop: boolean;
   trailing_atr_multiplier: string;
+  tp3_trailing_percent: string;
   enable_long: boolean;
   enable_short: boolean;
   require_trend_alignment: boolean;
