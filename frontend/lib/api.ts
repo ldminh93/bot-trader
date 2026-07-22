@@ -12,6 +12,7 @@ import type {
   PauseAllResult,
   RemoveAllResult,
   ScanAllResult,
+  ScannedTokensResult,
   TopMoversResult,
   Trade,
   TradeStats,
@@ -144,6 +145,8 @@ export const api = {
   opportunities: () => request<OpportunityItem[]>("/market/opportunities"),
   topMovers: (limit = 20, quote = "USDT") =>
     request<TopMoversResult>(`/market/top-movers?limit=${limit}&quote=${quote}`),
+  scannedTokens: (quote = "USDT") =>
+    request<ScannedTokensResult>(`/market/scanned?quote=${quote}`),
   autoScannerSettings: () => request<AutoScannerSettings>("/scanner/auto-settings"),
   saveAutoScannerSettings: (body: Partial<AutoScannerSettings>) =>
     request<AutoScannerSettings>("/scanner/auto-settings", { method: "PUT", body: JSON.stringify(body) }),

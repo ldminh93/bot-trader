@@ -3,6 +3,7 @@
 import {
   CalendarBlank,
   ChartLineUp,
+  Coins,
   GearSix,
   ListBullets,
   Pulse,
@@ -20,6 +21,7 @@ const navigation = [
   { href: "/dashboard", label: "Overview", icon: SquaresFour },
   { href: "/trades", label: "Trades", icon: ChartLineUp },
   { href: "/top-movers", label: "Top Movers", icon: TrendUp },
+  { href: "/scanned", label: "Scanned", icon: Coins },
   { href: "/calendar", label: "Calendar", icon: CalendarBlank },
   { href: "/logs", label: "Logs", icon: ListBullets },
   { href: "/settings", label: "Settings", icon: GearSix },
@@ -47,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Paper-first system</p>
           </div>
         </div>
-        <nav className="grid grid-cols-5 gap-1 px-2 py-2 [padding-bottom:calc(env(safe-area-inset-bottom)+0.5rem)] lg:flex lg:flex-1 lg:flex-col lg:gap-1 lg:p-3">
+        <nav className="grid grid-cols-7 gap-1 px-2 py-2 [padding-bottom:calc(env(safe-area-inset-bottom)+0.5rem)] lg:flex lg:flex-1 lg:flex-col lg:gap-1 lg:p-3">
           {navigation.map((item) => {
             const active = pathname === item.href;
             return (

@@ -206,14 +206,14 @@ class BinanceService:
             raise ValueError("Order is below Binance minimum notional")
         return normalized_price, normalized_quantity
 
-    def fetch_top_movers(self, limit: int = 20, quote_asset: str = "USDT") -> dict:
-        """Return top gainers and losers from Binance Futures 24hr ticker data."""
+    def _fetch_24hr_tickers(self, quote_asset: str = "USDT") -> list[dict]:
+        """Fetch and normalize 24hr ticker stats for all Binance Futures symbols."""
         try:
             tickers = self._get("/fapi/v1/ticker/24hr")
         except (httpx.HTTPError, ValueError, KeyError):
-            return {"gainers": [], "losers": []}
+            return []
 
-        filtered = [
+        return [
             {
                 "symbol": t["symbol"],
                 "price": float(t["lastPrice"]),
@@ -230,11 +230,20 @@ class BinanceService:
             and t.get("lastPrice")
         ]
 
+    def fetch_top_movers(self, limit: int = 20, quote_asset: str = "USDT") -> dict:
+        """Return top gainers and losers from Binance Futures 24hr ticker data."""
+        filtered = self._fetch_24hr_tickers(quote_asset)
+
         sorted_by_change = sorted(filtered, key=lambda x: x["price_change_percent"], reverse=True)
         gainers = sorted_by_change[:limit]
         losers = sorted_by_change[-limit:][::-1]
 
         return {"gainers": gainers, "losers": losers}
+
+    def fetch_tickers_for_symbols(self, symbols: set[str], quote_asset: str = "USDT") -> list[dict]:
+        """Return 24hr ticker stats for a specific set of symbols, sorted by percent change."""
+        filtered = [t for t in self._fetch_24hr_tickers(quote_asset) if t["symbol"] in symbols]
+        return sorted(filtered, key=lambda x: x["price_change_percent"], reverse=True)
 
     def test_connection(self) -> dict:
         if not self.api_key:

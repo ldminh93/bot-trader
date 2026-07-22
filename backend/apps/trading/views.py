@@ -413,6 +413,18 @@ class MarketTopMoversView(APIView):
         return Response(result)
 
 
+class MarketScannedTokensView(APIView):
+    def get(self, request):
+        quote_asset = request.query_params.get("quote", "USDT").upper()
+        symbols = set(
+            TradingBotConfig.objects.filter(user=request.user, is_running=True).values_list("symbol", flat=True)
+        )
+        if not symbols:
+            return Response({"tokens": []})
+        tokens = BinanceService().fetch_tickers_for_symbols(symbols, quote_asset=quote_asset)
+        return Response({"tokens": tokens})
+
+
 class AutoScannerSettingsView(APIView):
     def get(self, request):
         settings_obj, _ = AutoScannerSettings.objects.get_or_create(user=request.user)

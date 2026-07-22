@@ -235,6 +235,10 @@ export interface TopMoversResult {
   losers: TopMover[];
 }
 
+export interface ScannedTokensResult {
+  tokens: TopMover[];
+}
+
 export interface AutoScannerSettings {
   enabled: boolean;
   top_n: number;
