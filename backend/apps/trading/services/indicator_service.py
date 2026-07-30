@@ -68,6 +68,131 @@ def _lower_wick_ratio(candle: dict) -> float:
     return (body_bottom - low) / total_range
 
 
+MIN_MA_GAP_PCT = 0.03
+
+
+def _ma7_cross_recovery(
+    candles: list[dict],
+    direction: str,
+    ma25: float,
+    min_gap_pct: float = MIN_MA_GAP_PCT,
+) -> bool:
+    """
+    Detect a 2-candle pullback-and-reclaim of MA7 without ever reaching MA25.
+
+    In a strong trend price often dips below (LONG) / pokes above (SHORT) MA7
+    for only a candle or two before the trend resumes — it never retraces far
+    enough to enter the MA25 zone.  Requiring the MA25 zone check in that case
+    means the bot misses clean continuation entries.
+
+    Pattern (LONG): the previous candle is bearish (red) and closed on/below
+    MA7 — the "decrease" — and the current candle has closed back above MA7
+    — the "increase that cuts MA7".  Mirror for SHORT with a green previous
+    candle closing back below MA7.
+
+    MA7/MA25 must also be separated by at least ``min_gap_pct`` (relative to
+    MA25) — when they're bunched together the market is sideways/choppy and
+    a bare MA7 cross is noise rather than a trend continuation signal.
+    """
+    if len(candles) < 2 or ma25 == 0:
+        return False
+    prev, last = candles[-2], candles[-1]
+    if last.get("ma7") is None or prev.get("ma7") is None:
+        return False
+    last_ma7 = float(last["ma7"])
+    if abs(last_ma7 - ma25) / abs(ma25) < min_gap_pct:
+        return False
+    last_close = float(last["close"])
+    prev_ma7 = float(prev["ma7"])
+    prev_close = float(prev["close"])
+    prev_open = float(prev["open"])
+    if direction == "LONG":
+        prev_is_red = prev_close < prev_open
+        crossed_up = prev_close <= prev_ma7 and last_close > last_ma7
+        return prev_is_red and crossed_up
+    if direction == "SHORT":
+        prev_is_green = prev_close > prev_open
+        crossed_down = prev_close >= prev_ma7 and last_close < last_ma7
+        return prev_is_green and crossed_down
+    return False
+
+
+@dataclass(frozen=True)
+class MAStackReversalResult:
+    """
+    detected : bool
+        Whether the reversal pattern fired.
+    bottom_ma, middle_ma, top_ma : float
+        MA7/MA25/MA99 sorted ascending by value (not by period) — only
+        meaningful when ``detected`` is True.
+    """
+
+    detected: bool
+    bottom_ma: float
+    middle_ma: float
+    top_ma: float
+
+
+_EMPTY_MA_STACK_REVERSAL = MAStackReversalResult(False, 0.0, 0.0, 0.0)
+
+
+def detect_ma_stack_reversal(
+    candles: list[dict],
+    ma7: float,
+    ma25: float,
+    ma99: float,
+    direction: str,
+    min_gap_pct: float = MIN_MA_GAP_PCT,
+) -> MAStackReversalResult:
+    """
+    Detect an early trend-reversal entry: price crosses back through
+    whichever of MA7/MA25/MA99 currently has the lowest (LONG) / highest
+    (SHORT) value, while still sitting between it and the next MA in line.
+
+    This is deliberately independent of the MA7>MA25 / price>MA99
+    trend-confirmation gates used elsewhere (see score_signal G2/G3) — it's
+    meant to catch a reversal *before* those gates would confirm a new
+    trend, so it doesn't require them.
+
+    LONG: sort the three MAs ascending (bottom < middle < top). Price must
+    sit strictly between bottom and middle — it has just cleared bottom but
+    hasn't reached middle yet.  The previous candle must be bearish and
+    closed on/below bottom (the "decrease"); the current candle must have
+    closed back above bottom (the "increase that cuts" it).  bottom/middle
+    must be separated by at least ``min_gap_pct`` (relative to bottom) or
+    the MA stack is too bunched together (sideways/choppy) for the cross to
+    mean anything.
+
+    SHORT mirrors this: price sits between middle and top, the previous
+    candle is bullish and closed on/above top, and the current candle
+    closed back below top.
+    """
+    if len(candles) < 2:
+        return _EMPTY_MA_STACK_REVERSAL
+    bottom, middle, top = sorted([float(ma7), float(ma25), float(ma99)])
+    prev, last = candles[-2], candles[-1]
+    last_close = float(last["close"])
+    prev_close = float(prev["close"])
+    prev_open = float(prev["open"])
+    if direction == "LONG":
+        if bottom == 0 or not (bottom < last_close < middle):
+            return _EMPTY_MA_STACK_REVERSAL
+        if (middle - bottom) / abs(bottom) < min_gap_pct:
+            return _EMPTY_MA_STACK_REVERSAL
+        prev_is_red = prev_close < prev_open
+        crossed_up = prev_close <= bottom < last_close
+        return MAStackReversalResult(prev_is_red and crossed_up, bottom, middle, top)
+    if direction == "SHORT":
+        if top == 0 or not (middle < last_close < top):
+            return _EMPTY_MA_STACK_REVERSAL
+        if (top - middle) / abs(top) < min_gap_pct:
+            return _EMPTY_MA_STACK_REVERSAL
+        prev_is_green = prev_close > prev_open
+        crossed_down = prev_close >= top > last_close
+        return MAStackReversalResult(prev_is_green and crossed_down, bottom, middle, top)
+    return _EMPTY_MA_STACK_REVERSAL
+
+
 def detect_short_entry_quality(
     candles: list[dict],
     atr: float,
@@ -81,15 +206,22 @@ def detect_short_entry_quality(
 
     Pullback (hard-gate precondition)
     ----------------------------------
-    Price must be sitting within ``pullback_zone_atr`` ATR below MA25.
-    This prevents chasing price after it has already fallen far from
-    resistance — a primary cause of poor entry R:R.
+    Price must be sitting within ``pullback_zone_atr`` ATR below MA25, OR
+    satisfy the MA7 cross-recovery: previous candle green and closed on/above
+    MA7 (the bounce), current candle closed back below MA7 (the rejection),
+    with MA7 and MA25 separated by at least ``MIN_MA_GAP_PCT`` to rule
+    out a sideways/choppy market (see ``_ma7_cross_recovery``) — a shallower
+    retrace that never reaches MA25 in a strong trend.  This prevents chasing
+    price after it has already fallen far from resistance while still
+    allowing fast continuation entries.
 
     Rejection candle (primary entry trigger)
     ----------------------------------------
     The current candle must show a bearish upper-wick rejection (upper wick
     ≥ ``min_rejection_wick`` of the total range) *and* a bearish close
-    (close < open).  This confirms that sellers are defending MA25.
+    (close < open), OR satisfy the MA7 cross-recovery above (the reclaim
+    itself stands in as the rejection signal). This confirms that sellers
+    are defending the zone.
 
     Volume profile (quality filter)
     --------------------------------
@@ -133,13 +265,18 @@ def detect_short_entry_quality(
     last_close = float(candles[-1]["close"])
     # Pullback zone: price must be near MA25 from below (within pullback_zone_atr)
     distance_to_ma = ma25 - last_close
-    has_pullback = 0 <= distance_to_ma <= atr * pullback_zone_atr
+    has_pullback_ma25 = 0 <= distance_to_ma <= atr * pullback_zone_atr
 
     # Rejection candle: upper wick dominance + bearish close
     last_candle = candles[-1]
     wick_ratio = _upper_wick_ratio(last_candle)
     is_bearish_close = float(last_candle["close"]) < float(last_candle["open"])
-    has_rejection = wick_ratio >= min_rejection_wick and is_bearish_close
+    has_rejection_wick = wick_ratio >= min_rejection_wick and is_bearish_close
+
+    # Alternate path: shallow MA7 reclaim that never reached the MA25 zone.
+    cross_recovery = _ma7_cross_recovery(candles, "SHORT", ma25)
+    has_pullback = has_pullback_ma25 or cross_recovery
+    has_rejection = has_rejection_wick or cross_recovery
 
     # Volume ratios — compare pullback-bar avg volume to vol_ma20
     if pullback_candles > 0:
@@ -170,9 +307,14 @@ def detect_long_entry_quality(
     """
     Mirror of ``detect_short_entry_quality`` for LONG setups.
 
-    Pullback: price sits within ``pullback_zone_atr`` ATR above MA25 (support).
+    Pullback: price sits within ``pullback_zone_atr`` ATR above MA25 (support),
+    OR satisfies the MA7 cross-recovery: previous candle red and closed on/below
+    MA7 (the dip), current candle closed back above MA7 (the reclaim), with
+    MA7/MA25 separated by at least ``MIN_MA_GAP_PCT`` to rule out a
+    sideways/choppy market (see ``_ma7_cross_recovery``).
     Rejection: current candle has a bullish lower-wick hammer (lower wick ≥
-    ``min_rejection_wick``) with a bullish close (close > open).
+    ``min_rejection_wick``) with a bullish close (close > open), OR satisfies
+    the MA7 cross-recovery above.
     """
     _empty = EntryQualityResult(
         has_pullback=False,
@@ -201,12 +343,17 @@ def detect_long_entry_quality(
 
     last_close = float(candles[-1]["close"])
     distance_to_ma = last_close - ma25
-    has_pullback = 0 <= distance_to_ma <= atr * pullback_zone_atr
+    has_pullback_ma25 = 0 <= distance_to_ma <= atr * pullback_zone_atr
 
     last_candle = candles[-1]
     wick_ratio = _lower_wick_ratio(last_candle)
     is_bullish_close = float(last_candle["close"]) > float(last_candle["open"])
-    has_rejection = wick_ratio >= min_rejection_wick and is_bullish_close
+    has_rejection_wick = wick_ratio >= min_rejection_wick and is_bullish_close
+
+    # Alternate path: shallow MA7 reclaim that never reached the MA25 zone.
+    cross_recovery = _ma7_cross_recovery(candles, "LONG", ma25)
+    has_pullback = has_pullback_ma25 or cross_recovery
+    has_rejection = has_rejection_wick or cross_recovery
 
     if pullback_candles > 0:
         pb_vols = pre_volumes[-pullback_candles:]

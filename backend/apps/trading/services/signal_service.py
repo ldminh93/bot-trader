@@ -5,6 +5,7 @@ from .indicator_service import (
     IndicatorResult,
     calculate_oi_acceleration,
     detect_long_entry_quality,
+    detect_ma_stack_reversal,
     detect_short_entry_quality,
 )
 from .trend_service import (
@@ -60,6 +61,15 @@ PULLBACK_RECENT_CONFIRMATION_LOOKBACK = 10
 LONG_FUNDING_ACCEPTABLE_RANGE = (-0.0003, 0.0005)
 SHORT_FUNDING_ACCEPTABLE_RANGE = (-0.0005, 0.0003)
 
+# ── MA-stack reversal entry ────────────────────────────────────────────────────
+# A separate, early-reversal entry (see detect_ma_stack_reversal): price
+# crosses back through whichever MA is currently most extreme against the
+# prior move, well before the normal trend-confirmation gates (G1-G3) would
+# fire. It bypasses those gates entirely, so it gets a fixed, conservative
+# risk multiplier and a fixed % stop instead of the usual ATR/MA-based one.
+MA_STACK_REVERSAL_RISK_MULTIPLIER = 0.5
+MA_STACK_REVERSAL_STOP_LOSS_PERCENT = 10.0
+
 
 @dataclass(frozen=True)
 class SignalResult:
@@ -69,6 +79,9 @@ class SignalResult:
     reasons: list[str]
     trend_state: str
     risk_multiplier: float
+    forced_stop_loss_percent: float | None = None
+    forced_take_profit_1: float | None = None
+    forced_take_profit_2: float | None = None
 
 
 def entry_location_block_reason(
@@ -150,13 +163,16 @@ def _pre_pullback_series(series: list[float], pullback_candles: int) -> list[flo
 #   [G5] ATR regime — ATR must be between ATR_REGIME_MIN_RATIO and
 #        ATR_REGIME_MAX_RATIO × ATR_MA20.  Too low = dead market; too high =
 #        blow-off spike where spread cost and slippage destroy edge.
-#   [G6] Pullback detected — price must be within the MA25 zone
+#   [G6] Pullback detected — price must be within the MA25 zone, OR have
+#        just dipped through and reclaimed MA7 (see _ma7_cross_recovery in
+#        indicator_service) for trends that never retrace as far as MA25.
 #        (enabled by pullback_entry_enabled).  This is the *single biggest
 #        source of improvement*: stops the bot from entering mid-impulse
 #        after the move has already occurred.
 #   [G7] Rejection candle — current candle must show directional wick
-#        rejection at the MA zone.  Confirms that counter-trend participants
-#        are being absorbed.
+#        rejection at the MA zone, OR satisfy the MA7 cross-recovery above
+#        (the reclaim itself is the rejection signal).  Confirms that
+#        counter-trend participants are being absorbed.
 #
 # Layer 2 — Quality score (scored; must reach entry_score_threshold)
 #   These measure the *quality* of the setup's flow confirmation.
@@ -241,6 +257,43 @@ def score_signal(
     deltas = [float(row["delta"]) for row in candles]
     cvds = [float(row["cvd"]) for row in candles]
     multiplier = risk_multiplier_for_state(state)
+
+    # ── MA-stack reversal: independent of trend-confirmation gates ───────────
+    # Checked first and returned immediately — this pattern is meant to catch
+    # a reversal before G1-G3 would ever confirm a new trend, so it can't be
+    # gated behind them. See detect_ma_stack_reversal for the pattern itself.
+    if enable_long:
+        long_reversal = detect_ma_stack_reversal(candles, signal_data.ma7, signal_data.ma25, signal_data.ma99, "LONG")
+        if long_reversal.detected:
+            return SignalResult(
+                "LONG", 0, 0,
+                [
+                    f"MA stack reversal: price reclaimed the lowest MA "
+                    f"({long_reversal.bottom_ma:.4f}) and sits below the middle MA "
+                    f"({long_reversal.middle_ma:.4f})"
+                ],
+                state.value,
+                MA_STACK_REVERSAL_RISK_MULTIPLIER,
+                forced_stop_loss_percent=MA_STACK_REVERSAL_STOP_LOSS_PERCENT,
+                forced_take_profit_1=long_reversal.middle_ma,
+                forced_take_profit_2=long_reversal.top_ma,
+            )
+    if enable_short:
+        short_reversal = detect_ma_stack_reversal(candles, signal_data.ma7, signal_data.ma25, signal_data.ma99, "SHORT")
+        if short_reversal.detected:
+            return SignalResult(
+                "SHORT", 0, 0,
+                [
+                    f"MA stack reversal: price rejected off the highest MA "
+                    f"({short_reversal.top_ma:.4f}) and sits above the middle MA "
+                    f"({short_reversal.middle_ma:.4f})"
+                ],
+                state.value,
+                MA_STACK_REVERSAL_RISK_MULTIPLIER,
+                forced_stop_loss_percent=MA_STACK_REVERSAL_STOP_LOSS_PERCENT,
+                forced_take_profit_1=short_reversal.middle_ma,
+                forced_take_profit_2=short_reversal.bottom_ma,
+            )
 
     # ── Pullback recovery: trend confirmed recently, not yet invalidated ─────
     long_recently_confirmed = pullback_entry_enabled and trend_recently_confirmed(

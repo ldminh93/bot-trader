@@ -462,6 +462,107 @@ def test_unmatched_trend_state_returns_no_trade():
     assert signal.risk_multiplier == 0.5
 
 
+# ── MA-stack reversal (independent of trend-confirmation gates) ─────────────
+
+def test_ma_stack_reversal_long_signal_fires_despite_hostile_trend_state():
+    """
+    trend_state is CONFIRMED_DOWNTREND and price (92) sits below MA99 (99) —
+    both would normally hard-block a LONG (G1/G3) — but the MA-stack reversal
+    path is designed to catch the reversal *before* those gates would confirm
+    a new trend, so it fires anyway with its own forced SL/TP.
+    """
+    base = _base_indicators()
+    candles = [
+        _candle(92.0, 92.5, 89.5, 90.0),  # prev: red, close<=90 (bottom MA)
+        _candle(90.0, 92.5, 89.8, 92.0),  # last: 90 < 92 < 95 (between bottom/middle)
+    ]
+    signal_data = replace(
+        base,
+        price=92.0,
+        ma7=90.0,   # bottom
+        ma25=95.0,  # middle
+        ma99=99.0,  # top -- price (92) is below MA99, which would normally fail G3
+        candles=candles,
+    )
+    signal = score_signal(
+        signal_data,
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=0.0,
+        funding_rate=0.0,
+        top_ratio_direction=0.0,
+    )
+    assert signal.signal == "LONG"
+    assert signal.risk_multiplier == 0.5
+    assert signal.forced_stop_loss_percent == 10.0
+    assert signal.forced_take_profit_1 == 95.0
+    assert signal.forced_take_profit_2 == 99.0
+    assert "MA stack reversal" in signal.reasons[0]
+
+
+def test_ma_stack_reversal_disabled_by_enable_long_false():
+    base = _base_indicators()
+    candles = [
+        _candle(92.0, 92.5, 89.5, 90.0),
+        _candle(90.0, 92.5, 89.8, 92.0),
+    ]
+    signal_data = replace(
+        base, price=92.0, ma7=90.0, ma25=95.0, ma99=99.0, candles=candles,
+    )
+    signal = score_signal(
+        signal_data,
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=0.0,
+        funding_rate=0.0,
+        top_ratio_direction=0.0,
+        enable_long=False,
+    )
+    assert signal.signal != "LONG"
+    assert signal.forced_stop_loss_percent is None
+
+
+# ── MA7 cross-recovery (shallow pullback that never reaches MA25) ───────────
+
+def test_long_signal_fires_on_ma7_reclaim_when_ma25_is_far_away():
+    """
+    Reproduces the chart scenario reported by the user: a CONFIRMED_UPTREND
+    where price dips below MA7 and then reclaims it, but MA25 is too far
+    away for the old MA25-only zone check to ever pass.  This should no
+    longer be blocked by "not in the MA25 pullback zone".
+    """
+    prior_trend = [
+        _candle(97.0, 98.2, 96.8, 98.0, volume=900),
+        _candle(98.0, 99.2, 97.8, 99.0, volume=900),
+        _candle(99.0, 100.2, 98.8, 100.0, volume=900),
+        _candle(100.0, 101.2, 99.8, 101.0, volume=900),
+    ]
+    candles = prior_trend + [
+        _candle(101.0, 101.2, 100.8, 101.0, volume=700),
+        _candle(101.0, 101.2, 100.8, 101.0, volume=650),
+        _candle(101.0, 101.2, 100.8, 101.0, volume=600),
+        _candle(100.5, 100.6, 99.0, 99.2, volume=580),   # dips below MA7 (100.0)
+        _candle(99.2, 100.6, 99.0, 100.5, volume=1500),  # reclaims MA7, no hammer wick
+    ]
+    candles = _with_cumulative_cvd(candles)
+    candles = [{**c, "ma7": 100.0} for c in candles]
+
+    signal = score_signal(
+        replace(
+            _long_setup_indicators(candles=candles),
+            price=100.5,
+            ma7=100.0,
+            ma25=90.0,     # far below price — old MA25-only zone check would reject
+        ),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert "pullback zone" not in " ".join(signal.reasons)
+    assert "no bullish rejection candle" not in " ".join(signal.reasons)
+    assert signal.signal == "LONG"
+
+
 # ── Score-threshold and OI-acceleration tests ─────────────────────────────────
 
 def test_oi_acceleration_improves_short_score():

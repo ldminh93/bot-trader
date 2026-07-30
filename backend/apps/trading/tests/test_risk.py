@@ -108,6 +108,58 @@ def test_trade_uses_custom_margin_loss_cap():
     assert plan.stop_loss == 89.5
 
 
+def test_forced_stop_loss_percent_overrides_ma_support_long():
+    """MA-stack-reversal entries use a flat % stop instead of the nearest-MA one."""
+    plan = calculate_risk_plan(
+        side="LONG",
+        entry_price=100,
+        account_balance=10_000,
+        risk_percent=1,
+        atr=2,
+        forced_stop_loss_percent=10.0,
+        forced_take_profit_1=105.0,
+        forced_take_profit_2=110.0,
+    )
+    assert plan.stop_loss == pytest.approx(90.0)
+    assert plan.risk_per_unit == pytest.approx(10.0)
+    assert plan.take_profit_1 == 105.0
+    assert plan.take_profit_2 == 110.0
+    assert plan.take_profit_3 == 110.0
+
+
+def test_forced_stop_loss_percent_overrides_ma_support_short():
+    plan = calculate_risk_plan(
+        side="SHORT",
+        entry_price=100,
+        account_balance=10_000,
+        risk_percent=1,
+        atr=2,
+        forced_stop_loss_percent=10.0,
+        forced_take_profit_1=95.0,
+        forced_take_profit_2=90.0,
+    )
+    assert plan.stop_loss == pytest.approx(110.0)
+    assert plan.risk_per_unit == pytest.approx(10.0)
+    assert plan.take_profit_1 == 95.0
+    assert plan.take_profit_2 == 90.0
+
+
+def test_forced_stop_loss_percent_ignores_atr_runaway_cap():
+    """A flat % stop is allowed to exceed the normal 3x-ATR runaway-stop cap —
+    that cap only guards against MAs lagging far behind price, not this path."""
+    plan = calculate_risk_plan(
+        side="LONG",
+        entry_price=100,
+        account_balance=10_000,
+        risk_percent=1,
+        atr=0.5,  # 3x ATR = 1.5, far tighter than the 10% (10-unit) forced stop
+        forced_stop_loss_percent=10.0,
+        forced_take_profit_1=105.0,
+        forced_take_profit_2=110.0,
+    )
+    assert plan.stop_loss == pytest.approx(90.0)
+
+
 def test_trade_can_disable_margin_loss_cap():
     plan = calculate_risk_plan(
         "LONG",

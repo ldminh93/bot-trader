@@ -254,6 +254,9 @@ def run_backtest(config, limit: int = 320) -> dict:
                 float(config.atr_multiplier_sl),
                 float(execution["tp_r_multiple"]),
                 float(config.max_margin_loss_percent),
+                forced_stop_loss_percent=signal.forced_stop_loss_percent,
+                forced_take_profit_1=signal.forced_take_profit_1,
+                forced_take_profit_2=signal.forced_take_profit_2,
             )
         except (RiskLimitExceeded, ValueError):
             continue

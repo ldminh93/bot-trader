@@ -125,6 +125,11 @@ def process_config(config: TradingBotConfig) -> None:
     signal_indicators = evaluation.indicators
     metrics = evaluation.metrics
     signal = evaluation.signal
+    # The MA-stack reversal pattern (see score_signal) fires independently of
+    # the normal trend-confirmation gates by design, with its own forced
+    # SL/TP — so the pre-entry filters below that assume an already-confirmed
+    # trend (TF alignment, MA7 slope, MA7/MA25 distance) don't apply to it.
+    is_ma_stack_reversal = signal.forced_stop_loss_percent is not None
     broadcast_user_update(config.user_id, "snapshot", MarketSnapshotSerializer(snapshot).data)
 
     open_trade = Trade.objects.filter(
@@ -396,7 +401,7 @@ def process_config(config: TradingBotConfig) -> None:
             return
 
     # Multi-timeframe alignment score
-    if config.min_tf_alignment_score > 0:
+    if config.min_tf_alignment_score > 0 and not is_ma_stack_reversal:
         tf_score = snapshot.payload.get("tf_alignment_score", 0)
         if tf_score < config.min_tf_alignment_score:
             create_log(config, BotLog.Level.INFO,
@@ -436,7 +441,7 @@ def process_config(config: TradingBotConfig) -> None:
             return
 
     # MA7 slope filter — require trend momentum in signal direction
-    if float(config.ma_slope_min_pct) > 0:
+    if float(config.ma_slope_min_pct) > 0 and not is_ma_stack_reversal:
         ma7_slope = snapshot.payload.get("ma7_slope_pct", 0)
         required = float(config.ma_slope_min_pct)
         if signal.signal == "LONG" and ma7_slope < required:
@@ -460,7 +465,7 @@ def process_config(config: TradingBotConfig) -> None:
     elif config.adx_tp_low_threshold > 0 and signal_indicators.adx <= config.adx_tp_low_threshold:
         tp_r_multiple = max(round(tp_r_multiple * 0.67, 2), 1.5)
     location_reason = None
-    if config.pullback_entry_enabled:
+    if config.pullback_entry_enabled and not is_ma_stack_reversal:
         location_reason = entry_location_block_reason(
             signal.signal,
             price,
@@ -518,6 +523,9 @@ def process_config(config: TradingBotConfig) -> None:
             float(config.atr_multiplier_sl),
             tp_r_multiple,
             float(config.max_margin_loss_percent),
+            forced_stop_loss_percent=signal.forced_stop_loss_percent,
+            forced_take_profit_1=signal.forced_take_profit_1,
+            forced_take_profit_2=signal.forced_take_profit_2,
         )
     except RiskLimitExceeded as exc:
         create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")
