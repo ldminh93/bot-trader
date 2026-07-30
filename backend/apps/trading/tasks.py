@@ -331,7 +331,7 @@ def process_config(config: TradingBotConfig) -> None:
             return
 
     # Regime filter — block entries in choppy or pullback conditions
-    if getattr(config, "block_choppy_entries", False):
+    if getattr(config, "block_choppy_entries", False) and not is_ma_stack_reversal:
         regime = snapshot.payload.get("regime", "")
         if regime in {"CHOPPY", "PULLBACK"}:
             create_log(
@@ -364,8 +364,11 @@ def process_config(config: TradingBotConfig) -> None:
         )
         return
 
-    # Minimum confidence filter
-    if config.min_confidence_to_trade > 0:
+    # Minimum confidence filter — confidence_score is built from long/short_score
+    # plus trend-alignment/confirmation bonuses (see build_execution_profile),
+    # none of which the MA-stack reversal pattern has by design (it scores 0
+    # and fires before confirmation), so it would always read as low-confidence.
+    if config.min_confidence_to_trade > 0 and not is_ma_stack_reversal:
         confidence_score = int(snapshot.payload.get("confidence_score", 0))
         if confidence_score < config.min_confidence_to_trade:
             create_log(

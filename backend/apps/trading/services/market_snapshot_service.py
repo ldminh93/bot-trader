@@ -150,12 +150,23 @@ def evaluate_market_conditions(
     )
 
     if signal.signal != "NO_TRADE":
+        # The MA-stack reversal pattern (see score_signal) is designed to fire
+        # *before* the higher-timeframe / 4H / MA7-slope checks below would
+        # confirm a new trend — that's the whole point of catching it early —
+        # so those specific checks don't apply to it. Quality filters (OI,
+        # volume, funding) still do; they're not about pre-existing trend
+        # confirmation.
+        is_ma_stack_reversal = signal.forced_stop_loss_percent is not None
         extra_reasons: list[str] = []
-        if config.require_trend_alignment and not _alignment_matches(signal.signal, higher_trend_state):
+        if (
+            config.require_trend_alignment
+            and not is_ma_stack_reversal
+            and not _alignment_matches(signal.signal, higher_trend_state)
+        ):
             extra_reasons.append(
                 f"{signal.signal} requires {config.timeframe_trend} trend alignment"
             )
-        if getattr(config, "require_confirmed_higher_tf", False):
+        if getattr(config, "require_confirmed_higher_tf", False) and not is_ma_stack_reversal:
             htf_val = higher_trend_state.value
             if signal.signal == "LONG" and htf_val != "CONFIRMED_UPTREND":
                 extra_reasons.append(
@@ -165,7 +176,11 @@ def evaluate_market_conditions(
                 extra_reasons.append(
                     f"SHORT requires confirmed {config.timeframe_trend} downtrend (current: {htf_val.replace('_', ' ').lower()})"
                 )
-        if bias_4h_state is not None and not _alignment_matches(signal.signal, bias_4h_state):
+        if (
+            bias_4h_state is not None
+            and not is_ma_stack_reversal
+            and not _alignment_matches(signal.signal, bias_4h_state)
+        ):
             extra_reasons.append(
                 f"{signal.signal} requires 4H trend alignment (4H state: {bias_4h_state.value})"
             )
@@ -176,7 +191,7 @@ def evaluate_market_conditions(
                 extra_reasons.append("open interest is not increasing")
         if config.require_volume_confirmation and signal_indicators.volume <= signal_indicators.volume_ma20:
             extra_reasons.append("volume is not above volume MA20")
-        if getattr(config, "require_ma7_slope_confirmation", False):
+        if getattr(config, "require_ma7_slope_confirmation", False) and not is_ma_stack_reversal:
             ma7_series = [
                 row["ma7"] for row in signal_indicators.candles if row.get("ma7") is not None
             ]
