@@ -3,8 +3,9 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.trading.models import Trade, TradingBotConfig
+from apps.trading.models import AutoScannerSettings, BotLog, Trade, TradingBotConfig
 from apps.trading.services.auto_scanner_service import sync_top_movers_to_scanner
+from apps.trading.tasks import auto_register_top_movers
 
 
 def _movers(*symbols: str) -> dict:
@@ -26,7 +27,7 @@ def _open_symbols(user) -> set[str]:
 
 
 @pytest.mark.django_db
-@patch("apps.trading.services.auto_scanner_service._log")
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_replaces_stale_movers_but_keeps_open_positions(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-sync@example.com", password="secure-pass")
@@ -72,7 +73,7 @@ def test_sync_replaces_stale_movers_but_keeps_open_positions(mock_binance_cls, m
 
 
 @pytest.mark.django_db
-@patch("apps.trading.services.auto_scanner_service._log")
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-manual@example.com", password="secure-pass")
@@ -87,7 +88,7 @@ def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
 
 
 @pytest.mark.django_db
-@patch("apps.trading.services.auto_scanner_service._log")
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_tags_and_updates_top_mover_side(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-side@example.com", password="secure-pass")
@@ -107,3 +108,51 @@ def test_sync_tags_and_updates_top_mover_side(mock_binance_cls, mock_log):
     eth.refresh_from_db()
     assert btc.top_mover_side == "loser"
     assert eth.top_mover_side == "gainer"
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.sync_top_movers_to_scanner")
+def test_auto_register_top_movers_only_syncs_enabled_settings(mock_sync):
+    enabled_user = get_user_model().objects.create_user("scanner-enabled@example.com", password="secure-pass")
+    disabled_user = get_user_model().objects.create_user("scanner-disabled@example.com", password="secure-pass")
+    AutoScannerSettings.objects.create(user=enabled_user, enabled=True, top_n=7, quote_asset="USDT")
+    AutoScannerSettings.objects.create(user=disabled_user, enabled=False, top_n=7, quote_asset="USDT")
+    mock_sync.return_value = {"added": [], "removed": [], "skipped": []}
+
+    auto_register_top_movers()
+
+    mock_sync.assert_called_once_with(enabled_user, 7, "USDT")
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.sync_top_movers_to_scanner")
+def test_auto_register_top_movers_isolates_per_user_failures(mock_sync):
+    failing_user = get_user_model().objects.create_user("scanner-fail@example.com", password="secure-pass")
+    healthy_user = get_user_model().objects.create_user("scanner-ok@example.com", password="secure-pass")
+    AutoScannerSettings.objects.create(user=failing_user, enabled=True)
+    AutoScannerSettings.objects.create(user=healthy_user, enabled=True)
+
+    def _side_effect(user, *_args, **_kwargs):
+        if user == failing_user:
+            raise RuntimeError("upstream market-data error")
+        return {"added": [], "removed": [], "skipped": []}
+
+    mock_sync.side_effect = _side_effect
+
+    auto_register_top_movers()
+
+    assert mock_sync.call_count == 2
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.sync_top_movers_to_scanner")
+def test_auto_register_top_movers_logs_failure_via_botlog(mock_sync):
+    user = get_user_model().objects.create_user("scanner-error-log@example.com", password="secure-pass")
+    AutoScannerSettings.objects.create(user=user, enabled=True)
+    mock_sync.side_effect = RuntimeError("upstream market-data error")
+
+    auto_register_top_movers()
+
+    log = BotLog.objects.get(user=user, level=BotLog.Level.ERROR)
+    assert log.symbol == "SCANNER"
+    assert "upstream market-data error" in log.message

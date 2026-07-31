@@ -11,7 +11,7 @@ from redis import Redis
 
 from .models import AutoScannerSettings, BotLog, MarketSnapshot, Trade, TradingBotConfig
 from .serializers import BotLogSerializer, MarketSnapshotSerializer, TradeSerializer
-from .services.auto_scanner_service import sync_top_movers_to_scanner
+from .services.auto_scanner_service import log_scanner_event, sync_top_movers_to_scanner
 from .services.paper_trading_service import PaperTradingService
 from .services.live_trading_service import ExistingExchangePosition, LiveTradingService
 from .services.early_exit_service import (
@@ -663,8 +663,23 @@ def auto_register_top_movers() -> None:
     for settings_obj in AutoScannerSettings.objects.filter(enabled=True).select_related("user"):
         try:
             sync_top_movers_to_scanner(settings_obj.user, settings_obj.top_n, settings_obj.quote_asset)
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to sync top movers for user %s", settings_obj.user_id)
+            try:
+                log_scanner_event(
+                    settings_obj.user,
+                    "SCANNER",
+                    f"Automatic top-movers sync failed: {exc}",
+                    level=BotLog.Level.ERROR,
+                )
+            except Exception:
+                # Recording the failure must never itself block remaining users'
+                # scheduled syncs (e.g. if the WebSocket broadcast or Discord
+                # alert backends are unreachable) — the server-side log above
+                # already captured the original failure.
+                logger.exception(
+                    "Failed to record scanner-sync failure log for user %s", settings_obj.user_id
+                )
 
 
 @shared_task

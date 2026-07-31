@@ -4,12 +4,12 @@ from .discord_alert_service import send_discord_alert
 from .websocket_service import broadcast_user_update
 
 
-def _log(user, symbol: str, message: str) -> None:
+def log_scanner_event(user, symbol: str, message: str, level: str = BotLog.Level.INFO) -> None:
     from ..serializers import BotLogSerializer
 
-    log = BotLog.objects.create(user=user, symbol=symbol, level=BotLog.Level.INFO, message=message)
+    log = BotLog.objects.create(user=user, symbol=symbol, level=level, message=message)
     broadcast_user_update(user.id, "log", BotLogSerializer(log).data)
-    send_discord_alert(user, symbol, BotLog.Level.INFO, message)
+    send_discord_alert(user, symbol, level, message)
 
 
 def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str | None = None) -> dict:
@@ -41,7 +41,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
         symbol = config.symbol
         config.delete()
         removed.append(symbol)
-        _log(user, symbol, "Coin removed from scanner (no longer a top gainer/loser).")
+        log_scanner_event(user, symbol, "Coin removed from scanner (no longer a top gainer/loser).")
 
     for symbol, (side, price_change_percent) in desired.items():
         config, created = TradingBotConfig.objects.get_or_create(
@@ -58,7 +58,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
         )
         if created:
             added.append(symbol)
-            _log(
+            log_scanner_event(
                 user,
                 symbol,
                 f"Coin auto-registered and scanning started from top {side} ({price_change_percent:.2f}%).",
@@ -76,7 +76,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
             config.is_running = True
             update_fields.append("is_running")
             added.append(symbol)
-            _log(
+            log_scanner_event(
                 user,
                 symbol,
                 f"Scanning started for auto-registered coin (top {side}, {price_change_percent:.2f}%).",
