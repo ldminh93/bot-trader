@@ -72,7 +72,9 @@ function Metric({
 }
 
 export function DashboardConsole() {
-  const [symbol, setSymbol] = useState<string | null>(null);
+  const [symbol, setSymbol] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("symbol")
+  );
   const [scannerConfigs, setScannerConfigs] = useState<BotConfig[]>([]);
   const [busy, setBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);

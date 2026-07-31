@@ -86,6 +86,7 @@ class BotConfigView(APIView):
                 "leverage",
                 "margin_type",
                 "risk_per_trade_percent",
+                "daily_loss_limit_enabled",
                 "max_daily_loss_percent",
                 "max_margin_loss_percent",
                 "entry_score_threshold",

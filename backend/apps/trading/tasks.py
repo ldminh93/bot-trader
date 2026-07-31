@@ -106,6 +106,8 @@ def _is_symbol_losing(config: TradingBotConfig) -> bool:
 
 
 def daily_loss_reached(config: TradingBotConfig) -> bool:
+    if not config.daily_loss_limit_enabled or config.max_daily_loss_percent <= 0:
+        return False
     today = timezone.now().date()
     realized = (
         Trade.objects.filter(

@@ -54,6 +54,10 @@ class TradingBotConfig(models.Model):
     margin_type = models.CharField(max_length=12, choices=MarginType.choices, default=MarginType.ISOLATED)
     risk_per_trade_percent = models.DecimalField(max_digits=5, decimal_places=2, default=1)
     max_daily_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=3)
+    daily_loss_limit_enabled = models.BooleanField(
+        default=True,
+        help_text="Block new entries once today's realized loss reaches max_daily_loss_percent of paper balance.",
+    )
     max_margin_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=20)
     entry_score_threshold = models.PositiveSmallIntegerField(default=55)
     max_open_positions = models.PositiveSmallIntegerField(default=5)

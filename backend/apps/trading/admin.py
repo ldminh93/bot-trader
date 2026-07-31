@@ -67,7 +67,7 @@ class TradingBotConfigAdmin(admin.ModelAdmin):
         }),
         ("Risk Limits", {
             "fields": (
-                "max_daily_loss_percent", "max_margin_loss_percent",
+                "daily_loss_limit_enabled", "max_daily_loss_percent", "max_margin_loss_percent",
                 "max_consecutive_losses", "circuit_breaker_hours",
             ),
         }),

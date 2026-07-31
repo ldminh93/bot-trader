@@ -483,8 +483,27 @@ export function SettingsConsole() {
               <Field label="Risk per trade (%)">
                 <input className={inputClass} type="number" min="0.1" max="10" step="0.1" value={config.risk_per_trade_percent} onChange={(event) => setConfig({ ...config, risk_per_trade_percent: event.target.value })} />
               </Field>
+              <div className="sm:col-span-2">
+                <Toggle
+                  label="Daily loss limit enabled"
+                  checked={config.daily_loss_limit_enabled ?? true}
+                  onChange={(value) => setConfig({ ...config, daily_loss_limit_enabled: value })}
+                />
+              </div>
               <Field label="Max daily loss (%)">
-                <input className={inputClass} type="number" min="0.5" max="20" step="0.1" value={config.max_daily_loss_percent} onChange={(event) => setConfig({ ...config, max_daily_loss_percent: event.target.value })} />
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="20"
+                  step="0.1"
+                  disabled={!config.daily_loss_limit_enabled}
+                  value={config.max_daily_loss_percent}
+                  onChange={(event) => setConfig({ ...config, max_daily_loss_percent: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Blocks new entries once today&apos;s realized loss reaches this % of paper balance.
+                </span>
               </Field>
               <Field label="Entry score threshold">
                 <input

@@ -220,11 +220,24 @@ export function TradesConsole() {
         <Panel className="min-w-0">
           <PanelHeader
             title="Trade replay"
-            action={selectedTrade?.status === "CLOSED" ? (
-              <button type="button" onClick={exportReplay} className="text-[10px] font-bold text-[var(--accent)]">
-                Export Discord
-              </button>
-            ) : selectedTrade ? <span className="text-[10px] text-[var(--muted)]">Click any trade row to inspect its entry context</span> : undefined}
+            action={selectedTrade ? (
+              <div className="flex items-center gap-3">
+                {selectedTrade.status === "CLOSED" ? (
+                  <button type="button" onClick={exportReplay} className="text-[10px] font-bold text-[var(--accent)]">
+                    Export Discord
+                  </button>
+                ) : (
+                  <span className="text-[10px] text-[var(--muted)]">Click any trade row to inspect its entry context</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => router.push(`/dashboard?symbol=${selectedTrade.symbol}`)}
+                  className="text-[10px] font-bold text-[var(--accent)]"
+                >
+                  Open in Overview
+                </button>
+              </div>
+            ) : undefined}
           />
           {selectedTrade ? (
             <div className="grid gap-4 p-4 xl:grid-cols-[1.35fr_0.65fr]">

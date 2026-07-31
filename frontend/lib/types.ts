@@ -6,6 +6,7 @@ export interface BotConfig {
   leverage: number;
   margin_type: "isolated" | "cross";
   risk_per_trade_percent: string;
+  daily_loss_limit_enabled: boolean;
   max_daily_loss_percent: string;
   max_margin_loss_percent: string;
   entry_score_threshold: number;
