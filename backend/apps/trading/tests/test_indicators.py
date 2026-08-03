@@ -163,6 +163,39 @@ def test_ma_stack_reversal_long_blocked_by_small_ma_gap():
     assert result.detected is False
 
 
+def test_ma_stack_reversal_long_blocked_by_falling_knife_reclaim():
+    """
+    A single green candle reclaiming the bottom MA (90) right off the low of
+    a sharp 5-candle drop (low 88.5) should NOT fire — a close of 90.1 is
+    only ~1.8% above that low, short of the 2% min-bounce requirement.
+    """
+    candles = [
+        {"open": 100.0, "high": 100.2, "low": 95.0, "close": 95.5},
+        {"open": 95.5, "high": 96.0, "low": 93.0, "close": 93.5},
+        {"open": 93.5, "high": 94.0, "low": 91.0, "close": 91.5},
+        {"open": 91.5, "high": 92.0, "low": 89.0, "close": 89.5},
+        {"open": 90.0, "high": 90.2, "low": 88.5, "close": 89.0},  # prev: red, close<=90, sets the 5-candle low
+        {"open": 89.0, "high": 90.3, "low": 88.8, "close": 90.1},  # last: barely reclaims 90
+    ]
+    result = detect_ma_stack_reversal(candles, ma7=90.0, ma25=95.0, ma99=99.0, direction="LONG")
+    assert result.detected is False
+
+
+def test_ma_stack_reversal_long_fires_with_sufficient_bounce_off_low():
+    """Same shape as the falling-knife case, but the reclaim candle (90.5)
+    clears the 5-candle low (88.5) by >=2%, so the reversal is allowed to fire."""
+    candles = [
+        {"open": 100.0, "high": 100.2, "low": 95.0, "close": 95.5},
+        {"open": 95.5, "high": 96.0, "low": 93.0, "close": 93.5},
+        {"open": 93.5, "high": 94.0, "low": 91.0, "close": 91.5},
+        {"open": 91.5, "high": 92.0, "low": 89.0, "close": 89.5},
+        {"open": 90.0, "high": 90.2, "low": 88.5, "close": 89.0},  # prev: red, close<=90, sets the 5-candle low
+        {"open": 89.0, "high": 90.7, "low": 88.8, "close": 90.5},  # last: clears the 88.5 low by >2%
+    ]
+    result = detect_ma_stack_reversal(candles, ma7=90.0, ma25=95.0, ma99=99.0, direction="LONG")
+    assert result.detected is True
+
+
 def test_ma_stack_reversal_short_fires_on_top_ma_rejection():
     """Mirror: MA7=110 (top) > MA25=105 (middle) > MA99=100 (bottom). Previous
     candle is green and closed on/above the top MA; current candle rejected

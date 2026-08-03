@@ -69,6 +69,8 @@ def _lower_wick_ratio(candle: dict) -> float:
 
 
 MIN_MA_GAP_PCT = 0.03
+MIN_BOUNCE_FROM_EXTREME_PCT = 0.02
+BOUNCE_LOOKBACK_CANDLES = 5
 
 
 def _ma7_cross_recovery(
@@ -143,6 +145,8 @@ def detect_ma_stack_reversal(
     ma99: float,
     direction: str,
     min_gap_pct: float = MIN_MA_GAP_PCT,
+    min_bounce_pct: float = MIN_BOUNCE_FROM_EXTREME_PCT,
+    bounce_lookback: int = BOUNCE_LOOKBACK_CANDLES,
 ) -> MAStackReversalResult:
     """
     Detect an early trend-reversal entry: price crosses back through
@@ -161,11 +165,15 @@ def detect_ma_stack_reversal(
     closed back above bottom (the "increase that cuts" it).  bottom/middle
     must be separated by at least ``min_gap_pct`` (relative to bottom) or
     the MA stack is too bunched together (sideways/choppy) for the cross to
-    mean anything.
+    mean anything.  The current close must also clear the lowest low of the
+    prior ``bounce_lookback`` candles by at least ``min_bounce_pct`` — a
+    single candle poking back above ``bottom`` right off the low of a sharp
+    drop is a falling knife, not a confirmed bounce.
 
     SHORT mirrors this: price sits between middle and top, the previous
     candle is bullish and closed on/above top, and the current candle
-    closed back below top.
+    closed back below top, and must clear the highest high of the prior
+    ``bounce_lookback`` candles by at least ``min_bounce_pct``.
     """
     if len(candles) < 2:
         return _EMPTY_MA_STACK_REVERSAL
@@ -174,10 +182,14 @@ def detect_ma_stack_reversal(
     last_close = float(last["close"])
     prev_close = float(prev["close"])
     prev_open = float(prev["open"])
+    lookback_candles = candles[-(bounce_lookback + 1):-1]
     if direction == "LONG":
         if bottom == 0 or not (bottom < last_close < middle):
             return _EMPTY_MA_STACK_REVERSAL
         if (middle - bottom) / abs(bottom) < min_gap_pct:
+            return _EMPTY_MA_STACK_REVERSAL
+        recent_low = min((float(c["low"]) for c in lookback_candles), default=None)
+        if recent_low is None or last_close < recent_low * (1 + min_bounce_pct):
             return _EMPTY_MA_STACK_REVERSAL
         prev_is_red = prev_close < prev_open
         crossed_up = prev_close <= bottom < last_close
@@ -186,6 +198,9 @@ def detect_ma_stack_reversal(
         if top == 0 or not (middle < last_close < top):
             return _EMPTY_MA_STACK_REVERSAL
         if (top - middle) / abs(top) < min_gap_pct:
+            return _EMPTY_MA_STACK_REVERSAL
+        recent_high = max((float(c["high"]) for c in lookback_candles), default=None)
+        if recent_high is None or last_close > recent_high * (1 - min_bounce_pct):
             return _EMPTY_MA_STACK_REVERSAL
         prev_is_green = prev_close > prev_open
         crossed_down = prev_close >= top > last_close
