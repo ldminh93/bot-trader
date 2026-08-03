@@ -9,7 +9,7 @@ import {
   Stop,
   Warning,
 } from "@phosphor-icons/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -72,9 +72,15 @@ function Metric({
 }
 
 export function DashboardConsole() {
+  const searchParams = useSearchParams();
   const [symbol, setSymbol] = useState<string | null>(() =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("symbol")
   );
+
+  useEffect(() => {
+    const urlSymbol = searchParams.get("symbol");
+    if (urlSymbol) setSymbol(urlSymbol);
+  }, [searchParams]);
   const [scannerConfigs, setScannerConfigs] = useState<BotConfig[]>([]);
   const [busy, setBusy] = useState(false);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
