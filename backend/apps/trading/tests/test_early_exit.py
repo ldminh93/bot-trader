@@ -66,7 +66,12 @@ def test_long_early_exit_requires_three_conditions(fetch_klines, market_metrics)
         "open_interest_change_percent": -1.2,
         "funding_rate": 0.0,
     }
-    trade = SimpleNamespace(side=Trade.Side.LONG, symbol="BTCUSDT", unrealized_pnl=0)
+    # -15% margin ROI (entry 100 * qty 1 / leverage 1 = 100 margin) so the
+    # MA25 condition's loss gate is satisfied.
+    trade = SimpleNamespace(
+        side=Trade.Side.LONG, symbol="BTCUSDT",
+        unrealized_pnl=-15, entry_price=100, quantity=1, leverage=1,
+    )
     config = SimpleNamespace(adx_min=20)
 
     decision = evaluate_early_exit(trade, config, long_score=10, short_score=20)
@@ -87,7 +92,10 @@ def test_short_early_exit_requires_three_conditions(fetch_klines, market_metrics
         "open_interest_change_percent": -1.2,
         "funding_rate": 0.0,
     }
-    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT", unrealized_pnl=0)
+    trade = SimpleNamespace(
+        side=Trade.Side.SHORT, symbol="BTCUSDT",
+        unrealized_pnl=-15, entry_price=100, quantity=1, leverage=1,
+    )
     config = SimpleNamespace(adx_min=20)
 
     decision = evaluate_early_exit(trade, config, long_score=20, short_score=10)
@@ -131,7 +139,10 @@ def test_short_early_exit_can_close_on_two_adverse_conditions(
         "open_interest_change_percent": 0.0,
         "funding_rate": 0.0,
     }
-    trade = SimpleNamespace(side=Trade.Side.SHORT, symbol="BTCUSDT", unrealized_pnl=0)
+    trade = SimpleNamespace(
+        side=Trade.Side.SHORT, symbol="BTCUSDT",
+        unrealized_pnl=-15, entry_price=100, quantity=1, leverage=1,
+    )
     config = SimpleNamespace(adx_min=20, early_exit_min_conditions=2)
 
     decision = evaluate_early_exit(trade, config, long_score=70, short_score=10)
@@ -140,6 +151,76 @@ def test_short_early_exit_can_close_on_two_adverse_conditions(
     assert len(decision.conditions) == 2
     assert "15m close is above MA25" in decision.conditions
     assert "LONG score is at least 70" in decision.conditions
+
+
+def _ma25_probe_indicators() -> SimpleNamespace:
+    # Price sits above MA25 (qualifies structurally for the SHORT-side "15m
+    # close is above MA25" condition); the other single-candle checks
+    # (deltas, CVD) are deliberately mixed/inconclusive so only the MA25
+    # condition is in play.
+    return SimpleNamespace(
+        price=101.0, ma7=100.0, ma25=100.0, ma99=100.0, atr=1.0, atr_ma20=1.0, adx=25.0,
+        candles=[
+            {"delta": -1.0, "cvd": 5.0, "close": 100.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+            {"delta": 1.0, "cvd": 4.0, "close": 100.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+            {"delta": -1.0, "cvd": 5.0, "close": 100.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+            {"delta": 1.0, "cvd": 4.0, "close": 101.0, "ma7": 100.0, "ma25": 100.0, "ma99": 100.0},
+        ],
+    )
+
+
+@patch("apps.trading.services.early_exit_service.calculate_indicators")
+@patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
+@patch("apps.trading.services.early_exit_service.BinanceService.fetch_klines")
+def test_short_ma25_condition_suppressed_below_ten_percent_loss(
+    fetch_klines,
+    market_metrics,
+    calculate_indicators,
+):
+    fetch_klines.return_value = rising_candles()
+    calculate_indicators.return_value = _ma25_probe_indicators()
+    market_metrics.return_value = {
+        "open_interest_change_available": False,
+        "open_interest_change_percent": 0.0,
+        "funding_rate": 0.0,
+    }
+    # entry 100 * qty 1 / leverage 1 = 100 margin; pnl -6 => -6% margin ROI
+    trade = SimpleNamespace(
+        side=Trade.Side.SHORT, symbol="BTCUSDT",
+        unrealized_pnl=-6, entry_price=100, quantity=1, leverage=1,
+    )
+    config = SimpleNamespace(adx_min=20)
+
+    decision = evaluate_early_exit(trade, config, long_score=10, short_score=10)
+
+    assert "15m close is above MA25" not in decision.conditions
+
+
+@patch("apps.trading.services.early_exit_service.calculate_indicators")
+@patch("apps.trading.services.early_exit_service.BinanceService.market_metrics")
+@patch("apps.trading.services.early_exit_service.BinanceService.fetch_klines")
+def test_short_ma25_condition_included_at_ten_percent_loss(
+    fetch_klines,
+    market_metrics,
+    calculate_indicators,
+):
+    fetch_klines.return_value = rising_candles()
+    calculate_indicators.return_value = _ma25_probe_indicators()
+    market_metrics.return_value = {
+        "open_interest_change_available": False,
+        "open_interest_change_percent": 0.0,
+        "funding_rate": 0.0,
+    }
+    # entry 100 * qty 1 / leverage 1 = 100 margin; pnl -12 => -12% margin ROI
+    trade = SimpleNamespace(
+        side=Trade.Side.SHORT, symbol="BTCUSDT",
+        unrealized_pnl=-12, entry_price=100, quantity=1, leverage=1,
+    )
+    config = SimpleNamespace(adx_min=20)
+
+    decision = evaluate_early_exit(trade, config, long_score=10, short_score=10)
+
+    assert "15m close is above MA25" in decision.conditions
 
 
 @patch("apps.trading.services.early_exit_service.calculate_indicators")

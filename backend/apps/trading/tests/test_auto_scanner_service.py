@@ -111,6 +111,25 @@ def test_sync_tags_and_updates_top_mover_side(mock_binance_cls, mock_log):
 
 
 @pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_leaves_existing_scanner_coins_untouched_when_fetch_returns_empty(mock_binance_cls, mock_log):
+    user = get_user_model().objects.create_user("scanner-empty-fetch@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT", "ETHUSDT")
+    sync_top_movers_to_scanner(user, top_n=2, quote_asset="USDT")
+    assert _open_symbols(user) == {"BTCUSDT", "ETHUSDT"}
+
+    # Simulate a failed/empty Binance fetch (see BinanceService._fetch_24hr_tickers,
+    # which swallows HTTP/parsing errors into an empty list) rather than the sync
+    # itself being intentionally told there are no gainers/losers.
+    mock_binance_cls.return_value.fetch_top_movers.return_value = {"gainers": [], "losers": []}
+    result = sync_top_movers_to_scanner(user, top_n=2, quote_asset="USDT")
+
+    assert result == {"added": [], "removed": [], "skipped": []}
+    assert _open_symbols(user) == {"BTCUSDT", "ETHUSDT"}
+
+
+@pytest.mark.django_db
 @patch("apps.trading.tasks.sync_top_movers_to_scanner")
 def test_auto_register_top_movers_only_syncs_enabled_settings(mock_sync):
     enabled_user = get_user_model().objects.create_user("scanner-enabled@example.com", password="secure-pass")

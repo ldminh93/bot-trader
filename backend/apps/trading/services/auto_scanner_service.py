@@ -24,6 +24,23 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
         for item in items:
             desired[item["symbol"]] = (side, item["price_change_percent"])
 
+    if not desired:
+        # Binance's public 24hr-ticker fetch swallows HTTP/parsing failures and
+        # returns an empty list (see BinanceService._fetch_24hr_tickers), which
+        # would otherwise look identical to "no gainers or losers exist" —
+        # impossible on a live USDT-M futures market. Treat an empty result as
+        # a failed fetch and leave the existing scanner list untouched instead
+        # of deleting every auto-registered coin because none matched an empty
+        # "desired" set.
+        log_scanner_event(
+            user,
+            "SCANNER",
+            "Top-movers sync skipped: Binance returned no gainers/losers data "
+            "(likely a transient fetch failure) — existing scanner coins were left unchanged.",
+            level=BotLog.Level.WARNING,
+        )
+        return {"added": [], "removed": [], "skipped": []}
+
     added: list[str] = []
     removed: list[str] = []
     skipped: list[str] = []

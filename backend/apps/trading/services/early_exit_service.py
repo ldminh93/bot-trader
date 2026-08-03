@@ -11,6 +11,14 @@ from .trend_service import TrendState, detect_trend_state
 OPPOSITE_SCORE_CONDITION_THRESHOLD = 70
 EXTREME_FUNDING_RATE = 0.001
 
+# The "15m close is above/below MA25" condition alone was firing on small,
+# noise-level losses (e.g. -6% margin ROI) because it only checks price
+# structure. Require the trade to already be down at least this much before
+# this specific condition counts toward the early-exit tally — the other
+# conditions (CVD, delta, OI, ADX, funding, trend flip) are unaffected and can
+# still trigger an exit on their own regardless of ROI.
+MA25_CLOSE_CONDITION_MIN_LOSS_PERCENT = 10.0
+
 
 @dataclass(frozen=True)
 class EarlyExitDecision:
@@ -120,8 +128,16 @@ def evaluate_early_exit(
     )
     conditions: list[str] = []
 
+    unrealized = float(getattr(trade, "unrealized_pnl", 0) or 0)
+    entry = float(getattr(trade, "entry_price", 0) or 0)
+    qty = float(getattr(trade, "quantity", 0) or 0)
+    lev = int(getattr(trade, "leverage", 1) or 1)
+    margin = entry * qty / lev
+    margin_roi_pct = (unrealized / margin * 100) if margin else 0.0
+    ma25_condition_unlocked = margin_roi_pct <= -MA25_CLOSE_CONDITION_MIN_LOSS_PERCENT
+
     if trade.side == Trade.Side.LONG:
-        if indicators.price < indicators.ma25:
+        if indicators.price < indicators.ma25 and ma25_condition_unlocked:
             conditions.append("15m close is below MA25")
         if all(delta < 0 for delta in recent_deltas):
             conditions.append("last 3 candle deltas are negative")
@@ -140,7 +156,7 @@ def evaluate_early_exit(
         if trend_state in {TrendState.CONFIRMED_DOWNTREND, TrendState.EARLY_DOWNTREND}:
             conditions.append(f"15m trend flipped to {trend_state.value.replace('_', ' ').lower()}")
     else:
-        if indicators.price > indicators.ma25:
+        if indicators.price > indicators.ma25 and ma25_condition_unlocked:
             conditions.append("15m close is above MA25")
         if all(delta > 0 for delta in recent_deltas):
             conditions.append("last 3 candle deltas are positive")
@@ -165,16 +181,8 @@ def evaluate_early_exit(
     # Minimum loss guard: suppress early exit until the trade has lost enough
     # (prevents noise exits on tiny adverse moves near entry)
     min_loss_pct = float(getattr(config, "early_exit_min_loss_percent", 0) or 0)
-    if min_loss_pct > 0:
-        unrealized = float(getattr(trade, "unrealized_pnl", 0) or 0)
-        if unrealized < 0:
-            entry = float(trade.entry_price)
-            qty = float(trade.quantity)
-            lev = int(trade.leverage) or 1
-            margin = entry * qty / lev
-            margin_roi_pct = (unrealized / margin * 100) if margin else 0.0
-            if margin_roi_pct > -min_loss_pct:
-                return EarlyExitDecision(False, [])
+    if min_loss_pct > 0 and margin_roi_pct > -min_loss_pct:
+        return EarlyExitDecision(False, [])
 
     # Profit guard: if the trade is currently in profit, require one extra condition
     # to avoid closing winners on short-term noise
