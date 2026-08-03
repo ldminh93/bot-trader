@@ -160,6 +160,24 @@ def test_forced_stop_loss_percent_ignores_atr_runaway_cap():
     assert plan.stop_loss == pytest.approx(90.0)
 
 
+def test_forced_stop_loss_percent_scales_by_leverage():
+    """forced_stop_loss_percent is a margin-ROI target: at x4 leverage a 10%
+    margin-ROI stop must sit only 2.5% away in price, not 10%."""
+    plan = calculate_risk_plan(
+        side="LONG",
+        entry_price=100,
+        account_balance=10_000,
+        risk_percent=1,
+        atr=2,
+        leverage=4,
+        forced_stop_loss_percent=10.0,
+        forced_take_profit_1=105.0,
+        forced_take_profit_2=110.0,
+    )
+    assert plan.stop_loss == pytest.approx(97.5)
+    assert plan.risk_per_unit == pytest.approx(2.5)
+
+
 def test_trade_can_disable_margin_loss_cap():
     plan = calculate_risk_plan(
         "LONG",

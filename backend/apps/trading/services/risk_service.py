@@ -55,9 +55,13 @@ def calculate_risk_plan(
         # flat % instead.  The 3x-ATR runaway-stop cap below doesn't apply
         # here since a flat % stop is the point, not a symptom of MAs lagging
         # far behind price.
+        # forced_stop_loss_percent is a margin-ROI target, not a price-move %
+        # — divide by leverage so e.g. 10% margin ROI at x4 leverage maps to
+        # a 2.5% price move, not a 10% one.
         if forced_stop_loss_percent <= 0:
             raise ValueError("forced_stop_loss_percent must be positive")
-        stop_loss = entry_price * (1 - direction * forced_stop_loss_percent / 100)
+        price_move_percent = forced_stop_loss_percent / leverage
+        stop_loss = entry_price * (1 - direction * price_move_percent / 100)
         risk_per_unit = direction * (entry_price - stop_loss)
     else:
         moving_averages = [
