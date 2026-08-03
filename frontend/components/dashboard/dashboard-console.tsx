@@ -346,7 +346,7 @@ export function DashboardConsole() {
               <Metric
                 label="Funding"
                 value={snapshot ? `${formatNumber(Number(snapshot.funding_rate) * 100, 4)}%` : "-"}
-                tone={pnlColor(Number(snapshot?.funding_rate ?? 0) * -1)}
+                tone={pnlColor(Number(snapshot?.funding_rate ?? 0))}
               />
             </section>
 
