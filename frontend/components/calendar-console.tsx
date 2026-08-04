@@ -130,11 +130,11 @@ export function CalendarConsole() {
     return { pnl, wins, losses };
   }, [summaries, year, month]);
 
-  const maxMonthMarginRoi = useMemo(() => {
+  const maxMonthPnl = useMemo(() => {
     let max = 0;
     const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
     for (const [key, summary] of summaries) {
-      if (key.startsWith(prefix)) max = Math.max(max, Math.abs(summary.totalMarginRoi));
+      if (key.startsWith(prefix)) max = Math.max(max, Math.abs(summary.totalPnl));
     }
     return max;
   }, [summaries, year, month]);
@@ -207,11 +207,11 @@ export function CalendarConsole() {
                   const summary = summaries.get(dateStr);
                   const isToday = dateStr === today;
                   const isSelected = dateStr === selectedDate;
-                  const ratio = maxMonthMarginRoi > 0 && summary && summary.totalMarginRoi !== 0
-                    ? Math.min(1, Math.abs(summary.totalMarginRoi) / maxMonthMarginRoi)
+                  const ratio = maxMonthPnl > 0 && summary && summary.totalPnl !== 0
+                    ? Math.min(1, Math.abs(summary.totalPnl) / maxMonthPnl)
                     : 0;
                   const cellStyle = !isSelected && ratio > 0 ? {
-                    backgroundColor: summary!.totalMarginRoi >= 0
+                    backgroundColor: summary!.totalPnl >= 0
                       ? `rgba(34, 197, 94, ${(0.07 + ratio * 0.28).toFixed(2)})`
                       : `rgba(239, 68, 68, ${(0.07 + ratio * 0.28).toFixed(2)})`,
                   } : undefined;
@@ -240,9 +240,13 @@ export function CalendarConsole() {
 
                       {loading ? null : summary ? (
                         <div className="min-w-0 flex-1">
-                          <p className={`truncate font-mono text-[11px] font-bold leading-tight ${pnlColor(summary.totalMarginRoi)}`}>
+                          <p className={`truncate font-mono text-[11px] font-bold leading-tight ${pnlColor(summary.totalPnl)}`}>
+                            {summary.totalPnl >= 0 ? "+" : ""}
+                            {formatNumber(summary.totalPnl)}
+                          </p>
+                          <p className={`truncate font-mono text-[10px] font-semibold leading-tight ${pnlColor(summary.totalMarginRoi)}`}>
                             {summary.totalMarginRoi >= 0 ? "+" : ""}
-                            {formatNumber(summary.totalMarginRoi)}%
+                            {formatNumber(summary.totalMarginRoi)}% ROI
                           </p>
                           <p className="mt-0.5 text-[10px] text-[var(--muted)]">
                             {summary.trades.length} trade{summary.trades.length !== 1 ? "s" : ""}
