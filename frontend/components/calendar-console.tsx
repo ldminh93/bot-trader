@@ -36,8 +36,6 @@ interface DaySummary {
 
 function buildDaySummaries(trades: Trade[]): Map<string, DaySummary> {
   const map = new Map<string, DaySummary>();
-  const marginRoiSums = new Map<string, number>();
-  const closedCounts = new Map<string, number>();
   for (const trade of trades) {
     // Group closed trades by closed_at date; open trades by opened_at
     const ts = trade.closed_at ?? trade.opened_at;
@@ -47,19 +45,11 @@ function buildDaySummaries(trades: Trade[]): Map<string, DaySummary> {
     if (trade.status === "CLOSED") {
       const pnl = Number(trade.realized_pnl);
       existing.totalPnl += pnl;
+      existing.totalMarginRoi += Number(trade.pnl_percent);
       if (pnl > 0) existing.wins++;
       else if (pnl < 0) existing.losses++;
-      marginRoiSums.set(date, (marginRoiSums.get(date) ?? 0) + Number(trade.pnl_percent));
-      closedCounts.set(date, (closedCounts.get(date) ?? 0) + 1);
     }
     map.set(date, existing);
-  }
-  // Margin ROI isn't additive across trades (leverage/margin can differ per
-  // trade), so a day's figure is the average of its closed trades' ROI —
-  // same convention as average_pnl_percent elsewhere.
-  for (const [date, summary] of map) {
-    const count = closedCounts.get(date) ?? 0;
-    summary.totalMarginRoi = count ? (marginRoiSums.get(date) ?? 0) / count : 0;
   }
   return map;
 }
@@ -286,11 +276,17 @@ export function CalendarConsole() {
             ) : (
               <div>
                 {/* Day totals */}
-                <div className="grid grid-cols-3 border-b border-[var(--line)]">
+                <div className="grid grid-cols-4 border-b border-[var(--line)]">
                   <div className="px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">PnL</p>
                     <p className={`mt-1 font-mono text-sm font-bold ${pnlColor(selectedSummary.totalPnl)}`}>
                       {selectedSummary.totalPnl >= 0 ? "+" : ""}{formatNumber(selectedSummary.totalPnl)}
+                    </p>
+                  </div>
+                  <div className="border-x border-[var(--line)] px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">Margin ROI</p>
+                    <p className={`mt-1 font-mono text-sm font-bold ${pnlColor(selectedSummary.totalMarginRoi)}`}>
+                      {selectedSummary.totalMarginRoi >= 0 ? "+" : ""}{formatNumber(selectedSummary.totalMarginRoi)}%
                     </p>
                   </div>
                   <div className="border-x border-[var(--line)] px-4 py-3">

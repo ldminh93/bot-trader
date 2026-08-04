@@ -71,6 +71,8 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 "require_confirmed_higher_tf": True,
                 "require_ma7_slope_confirmation": True,
                 "require_funding_confirmation": True,
+                "position_margin_usdt": 10,
+                "leverage": 3,
             },
         )
         if created:

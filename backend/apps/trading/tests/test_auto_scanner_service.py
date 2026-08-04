@@ -75,6 +75,22 @@ def test_sync_replaces_stale_movers_but_keeps_open_positions(mock_binance_cls, m
 @pytest.mark.django_db
 @patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_registers_new_coins_with_fixed_margin_and_leverage(mock_binance_cls, mock_log):
+    """Auto-registered top-mover coins default to a 10 USDT fixed margin and
+    3x leverage, not the general TradingBotConfig defaults (null margin / 10x)."""
+    user = get_user_model().objects.create_user("scanner-defaults@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    config = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
+    assert config.position_margin_usdt == 10
+    assert config.leverage == 3
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-manual@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="ADAUSDT", is_running=True, auto_registered=False)
