@@ -29,25 +29,37 @@ interface DaySummary {
   date: string; // "YYYY-MM-DD"
   trades: Trade[];
   totalPnl: number;
+  totalMarginRoi: number;
   wins: number;
   losses: number;
 }
 
 function buildDaySummaries(trades: Trade[]): Map<string, DaySummary> {
   const map = new Map<string, DaySummary>();
+  const marginRoiSums = new Map<string, number>();
+  const closedCounts = new Map<string, number>();
   for (const trade of trades) {
     // Group closed trades by closed_at date; open trades by opened_at
     const ts = trade.closed_at ?? trade.opened_at;
     const date = ts.slice(0, 10);
-    const existing = map.get(date) ?? { date, trades: [], totalPnl: 0, wins: 0, losses: 0 };
+    const existing = map.get(date) ?? { date, trades: [], totalPnl: 0, totalMarginRoi: 0, wins: 0, losses: 0 };
     existing.trades.push(trade);
     if (trade.status === "CLOSED") {
       const pnl = Number(trade.realized_pnl);
       existing.totalPnl += pnl;
       if (pnl > 0) existing.wins++;
       else if (pnl < 0) existing.losses++;
+      marginRoiSums.set(date, (marginRoiSums.get(date) ?? 0) + Number(trade.pnl_percent));
+      closedCounts.set(date, (closedCounts.get(date) ?? 0) + 1);
     }
     map.set(date, existing);
+  }
+  // Margin ROI isn't additive across trades (leverage/margin can differ per
+  // trade), so a day's figure is the average of its closed trades' ROI —
+  // same convention as average_pnl_percent elsewhere.
+  for (const [date, summary] of map) {
+    const count = closedCounts.get(date) ?? 0;
+    summary.totalMarginRoi = count ? (marginRoiSums.get(date) ?? 0) / count : 0;
   }
   return map;
 }
@@ -118,11 +130,11 @@ export function CalendarConsole() {
     return { pnl, wins, losses };
   }, [summaries, year, month]);
 
-  const maxMonthPnl = useMemo(() => {
+  const maxMonthMarginRoi = useMemo(() => {
     let max = 0;
     const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
     for (const [key, summary] of summaries) {
-      if (key.startsWith(prefix)) max = Math.max(max, Math.abs(summary.totalPnl));
+      if (key.startsWith(prefix)) max = Math.max(max, Math.abs(summary.totalMarginRoi));
     }
     return max;
   }, [summaries, year, month]);
@@ -195,11 +207,11 @@ export function CalendarConsole() {
                   const summary = summaries.get(dateStr);
                   const isToday = dateStr === today;
                   const isSelected = dateStr === selectedDate;
-                  const ratio = maxMonthPnl > 0 && summary && summary.totalPnl !== 0
-                    ? Math.min(1, Math.abs(summary.totalPnl) / maxMonthPnl)
+                  const ratio = maxMonthMarginRoi > 0 && summary && summary.totalMarginRoi !== 0
+                    ? Math.min(1, Math.abs(summary.totalMarginRoi) / maxMonthMarginRoi)
                     : 0;
                   const cellStyle = !isSelected && ratio > 0 ? {
-                    backgroundColor: summary!.totalPnl >= 0
+                    backgroundColor: summary!.totalMarginRoi >= 0
                       ? `rgba(34, 197, 94, ${(0.07 + ratio * 0.28).toFixed(2)})`
                       : `rgba(239, 68, 68, ${(0.07 + ratio * 0.28).toFixed(2)})`,
                   } : undefined;
@@ -228,9 +240,9 @@ export function CalendarConsole() {
 
                       {loading ? null : summary ? (
                         <div className="min-w-0 flex-1">
-                          <p className={`truncate font-mono text-[11px] font-bold leading-tight ${pnlColor(summary.totalPnl)}`}>
-                            {summary.totalPnl >= 0 ? "+" : ""}
-                            {formatNumber(summary.totalPnl)}
+                          <p className={`truncate font-mono text-[11px] font-bold leading-tight ${pnlColor(summary.totalMarginRoi)}`}>
+                            {summary.totalMarginRoi >= 0 ? "+" : ""}
+                            {formatNumber(summary.totalMarginRoi)}%
                           </p>
                           <p className="mt-0.5 text-[10px] text-[var(--muted)]">
                             {summary.trades.length} trade{summary.trades.length !== 1 ? "s" : ""}
