@@ -20,7 +20,7 @@ from .services.early_exit_service import (
 )
 from .services.market_snapshot_service import collect_market_snapshot
 from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
-from .services.signal_service import entry_location_block_reason
+from .services.signal_service import MA_STACK_REVERSAL_REASON_PREFIX, entry_location_block_reason
 from .services.websocket_service import broadcast_user_update
 from .services.discord_alert_service import send_discord_alert
 
@@ -237,7 +237,18 @@ def process_config(config: TradingBotConfig) -> None:
             )
             broadcast_user_update(config.user_id, "position", TradeSerializer(open_trade).data)
             return
-        if open_trade.status == Trade.Status.OPEN:
+        # MA-stack-reversal entries are taken deliberately before the normal
+        # trend-confirmation indicators (ADX, CVD, 15m trend state) have
+        # confirmed the new direction — that's the point of catching the
+        # reversal early. evaluate_early_exit's conditions check for exactly
+        # that confirmation, so applying them here would tend to close these
+        # trades almost immediately, before the reversal has had room to
+        # play out. They already carry their own forced SL/TP, so skip early
+        # exit for them instead.
+        opened_via_ma_stack_reversal = open_trade.open_reason.startswith(
+            MA_STACK_REVERSAL_REASON_PREFIX
+        )
+        if open_trade.status == Trade.Status.OPEN and not opened_via_ma_stack_reversal:
             early_exit = evaluate_early_exit(
                 open_trade,
                 config,

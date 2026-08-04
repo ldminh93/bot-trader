@@ -69,6 +69,9 @@ SHORT_FUNDING_ACCEPTABLE_RANGE = (-0.0005, 0.0003)
 # risk multiplier and a fixed % stop instead of the usual ATR/MA-based one.
 MA_STACK_REVERSAL_RISK_MULTIPLIER = 0.5
 MA_STACK_REVERSAL_STOP_LOSS_PERCENT = 10.0
+# Prefix of the reason string below — used at close-time (see tasks.py) to
+# recognize a trade opened via this path, since Trade has no dedicated flag.
+MA_STACK_REVERSAL_REASON_PREFIX = "MA stack reversal"
 
 
 @dataclass(frozen=True)
@@ -268,7 +271,7 @@ def score_signal(
             return SignalResult(
                 "LONG", 0, 0,
                 [
-                    f"MA stack reversal: price reclaimed the lowest MA "
+                    f"{MA_STACK_REVERSAL_REASON_PREFIX}: price reclaimed the lowest MA "
                     f"({long_reversal.bottom_ma:.4f}) and sits below the middle MA "
                     f"({long_reversal.middle_ma:.4f})"
                 ],
@@ -284,7 +287,7 @@ def score_signal(
             return SignalResult(
                 "SHORT", 0, 0,
                 [
-                    f"MA stack reversal: price rejected off the highest MA "
+                    f"{MA_STACK_REVERSAL_REASON_PREFIX}: price rejected off the highest MA "
                     f"({short_reversal.top_ma:.4f}) and sits above the middle MA "
                     f"({short_reversal.middle_ma:.4f})"
                 ],
