@@ -18,6 +18,7 @@ import { TradeTable } from "@/components/dashboard/trade-table";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
+import { useLiveKlines } from "@/hooks/use-live-klines";
 import { api } from "@/lib/api";
 import type { AnalyticsBucket, BacktestResult, BotConfig, LiveSyncHealth, OpportunityItem, SymbolAnalyticsBucket, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, formatPrice, pnlColor } from "@/lib/utils";
@@ -91,6 +92,7 @@ export function DashboardConsole() {
   const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
   const [binanceBalance, setBinanceBalance] = useState<number | null>(null);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
+  const liveCandles = useLiveKlines(symbol, config?.timeframe_signal ?? null, snapshot?.payload.candles ?? []);
   const [nextCycle, setNextCycle] = useState(BOT_CYCLE_SECONDS);
   const cycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -375,8 +377,8 @@ export function DashboardConsole() {
               <Panel className="min-w-0">
                 <PanelHeader title="Price and moving averages" action={<span className="text-[10px] text-[var(--muted)] sm:text-right">{config?.timeframe_signal ?? snapshot?.timeframe ?? "-"} / draggable history</span>} />
                 <div className="h-[295px] w-full overflow-hidden sm:h-[345px]">
-                  {snapshot?.payload.candles?.length ? (
-                    <PriceChart candles={snapshot.payload.candles} position={openPosition} />
+                  {liveCandles.length ? (
+                    <PriceChart candles={liveCandles} position={openPosition} />
                   ) : (
                     <EmptyChart />
                   )}

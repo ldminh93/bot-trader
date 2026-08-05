@@ -1,4 +1,5 @@
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
 from apps.trading.models import MarketSnapshot, TradingBotConfig
@@ -276,17 +277,31 @@ def evaluate_market_conditions(
 
 def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     client = BinanceService()
-    signal_candles = client.fetch_klines(config.symbol, config.timeframe_signal, limit=300)
-    trend_candles = client.fetch_klines(config.symbol, config.timeframe_trend, limit=200)
-    bias_candles = None
-    if config.require_4h_alignment or config.min_tf_alignment_score > 0:
-        bias_candles = client.fetch_klines(config.symbol, "4h", limit=100)
-        if config.use_closed_candle_confirmation:
-            bias_candles = _closed_candles(bias_candles)
+    needs_bias = config.require_4h_alignment or config.min_tf_alignment_score > 0
+
+    # These are independent Binance reads (2-4 calls, one of which itself makes
+    # 5 more internal calls — see market_metrics) — fetching them concurrently
+    # instead of one after another turns that chain of round-trips into the
+    # time of the slowest single branch, which is most of the wall-clock cost
+    # of building a snapshot.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        signal_future = pool.submit(client.fetch_klines, config.symbol, config.timeframe_signal, 300)
+        trend_future = pool.submit(client.fetch_klines, config.symbol, config.timeframe_trend, 200)
+        bias_future = (
+            pool.submit(client.fetch_klines, config.symbol, "4h", 100) if needs_bias else None
+        )
+        metrics_future = pool.submit(client.market_metrics, config.symbol, config.timeframe_signal)
+
+        signal_candles = signal_future.result()
+        trend_candles = trend_future.result()
+        bias_candles = bias_future.result() if bias_future else None
+        metrics = metrics_future.result()
+
+    if bias_candles is not None and config.use_closed_candle_confirmation:
+        bias_candles = _closed_candles(bias_candles)
     if config.use_closed_candle_confirmation:
         signal_candles = _closed_candles(signal_candles)
         trend_candles = _closed_candles(trend_candles)
-    metrics = client.market_metrics(config.symbol, config.timeframe_signal)
     signal_indicators, signal, decision_reasons, trend_state, higher_trend_state, tags, context = evaluate_market_conditions(
         config,
         signal_candles,

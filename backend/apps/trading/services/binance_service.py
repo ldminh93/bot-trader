@@ -3,6 +3,7 @@ import hmac
 import math
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
@@ -107,45 +108,66 @@ class BinanceService:
             return self._mock_metrics(symbol)
 
         mock = self._mock_metrics(symbol)
-        try:
-            oi = self._get("/fapi/v1/openInterest", {"symbol": symbol})
-            latest_oi = float(oi["openInterest"])
-        except (httpx.HTTPError, ValueError, KeyError):
-            latest_oi = mock["open_interest"]
 
-        try:
-            oi_history = self._get(
+        # The four calls below are independent reads (no shared state, no
+        # ordering requirement) — fetching them concurrently instead of one
+        # after another turns ~4 sequential round-trips into the time of the
+        # slowest single one, which is most of this method's latency.
+        def fetch_open_interest() -> float:
+            try:
+                oi = self._get("/fapi/v1/openInterest", {"symbol": symbol})
+                return float(oi["openInterest"])
+            except (httpx.HTTPError, ValueError, KeyError):
+                return mock["open_interest"]
+
+        def fetch_oi_history() -> list | None:
+            try:
+                return self._get(
                     "/futures/data/openInterestHist",
                     {"symbol": symbol, "period": statistics_period, "limit": 2},
                 )
-            previous_oi = float(oi_history[-2]["sumOpenInterest"])
-            oi_change = ((latest_oi - previous_oi) / previous_oi * 100) if previous_oi else 0
-            oi_change_available = True
-        except (httpx.HTTPError, ValueError, KeyError, IndexError):
-            oi_change = 0.0
-            oi_change_available = False
+            except (httpx.HTTPError, ValueError, KeyError):
+                return None
 
-        try:
-            accounts = self._get(
+        def fetch_account_ratio() -> float:
+            try:
+                accounts = self._get(
                     "/futures/data/topLongShortAccountRatio",
                     {"symbol": symbol, "period": statistics_period, "limit": 2},
                 )
-            account_ratio = float(accounts[-1]["longShortRatio"])
-        except (httpx.HTTPError, ValueError, KeyError, IndexError):
-            account_ratio = 1.0
+                return float(accounts[-1]["longShortRatio"])
+            except (httpx.HTTPError, ValueError, KeyError, IndexError):
+                return 1.0
 
-        try:
-            positions = self._get(
+        def fetch_position_ratio() -> tuple[float, float]:
+            try:
+                positions = self._get(
                     "/futures/data/topLongShortPositionRatio",
                     {"symbol": symbol, "period": statistics_period, "limit": 2},
                 )
-            position_ratio = float(positions[-1]["longShortRatio"])
-            position_direction = float(positions[-1]["longShortRatio"]) - float(
-                positions[-2]["longShortRatio"]
-            )
-        except (httpx.HTTPError, ValueError, KeyError, IndexError):
-            position_ratio = 1.0
-            position_direction = 0.0
+                ratio = float(positions[-1]["longShortRatio"])
+                direction = ratio - float(positions[-2]["longShortRatio"])
+                return ratio, direction
+            except (httpx.HTTPError, ValueError, KeyError, IndexError):
+                return 1.0, 0.0
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            oi_future = pool.submit(fetch_open_interest)
+            oi_history_future = pool.submit(fetch_oi_history)
+            account_ratio_future = pool.submit(fetch_account_ratio)
+            position_future = pool.submit(fetch_position_ratio)
+            latest_oi = oi_future.result()
+            oi_history = oi_history_future.result()
+            account_ratio = account_ratio_future.result()
+            position_ratio, position_direction = position_future.result()
+
+        try:
+            previous_oi = float(oi_history[-2]["sumOpenInterest"])
+            oi_change = ((latest_oi - previous_oi) / previous_oi * 100) if previous_oi else 0
+            oi_change_available = True
+        except (TypeError, ValueError, KeyError, IndexError):
+            oi_change = 0.0
+            oi_change_available = False
 
         return {
             "price": float(premium["markPrice"]),
