@@ -42,13 +42,18 @@ export function useLiveKlines(
 
   useEffect(() => {
     if (!symbol || !interval) return;
+    // Narrowing from the guard above doesn't survive into the nested
+    // `connect` function declaration (TS re-widens `symbol`/`interval` to
+    // `string | null` there), so capture them as locals once, up front.
+    const activeSymbol = symbol;
+    const activeInterval = interval;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
 
     function connect() {
       socket = new WebSocket(
-        `wss://fstream.binance.com/ws/${symbol.toLowerCase()}@kline_${interval}`,
+        `wss://fstream.binance.com/ws/${activeSymbol.toLowerCase()}@kline_${activeInterval}`,
       );
       socket.onmessage = (event) => {
         let message: BinanceKlineTick;
