@@ -24,6 +24,9 @@ import { formatCompact, formatNumber, formatPrice, pnlColor } from "@/lib/utils"
 
 const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
 const LEVERAGE_OPTIONS = [1, 3, 5, 10, 20];
+// Mirrors the backend's run-active-bots Celery Beat interval
+// (backend/config/settings.py CELERY_BEAT_SCHEDULE) — purely cosmetic.
+const BOT_CYCLE_SECONDS = 10;
 
 function TrendBadge({ value }: { value: string }) {
   const styles = value === "LONG"
@@ -88,11 +91,11 @@ export function DashboardConsole() {
   const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
   const [binanceBalance, setBinanceBalance] = useState<number | null>(null);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
-  const [nextCycle, setNextCycle] = useState(5);
+  const [nextCycle, setNextCycle] = useState(BOT_CYCLE_SECONDS);
   const cycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setNextCycle(5);
+    setNextCycle(BOT_CYCLE_SECONDS);
     if (cycleTimerRef.current) clearInterval(cycleTimerRef.current);
     cycleTimerRef.current = setInterval(() => setNextCycle((n) => Math.max(0, n - 1)), 1000);
     return () => { if (cycleTimerRef.current) clearInterval(cycleTimerRef.current); };
