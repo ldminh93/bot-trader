@@ -469,12 +469,22 @@ def test_ma_stack_reversal_long_signal_fires_despite_hostile_trend_state():
     trend_state is CONFIRMED_DOWNTREND and price (92) sits below MA99 (99) —
     both would normally hard-block a LONG (G1/G3) — but the MA-stack reversal
     path is designed to catch the reversal *before* those gates would confirm
-    a new trend, so it fires anyway with its own forced SL/TP.
+    a new trend, so it fires anyway with its own forced SL/TP. The bottom MA
+    (ma7) curves up over the last 5 candles and the reclaim candle carries
+    1.5x average volume, satisfying the mandatory slope and volume gates.
     """
     base = _base_indicators()
     candles = [
-        _candle(92.0, 92.5, 89.5, 90.0),  # prev: red, close<=90 (bottom MA)
-        _candle(90.0, 92.5, 89.8, 92.0),  # last: 90 < 92 < 95 (between bottom/middle)
+        _candle(97.0, 97.2, 96.0, 96.5, volume=900),
+        _candle(96.5, 97.0, 93.0, 93.5, volume=900),
+        _candle(93.5, 94.0, 91.0, 91.5, volume=900),
+        _candle(91.5, 92.0, 89.5, 92.0, volume=900),
+        _candle(92.0, 92.5, 89.5, 90.0, volume=900),  # prev: red, close<=90 (bottom MA)
+        _candle(90.0, 92.5, 89.8, 92.0, volume=1500),  # last: 90 < 92 < 95 (between bottom/middle)
+    ]
+    candles = [
+        {**c, "ma7": ma7}
+        for c, ma7 in zip(candles, [87.0, 87.8, 88.6, 89.3, 89.8, 90.0])
     ]
     signal_data = replace(
         base,
@@ -482,6 +492,7 @@ def test_ma_stack_reversal_long_signal_fires_despite_hostile_trend_state():
         ma7=90.0,   # bottom
         ma25=95.0,  # middle
         ma99=99.0,  # top -- price (92) is below MA99, which would normally fail G3
+        volume_ma20=1000.0,
         candles=candles,
     )
     signal = score_signal(

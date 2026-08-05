@@ -71,6 +71,28 @@ def _lower_wick_ratio(candle: dict) -> float:
 MIN_MA_GAP_PCT = 0.03
 MIN_BOUNCE_FROM_EXTREME_PCT = 0.02
 BOUNCE_LOOKBACK_CANDLES = 5
+MA_SLOPE_CONFIRMATION_LOOKBACK = 5
+MIN_REJECTION_VOL_RATIO = 1.2
+
+
+def _ma_key_for_value(ma7: float, ma25: float, ma99: float, target: float) -> str:
+    for key, value in (("ma7", ma7), ("ma25", ma25), ("ma99", ma99)):
+        if value == target:
+            return key
+    return "ma7"
+
+
+def _ma_series_slope(candles: list[dict], key: str, lookback: int) -> float | None:
+    """None when there isn't enough per-candle MA history to judge curvature
+    (e.g. minimal test fixtures) — callers treat that as inconclusive rather
+    than blocking, since real candle data always carries this. 0 is treated
+    the same as missing — same convention as the ``bottom == 0`` check above,
+    since a real price-based MA is never exactly zero."""
+    values = [float(c[key]) for c in candles if c.get(key)]
+    window = values[-lookback:]
+    if len(window) < 2:
+        return None
+    return (window[-1] - window[0]) / (len(window) - 1)
 
 
 def _ma7_cross_recovery(
@@ -144,9 +166,12 @@ def detect_ma_stack_reversal(
     ma25: float,
     ma99: float,
     direction: str,
+    vol_ma20: float,
     min_gap_pct: float = MIN_MA_GAP_PCT,
     min_bounce_pct: float = MIN_BOUNCE_FROM_EXTREME_PCT,
     bounce_lookback: int = BOUNCE_LOOKBACK_CANDLES,
+    slope_lookback: int = MA_SLOPE_CONFIRMATION_LOOKBACK,
+    min_rejection_vol_ratio: float = MIN_REJECTION_VOL_RATIO,
 ) -> MAStackReversalResult:
     """
     Detect an early trend-reversal entry: price crosses back through
@@ -168,12 +193,26 @@ def detect_ma_stack_reversal(
     mean anything.  The current close must also clear the lowest low of the
     prior ``bounce_lookback`` candles by at least ``min_bounce_pct`` — a
     single candle poking back above ``bottom`` right off the low of a sharp
-    drop is a falling knife, not a confirmed bounce.
+    drop is a falling knife, not a confirmed bounce.  The ``bottom`` MA
+    itself must also already be curving upward over the prior
+    ``slope_lookback`` candles — if it's still sloping down (or flat), the
+    reversal hasn't actually rolled over yet, it's just a bounce inside an
+    intact downtrend.  This slope confirmation is mandatory: if there isn't
+    enough per-candle MA history to compute it, the reversal does not fire
+    (unlike a genuinely flat/inconclusive slope elsewhere, "unknown" here
+    must not be treated as "pass" — this is the one gate standing between a
+    real rollover and a bounce inside an intact trend).  The rejection
+    candle must also show volume at least ``min_rejection_vol_ratio`` times
+    ``vol_ma20`` — a thin, low-participation bounce is not a confirmed
+    reversal.
 
     SHORT mirrors this: price sits between middle and top, the previous
     candle is bullish and closed on/above top, and the current candle
     closed back below top, and must clear the highest high of the prior
-    ``bounce_lookback`` candles by at least ``min_bounce_pct``.
+    ``bounce_lookback`` candles by at least ``min_bounce_pct``.  The ``top``
+    MA must likewise already be curving downward over the prior
+    ``slope_lookback`` candles, and the rejection candle must clear the same
+    volume floor.
     """
     if len(candles) < 2:
         return _EMPTY_MA_STACK_REVERSAL
@@ -183,6 +222,7 @@ def detect_ma_stack_reversal(
     prev_close = float(prev["close"])
     prev_open = float(prev["open"])
     lookback_candles = candles[-(bounce_lookback + 1):-1]
+    rejection_vol_ratio = float(last.get("volume", 0.0)) / vol_ma20 if vol_ma20 > 0 else 0.0
     if direction == "LONG":
         if bottom == 0 or not (bottom < last_close < middle):
             return _EMPTY_MA_STACK_REVERSAL
@@ -190,6 +230,12 @@ def detect_ma_stack_reversal(
             return _EMPTY_MA_STACK_REVERSAL
         recent_low = min((float(c["low"]) for c in lookback_candles), default=None)
         if recent_low is None or last_close < recent_low * (1 + min_bounce_pct):
+            return _EMPTY_MA_STACK_REVERSAL
+        bottom_key = _ma_key_for_value(ma7, ma25, ma99, bottom)
+        bottom_slope = _ma_series_slope(candles, bottom_key, slope_lookback)
+        if bottom_slope is None or bottom_slope <= 0:
+            return _EMPTY_MA_STACK_REVERSAL
+        if rejection_vol_ratio < min_rejection_vol_ratio:
             return _EMPTY_MA_STACK_REVERSAL
         prev_is_red = prev_close < prev_open
         crossed_up = prev_close <= bottom < last_close
@@ -201,6 +247,12 @@ def detect_ma_stack_reversal(
             return _EMPTY_MA_STACK_REVERSAL
         recent_high = max((float(c["high"]) for c in lookback_candles), default=None)
         if recent_high is None or last_close > recent_high * (1 - min_bounce_pct):
+            return _EMPTY_MA_STACK_REVERSAL
+        top_key = _ma_key_for_value(ma7, ma25, ma99, top)
+        top_slope = _ma_series_slope(candles, top_key, slope_lookback)
+        if top_slope is None or top_slope >= 0:
+            return _EMPTY_MA_STACK_REVERSAL
+        if rejection_vol_ratio < min_rejection_vol_ratio:
             return _EMPTY_MA_STACK_REVERSAL
         prev_is_green = prev_close > prev_open
         crossed_down = prev_close >= top > last_close

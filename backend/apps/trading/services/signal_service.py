@@ -266,7 +266,9 @@ def score_signal(
     # a reversal before G1-G3 would ever confirm a new trend, so it can't be
     # gated behind them. See detect_ma_stack_reversal for the pattern itself.
     if enable_long:
-        long_reversal = detect_ma_stack_reversal(candles, signal_data.ma7, signal_data.ma25, signal_data.ma99, "LONG")
+        long_reversal = detect_ma_stack_reversal(
+            candles, signal_data.ma7, signal_data.ma25, signal_data.ma99, "LONG", signal_data.volume_ma20
+        )
         if long_reversal.detected:
             return SignalResult(
                 "LONG", 0, 0,
@@ -282,7 +284,9 @@ def score_signal(
                 forced_take_profit_2=long_reversal.top_ma,
             )
     if enable_short:
-        short_reversal = detect_ma_stack_reversal(candles, signal_data.ma7, signal_data.ma25, signal_data.ma99, "SHORT")
+        short_reversal = detect_ma_stack_reversal(
+            candles, signal_data.ma7, signal_data.ma25, signal_data.ma99, "SHORT", signal_data.volume_ma20
+        )
         if short_reversal.detected:
             return SignalResult(
                 "SHORT", 0, 0,
