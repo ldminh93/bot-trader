@@ -52,9 +52,18 @@ export function useLiveKlines(
     let stopped = false;
 
     function connect() {
-      socket = new WebSocket(
-        `wss://fstream.binance.com/ws/${activeSymbol.toLowerCase()}@kline_${activeInterval}`,
-      );
+      const url = `wss://fstream.binance.com/ws/${activeSymbol.toLowerCase()}@kline_${activeInterval}`;
+      socket = new WebSocket(url);
+      socket.onopen = () => {
+        console.info(`[live-klines] connected: ${url}`);
+      };
+      socket.onerror = () => {
+        console.warn(`[live-klines] connection error: ${url}`);
+      };
+      socket.onclose = (event) => {
+        console.info(`[live-klines] closed (code=${event.code}, reason="${event.reason}"), reconnecting in ${RECONNECT_DELAY_MS}ms`);
+        if (!stopped) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+      };
       socket.onmessage = (event) => {
         let message: BinanceKlineTick;
         try {
@@ -81,9 +90,6 @@ export function useLiveKlines(
           }
           return current;
         });
-      };
-      socket.onclose = () => {
-        if (!stopped) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
       };
     }
 
