@@ -11,6 +11,12 @@ import { formatCompact, formatNumber, formatPrice } from "@/lib/utils";
 
 type Tab = "gainers" | "losers";
 
+// The backend caps /market/top-movers at 50 and returns a plain sorted-and-sliced
+// list (see fetch_top_movers), so a Top-10/20/30 selection is always a prefix of
+// the Top-50 result. Fetching at this fixed ceiling once and slicing client-side
+// for the dropdown means changing the count never needs a network round-trip.
+const MAX_FETCH_LIMIT = 50;
+
 function readMoversConfig() {
   if (typeof window === "undefined") return { showGainers: true, showLosers: true };
   try {
@@ -95,7 +101,7 @@ export function TopMoversConsole() {
     if (showSpinner) setRefreshing(true);
     setError(null);
     try {
-      const result = await api.topMovers(limit);
+      const result = await api.topMovers(MAX_FETCH_LIMIT);
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load top movers");
@@ -103,12 +109,15 @@ export function TopMoversConsole() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [limit]);
+  }, []);
 
+  // Runs once on mount only — changing the count dropdown re-slices the
+  // already-fetched Top-50 result below instead of triggering a refetch.
   useEffect(() => {
     setLoading(true);
     load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     api.autoScannerSettings().then(setAutoSettings).catch(() => {});
@@ -145,7 +154,7 @@ export function TopMoversConsole() {
     }
   }, []);
 
-  const rows = data ? data[tab] : [];
+  const rows = data ? data[tab].slice(0, limit) : [];
 
   return (
     <AppShell>

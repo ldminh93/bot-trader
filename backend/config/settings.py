@@ -109,7 +109,7 @@ CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_BEAT_SCHEDULE = {
     "run-active-bots": {
         "task": "apps.trading.tasks.run_active_bots",
-        "schedule": 10.0,
+        "schedule": 5.0,
     },
     "auto-register-top-movers": {
         "task": "apps.trading.tasks.auto_register_top_movers",

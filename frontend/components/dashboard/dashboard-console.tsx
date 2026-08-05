@@ -121,11 +121,19 @@ export function DashboardConsole() {
     return () => window.removeEventListener("focus", refreshScannerConfigs);
   }, [refreshScannerConfigs]);
 
+  // Each poller below guards against overlap: if the backend is slow and a
+  // tick fires before the previous call for that same endpoint resolved, the
+  // new tick is skipped rather than sending a duplicate overlapping request.
+  const liveSyncInFlight = useRef(false);
   const refreshLiveSync = useCallback(async () => {
+    if (liveSyncInFlight.current) return;
+    liveSyncInFlight.current = true;
     try {
       setLiveSync(await api.liveSync());
     } catch {
       setLiveSync(null);
+    } finally {
+      liveSyncInFlight.current = false;
     }
   }, []);
 
@@ -135,11 +143,16 @@ export function DashboardConsole() {
     return () => window.clearInterval(timer);
   }, [refreshLiveSync]);
 
+  const opportunitiesInFlight = useRef(false);
   const refreshOpportunities = useCallback(async () => {
+    if (opportunitiesInFlight.current) return;
+    opportunitiesInFlight.current = true;
     try {
       setOpportunities(await api.opportunities());
     } catch {
       setOpportunities([]);
+    } finally {
+      opportunitiesInFlight.current = false;
     }
   }, []);
 
@@ -149,12 +162,17 @@ export function DashboardConsole() {
     return () => window.clearInterval(timer);
   }, [refreshOpportunities]);
 
+  const binanceBalanceInFlight = useRef(false);
   const refreshBinanceBalance = useCallback(async () => {
+    if (binanceBalanceInFlight.current) return;
+    binanceBalanceInFlight.current = true;
     try {
       const result = await api.binanceBalance();
       setBinanceBalance(result.balance);
     } catch {
       setBinanceBalance(null);
+    } finally {
+      binanceBalanceInFlight.current = false;
     }
   }, []);
 

@@ -120,12 +120,19 @@ export function useDashboard(symbol: string | null) {
     return !activeConfig || next.timeframe === activeConfig.timeframe_signal;
   }, []);
 
+  const refreshingRef = useRef(false);
+
   const refresh = useCallback(async () => {
     if (!symbol) return;
     if (!getToken()) {
       router.push("/login");
       return;
     }
+    // Skip this tick if the previous poll for this symbol hasn't resolved yet —
+    // otherwise a slow backend response causes every subsequent 10s tick to fire
+    // a fresh, overlapping copy of the same requests instead of waiting.
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
     try {
       const [nextConfig, nextTrades, nextStats, nextLogs] = await Promise.all([
         api.config(symbol),
@@ -157,6 +164,7 @@ export function useDashboard(symbol: string | null) {
       if (selectedSymbol.current !== symbol) return;
       setError(reason instanceof Error ? reason.message : "Unable to load dashboard");
     } finally {
+      refreshingRef.current = false;
       if (selectedSymbol.current === symbol) setLoading(false);
     }
   }, [router, symbol]);
