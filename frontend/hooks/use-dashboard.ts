@@ -90,7 +90,13 @@ function normalizeSnapshot(
       effective_leverage: payload.effective_leverage ?? 0,
       leverage_factor: payload.leverage_factor ?? 1,
       tp_r_multiple: payload.tp_r_multiple ?? 0,
-      candles: payload.candles ?? [],
+      // The WebSocket-pushed snapshot payload (see backend collect_market_snapshot)
+      // never carries `candles` — only the REST /market/snapshot response enriches
+      // it. Without this fallback, every WS push wiped the chart back to empty
+      // until the next REST poll repopulated it, causing a visible flicker.
+      candles: payload.candles
+        ?? (canReuseHistory ? previous?.payload.candles : undefined)
+        ?? [],
       market_history: payload.market_history
         ?? (canReuseHistory ? previous?.payload.market_history : undefined),
     },
