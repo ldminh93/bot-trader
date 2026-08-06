@@ -240,6 +240,60 @@ def test_live_mode_is_shared_across_coin_configs(settings):
 
 
 @pytest.mark.django_db
+def test_saving_unrelated_field_does_not_reset_live_mode_on_other_coins(settings):
+    """
+    Reproduces the actual bug: the settings UI always PUTs the full config
+    object, not just the edited field, so `live_mode_requested` is present
+    on every save even when unchanged. Before this fix, that unconditionally
+    re-propagated whatever value the edited coin currently held onto every
+    other coin — silently flipping live trading off elsewhere just because
+    an unrelated field (leverage) was saved for one coin.
+    """
+    settings.ENABLE_LIVE_TRADING = True
+    user = get_user_model().objects.create_user(
+        "no-accidental-live-reset@example.com",
+        password="secure-pass",
+    )
+    btc = TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", live_mode_requested=False)
+    eth = TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", live_mode_requested=True)
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.put(
+        "/api/bot/config",
+        {"symbol": btc.symbol, "live_mode_requested": False, "leverage": 15},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    eth.refresh_from_db()
+    assert eth.live_mode_requested is True
+
+
+@pytest.mark.django_db
+def test_saving_unrelated_field_does_not_reset_max_open_positions_on_other_coins():
+    """Same bug, for the other account-wide field."""
+    user = get_user_model().objects.create_user(
+        "no-accidental-position-reset@example.com",
+        password="secure-pass",
+    )
+    btc = TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", max_open_positions=5)
+    eth = TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", max_open_positions=9)
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.put(
+        "/api/bot/config",
+        {"symbol": btc.symbol, "max_open_positions": 5, "leverage": 15},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    eth.refresh_from_db()
+    assert eth.max_open_positions == 9
+
+
+@pytest.mark.django_db
 def test_new_scanner_coin_inherits_account_live_mode():
     user = get_user_model().objects.create_user(
         "new-live-coin@example.com",

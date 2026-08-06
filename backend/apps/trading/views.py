@@ -140,6 +140,8 @@ class BotConfigView(APIView):
 
     def put(self, request):
         config = get_config(request.user, request.data.get("symbol"))
+        previous_live_mode_requested = config.live_mode_requested
+        previous_max_open_positions = config.max_open_positions
         serializer = TradingBotConfigSerializer(config, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         if serializer.validated_data.get("live_mode_requested") and not settings.ENABLE_LIVE_TRADING:
@@ -148,11 +150,23 @@ class BotConfigView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         saved_config = serializer.save()
-        if "live_mode_requested" in serializer.validated_data:
+        # These two fields are account-wide: changing either for one coin is meant
+        # to apply to every scanner coin. But the settings UI always PUTs the full
+        # config object (not just the edited field), so the key is present on
+        # every save regardless of whether the user touched it — only propagate
+        # when the value actually changed, or saving an unrelated field on one coin
+        # would silently overwrite this account-wide flag on every other coin.
+        if (
+            "live_mode_requested" in serializer.validated_data
+            and saved_config.live_mode_requested != previous_live_mode_requested
+        ):
             TradingBotConfig.objects.filter(user=request.user).exclude(
                 pk=saved_config.pk
             ).update(live_mode_requested=saved_config.live_mode_requested)
-        if "max_open_positions" in serializer.validated_data:
+        if (
+            "max_open_positions" in serializer.validated_data
+            and saved_config.max_open_positions != previous_max_open_positions
+        ):
             TradingBotConfig.objects.filter(user=request.user).exclude(
                 pk=saved_config.pk
             ).update(max_open_positions=saved_config.max_open_positions)

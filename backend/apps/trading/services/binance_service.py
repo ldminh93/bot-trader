@@ -217,6 +217,7 @@ class BinanceService:
         price: Decimal,
         quantity: Decimal,
         rules: SymbolRules,
+        skip_min_notional: bool = False,
     ) -> tuple[Decimal, Decimal]:
         price = Decimal(str(price))
         quantity = Decimal(str(quantity))
@@ -224,7 +225,12 @@ class BinanceService:
         normalized_quantity = (
             (quantity / rules.step_size).to_integral_value(rounding=ROUND_DOWN) * rules.step_size
         )
-        if normalized_price * normalized_quantity < rules.min_notional:
+        # MIN_NOTIONAL exists to stop opening trivial new exposure; Binance does not
+        # enforce it against reduce-only orders that unwind an existing position, so
+        # callers closing a position (e.g. the runner leftover after TP1/TP2 fills)
+        # pass skip_min_notional=True rather than getting permanently stuck retrying
+        # a close that's too small to ever pass this check locally.
+        if not skip_min_notional and normalized_price * normalized_quantity < rules.min_notional:
             raise ValueError("Order is below Binance minimum notional")
         return normalized_price, normalized_quantity
 

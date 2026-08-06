@@ -80,6 +80,36 @@ def test_live_entry_closes_position_when_protection_fails():
     assert emergency_close.kwargs == {"reduce_only": True}
 
 
+def test_close_position_skips_min_notional_check():
+    """
+    Reproduces the reported bug: closing the small runner leftover after TP1/TP2
+    fills must not raise "Order is below Binance minimum notional" — closing an
+    existing position must bypass the check that only guards new entries.
+    """
+    service = service_with_client()
+
+    service.close_position("LONG", Decimal("0.001"), Decimal("100"))
+
+    service.client.normalize_order.assert_called_once_with(
+        Decimal("100"), Decimal("0.001"), service.client.symbol_rules.return_value, skip_min_notional=True
+    )
+    service.client.place_market_order.assert_called_once_with(
+        "BTCUSDT", "SELL", Decimal("0.100"), reduce_only=True
+    )
+
+
+def test_close_position_skips_order_when_quantity_rounds_to_zero():
+    """A remaining quantity that rounds down to zero at step_size has nothing left
+    to close on the exchange — must not send a doomed zero-quantity order."""
+    service = service_with_client()
+    service.client.normalize_order.return_value = (Decimal("100.00"), Decimal("0"))
+
+    result = service.close_position("LONG", Decimal("0.0001"), Decimal("100"))
+
+    assert result is None
+    service.client.place_market_order.assert_not_called()
+
+
 def test_live_entry_is_skipped_when_exchange_position_exists():
     service = service_with_client()
     service.client.position_amount.return_value = Decimal("0.250")

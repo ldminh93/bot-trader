@@ -163,9 +163,16 @@ class LiveTradingService:
         )
         return (stop_order, *take_profit_orders)
 
-    def close_position(self, position_side: str, quantity, price) -> dict:
+    def close_position(self, position_side: str, quantity, price) -> dict | None:
         rules = self.client.symbol_rules(self.config.symbol)
-        _, normalized_quantity = self.client.normalize_order(price, quantity, rules)
+        # skip_min_notional: this unwinds an existing position rather than opening
+        # new exposure (e.g. the small runner leftover after TP1/TP2 fills), so the
+        # MIN_NOTIONAL floor that guards new entries must not block it here.
+        _, normalized_quantity = self.client.normalize_order(
+            price, quantity, rules, skip_min_notional=True
+        )
+        if normalized_quantity <= 0:
+            return None
         exchange_side = "SELL" if position_side == "LONG" else "BUY"
         return self.client.place_market_order(
             self.config.symbol,
