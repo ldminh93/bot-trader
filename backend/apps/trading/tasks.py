@@ -1,5 +1,6 @@
 import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from decimal import Decimal
 
@@ -26,6 +27,14 @@ from .services.discord_alert_service import send_discord_alert
 
 logger = logging.getLogger(__name__)
 redis_client = Redis.from_url(settings.REDIS_URL)
+
+# Each bot cycle is dominated by outbound Binance HTTP calls (I/O-bound), so
+# running several concurrently keeps one full pass through every running
+# config well under the beat schedule's interval as the scanner list grows —
+# without this, a purely sequential loop over N configs takes roughly N times
+# one config's latency, which past a few dozen configs exceeds the 10s cycle
+# and backs up Celery's queue indefinitely (every other task included).
+MAX_CONCURRENT_BOT_CYCLES = 10
 
 def create_log(config: TradingBotConfig, level: str, message: str) -> BotLog:
     log = BotLog.objects.create(
@@ -693,27 +702,46 @@ def auto_register_top_movers() -> None:
                 )
 
 
+def _run_bot_cycle(config: TradingBotConfig) -> None:
+    lock_key = f"trading:cycle:{config.pk}"
+    lock_token = uuid.uuid4().hex
+    if not redis_client.set(lock_key, lock_token, nx=True, ex=60):
+        return
+    try:
+        process_config(config)
+    except Exception as exc:
+        logger.exception("Bot cycle failed for config %s", config.pk)
+        try:
+            create_log(config, BotLog.Level.ERROR, f"Bot cycle failed: {exc}")
+        except Exception:
+            # Recording the failure must never itself raise (e.g. if the
+            # WebSocket broadcast or Discord alert backend is unreachable) —
+            # doing so would escape this except block and, since every config's
+            # cycle runs in this same helper, abort the remaining configs in
+            # this pass. The exception is already captured by logger.exception
+            # above.
+            logger.exception("Failed to record bot-cycle failure log for config %s", config.pk)
+    finally:
+        redis_client.eval(
+            """
+            if redis.call("get", KEYS[1]) == ARGV[1] then
+                return redis.call("del", KEYS[1])
+            end
+            return 0
+            """,
+            1,
+            lock_key,
+            lock_token,
+        )
+
+
 @shared_task
 def run_active_bots() -> None:
-    for config in TradingBotConfig.objects.filter(is_running=True).select_related("user"):
-        lock_key = f"trading:cycle:{config.pk}"
-        lock_token = uuid.uuid4().hex
-        if not redis_client.set(lock_key, lock_token, nx=True, ex=60):
-            continue
-        try:
-            process_config(config)
-        except Exception as exc:
-            logger.exception("Bot cycle failed for config %s", config.pk)
-            create_log(config, BotLog.Level.ERROR, f"Bot cycle failed: {exc}")
-        finally:
-            redis_client.eval(
-                """
-                if redis.call("get", KEYS[1]) == ARGV[1] then
-                    return redis.call("del", KEYS[1])
-                end
-                return 0
-                """,
-                1,
-                lock_key,
-                lock_token,
-            )
+    configs = list(TradingBotConfig.objects.filter(is_running=True).select_related("user"))
+    if not configs:
+        return
+    with ThreadPoolExecutor(max_workers=min(len(configs), MAX_CONCURRENT_BOT_CYCLES)) as pool:
+        # list(...) forces every submitted cycle to complete (and any exception
+        # from outside _run_bot_cycle's own try/except, e.g. a Redis connection
+        # error, to surface) before this task returns.
+        list(pool.map(_run_bot_cycle, configs))
