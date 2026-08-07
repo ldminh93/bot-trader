@@ -21,6 +21,7 @@ class UserDiscordAlertConfig(models.Model):
     notify_info = models.BooleanField(default=True)
     notify_warning = models.BooleanField(default=True)
     notify_error = models.BooleanField(default=True)
+    notify_scanner_changes = models.BooleanField(default=True)
     error_escalation_enabled = models.BooleanField(default=True)
     error_escalation_threshold = models.PositiveSmallIntegerField(default=3)
     error_escalation_window_minutes = models.PositiveSmallIntegerField(default=15)
