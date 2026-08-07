@@ -109,7 +109,13 @@ CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_BEAT_SCHEDULE = {
     "run-active-bots": {
         "task": "apps.trading.tasks.run_active_bots",
-        "schedule": 10.0,
+        # 66+ scanner coins x ~7-8 Binance API calls each, every cycle, adds up
+        # fast — 10s was enough to trip Binance's per-IP request-weight ban
+        # (-1003 / HTTP 418) once bot cycles ran at their intended concurrency
+        # instead of being backed up behind a Celery queue. 30s keeps total
+        # request volume within budget; still far faster than the 15m/1h
+        # candle timeframes most strategies actually key off.
+        "schedule": 30.0,
     },
     "auto-register-top-movers": {
         "task": "apps.trading.tasks.auto_register_top_movers",

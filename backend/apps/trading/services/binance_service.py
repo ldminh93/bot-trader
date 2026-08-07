@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import math
 import random
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode
@@ -10,6 +11,17 @@ from decimal import Decimal, ROUND_DOWN
 
 import httpx
 from django.conf import settings
+
+# Exchange-wide trading rules (tick/step size, min notional) change on the
+# order of days-to-weeks, not per-request — fetching the full /fapi/v1/exchangeInfo
+# payload (metadata for every symbol on the exchange) on every single order
+# placement/close is pure waste, and was a direct contributor to tripping
+# Binance's per-IP request-weight ban (error -1003 / HTTP 418) once bot cycles
+# started running at their intended concurrency. Cache it process-wide.
+_EXCHANGE_INFO_CACHE: dict | None = None
+_EXCHANGE_INFO_CACHE_AT = 0.0
+_EXCHANGE_INFO_TTL_SECONDS = 3600
+_exchange_info_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -202,8 +214,17 @@ class BinanceService:
         data = self._get("/fapi/v1/premiumIndex", {"symbol": symbol.upper()})
         return Decimal(str(data["markPrice"]))
 
+    def _cached_exchange_info(self) -> dict:
+        global _EXCHANGE_INFO_CACHE, _EXCHANGE_INFO_CACHE_AT
+        now = time.time()
+        with _exchange_info_lock:
+            if _EXCHANGE_INFO_CACHE is None or now - _EXCHANGE_INFO_CACHE_AT > _EXCHANGE_INFO_TTL_SECONDS:
+                _EXCHANGE_INFO_CACHE = self._get("/fapi/v1/exchangeInfo")
+                _EXCHANGE_INFO_CACHE_AT = now
+            return _EXCHANGE_INFO_CACHE
+
     def symbol_rules(self, symbol: str) -> SymbolRules:
-        data = self._get("/fapi/v1/exchangeInfo")
+        data = self._cached_exchange_info()
         item = next(entry for entry in data["symbols"] if entry["symbol"] == symbol.upper())
         filters = {entry["filterType"]: entry for entry in item["filters"]}
         return SymbolRules(
