@@ -55,9 +55,11 @@ export function useLiveKlines(
       const url = `wss://fstream.binance.com/ws/${activeSymbol.toLowerCase()}@kline_${activeInterval}`;
       socket = new WebSocket(url);
       socket.onopen = () => {
+        if (stopped) return;
         console.info(`[live-klines] connected: ${url}`);
       };
       socket.onerror = () => {
+        if (stopped) return;
         console.warn(`[live-klines] connection error: ${url}`);
       };
       socket.onclose = (event) => {
@@ -65,6 +67,11 @@ export function useLiveKlines(
         if (!stopped) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
       };
       socket.onmessage = (event) => {
+        // socket.close() doesn't cancel a message already in flight — without
+        // this check, a tick for the *previous* symbol that arrives just after
+        // cleanup ran could still merge into the now-current symbol's candles,
+        // showing another coin's price on the chart.
+        if (stopped) return;
         let message: BinanceKlineTick;
         try {
           message = JSON.parse(event.data);

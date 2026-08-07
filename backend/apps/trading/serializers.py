@@ -156,6 +156,7 @@ class DiscordAlertConfigSerializer(serializers.ModelSerializer):
             "notify_info",
             "notify_warning",
             "notify_error",
+            "notify_scanner_changes",
             "error_escalation_enabled",
             "error_escalation_threshold",
             "error_escalation_window_minutes",

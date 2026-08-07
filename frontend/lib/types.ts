@@ -315,6 +315,7 @@ export interface DiscordAlertConfig {
   notify_info: boolean;
   notify_warning: boolean;
   notify_error: boolean;
+  notify_scanner_changes: boolean;
   error_escalation_enabled: boolean;
   error_escalation_threshold: number;
   error_escalation_window_minutes: number;

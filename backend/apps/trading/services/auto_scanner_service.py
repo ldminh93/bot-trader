@@ -4,12 +4,18 @@ from .discord_alert_service import send_discord_alert
 from .websocket_service import broadcast_user_update
 
 
-def log_scanner_event(user, symbol: str, message: str, level: str = BotLog.Level.INFO) -> None:
+def log_scanner_event(
+    user,
+    symbol: str,
+    message: str,
+    level: str = BotLog.Level.INFO,
+    category: str | None = None,
+) -> None:
     from ..serializers import BotLogSerializer
 
     log = BotLog.objects.create(user=user, symbol=symbol, level=level, message=message)
     broadcast_user_update(user.id, "log", BotLogSerializer(log).data)
-    send_discord_alert(user, symbol, level, message)
+    send_discord_alert(user, symbol, level, message, category=category)
 
 
 def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str | None = None) -> dict:
@@ -58,7 +64,12 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
         symbol = config.symbol
         config.delete()
         removed.append(symbol)
-        log_scanner_event(user, symbol, "Coin removed from scanner (no longer a top gainer/loser).")
+        log_scanner_event(
+            user,
+            symbol,
+            "Coin removed from scanner (no longer a top gainer/loser).",
+            category="scanner_membership",
+        )
 
     for symbol, (side, price_change_percent) in desired.items():
         config, created = TradingBotConfig.objects.get_or_create(
@@ -81,6 +92,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 user,
                 symbol,
                 f"Coin auto-registered and scanning started from top {side} ({price_change_percent:.2f}%).",
+                category="scanner_membership",
             )
             continue
 
@@ -99,6 +111,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 user,
                 symbol,
                 f"Scanning started for auto-registered coin (top {side}, {price_change_percent:.2f}%).",
+                category="scanner_membership",
             )
         if update_fields:
             config.save(update_fields=update_fields)

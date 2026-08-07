@@ -9,13 +9,23 @@ from apps.trading.models import BotLog, Trade, UserDiscordAlertConfig
 from .credential_service import decrypt_secret
 
 
-def _should_notify(config: UserDiscordAlertConfig, level: str, force: bool = False) -> bool:
+def _should_notify(
+    config: UserDiscordAlertConfig,
+    level: str,
+    force: bool = False,
+    category: str | None = None,
+) -> bool:
     if not config.webhook_url_encrypted:
         return False
     if force:
         return True
     if not config.is_enabled:
         return False
+    # Scanner add/remove churn is routine (every auto-sync cycle can add/remove
+    # several coins) and noisy enough to warrant its own opt-out, independent
+    # of the general Info toggle used for everything else at that level.
+    if category == "scanner_membership":
+        return config.notify_scanner_changes
     return (
         (level == BotLog.Level.INFO and config.notify_info)
         or (level == BotLog.Level.WARNING and config.notify_warning)
@@ -23,9 +33,16 @@ def _should_notify(config: UserDiscordAlertConfig, level: str, force: bool = Fal
     )
 
 
-def send_discord_alert(user, symbol: str, level: str, message: str, force: bool = False) -> None:
+def send_discord_alert(
+    user,
+    symbol: str,
+    level: str,
+    message: str,
+    force: bool = False,
+    category: str | None = None,
+) -> None:
     config = getattr(user, "discord_alert_config", None)
-    if not config or not _should_notify(config, level, force):
+    if not config or not _should_notify(config, level, force, category):
         return
     repeat_count = 1
     if level == BotLog.Level.ERROR and config.error_escalation_enabled and not force:

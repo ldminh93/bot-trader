@@ -970,6 +970,11 @@ export function SettingsConsole() {
                   />
                 </div>
                   <Toggle
+                    label="Coin added/removed from scanner"
+                    checked={discordConfig.notify_scanner_changes}
+                    onChange={(value) => setDiscordConfig({ ...discordConfig, notify_scanner_changes: value })}
+                  />
+                  <Toggle
                     label="Escalate repeated errors"
                     checked={discordConfig.error_escalation_enabled}
                     onChange={(value) => setDiscordConfig({ ...discordConfig, error_escalation_enabled: value })}
