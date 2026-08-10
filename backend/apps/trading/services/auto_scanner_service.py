@@ -71,6 +71,13 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
             category="scanner_membership",
         )
 
+    # Mirrors BotConfigView.post's manual-add behavior: a freshly auto-registered
+    # coin should inherit the account's current live-trading state rather than
+    # falling back to the live_mode_requested model default (False) — otherwise
+    # every auto-added coin silently starts paper-only even when the operator
+    # already has live trading enabled account-wide for every other coin.
+    account_live_mode = TradingBotConfig.objects.filter(user=user, live_mode_requested=True).exists()
+
     for symbol, (side, price_change_percent) in desired.items():
         config, created = TradingBotConfig.objects.get_or_create(
             user=user,
@@ -84,6 +91,13 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 "require_funding_confirmation": True,
                 "position_margin_usdt": 10,
                 "leverage": 3,
+                "live_mode_requested": account_live_mode,
+                # These two default to True on the model for manually-configured
+                # coins, but a freshly auto-registered top-mover coin hasn't been
+                # reviewed by the operator yet — don't silently gate/restrict it
+                # with settings they never chose.
+                "auto_suppress_losing_tags": False,
+                "daily_loss_limit_enabled": False,
             },
         )
         if created:

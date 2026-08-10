@@ -151,10 +151,14 @@ export const api = {
   saveAutoScannerSettings: (body: Partial<AutoScannerSettings>) =>
     request<AutoScannerSettings>("/scanner/auto-settings", { method: "PUT", body: JSON.stringify(body) }),
   syncAutoScanner: () => request<AutoScannerSyncResult>("/scanner/sync", { method: "POST" }),
-  trades: (symbol?: string, date?: string) => {
+  trades: (symbol?: string, date?: string, range?: { from: string; to: string }) => {
     const params = new URLSearchParams();
     if (symbol) params.set("symbol", symbol);
     if (date) params.set("date", date);
+    if (range) {
+      params.set("from", range.from);
+      params.set("to", range.to);
+    }
     const query = params.toString();
     return request<Trade[]>(`/trades${query ? `?${query}` : ""}`);
   },

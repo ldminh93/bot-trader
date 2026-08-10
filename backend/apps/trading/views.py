@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.db.models import Avg, Count, Sum
+from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -468,6 +468,22 @@ class TradesView(APIView):
         date = request.query_params.get("date")
         if date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
             trades = trades.filter(opened_at__date=date)
+        date_from = request.query_params.get("from")
+        date_to = request.query_params.get("to")
+        date_re = r"\d{4}-\d{2}-\d{2}"
+        if date_from and date_to and re.fullmatch(date_re, date_from) and re.fullmatch(date_re, date_to):
+            # A range-scoped request (e.g. the Calendar page's currently-viewed
+            # month) wants every trade relevant to that period, not just the
+            # 200 most recent overall — the flat cap below silently dropped
+            # older months' trades once an account had more than 200 total.
+            # Bucket the same way the Calendar does: closed trades by their
+            # close date (when their PnL actually landed), everything else by
+            # open date.
+            trades = trades.filter(
+                Q(status=Trade.Status.CLOSED, closed_at__date__range=(date_from, date_to))
+                | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__date__range=(date_from, date_to)))
+            )
+            return Response(TradeSerializer(trades, many=True).data)
         return Response(TradeSerializer(trades[:200], many=True).data)
 
 

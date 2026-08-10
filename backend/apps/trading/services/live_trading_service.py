@@ -5,7 +5,7 @@ import time
 
 from .binance_service import BinanceService
 from .credential_service import decrypt_secret
-from .paper_trading_service import PaperTradingService, _apply_profit_steps
+from .paper_trading_service import TAKER_FEE_RATE, PaperTradingService, _apply_profit_steps
 from apps.trading.models import Trade
 
 
@@ -202,9 +202,31 @@ class LiveTradingService:
                 closed.save(update_fields=["realized_pnl", "fees", "pnl_percent"])
             return closed
         if exchange_quantity < trade.remaining_quantity:
+            closed_quantity = trade.remaining_quantity - exchange_quantity
+            was_tp1_hit, was_tp2_hit = trade.tp1_hit, trade.tp2_hit
             trade.remaining_quantity = exchange_quantity
             trade.tp1_hit = exchange_quantity <= trade.quantity * Decimal("0.70")
             trade.tp2_hit = exchange_quantity <= trade.quantity * Decimal("0.30")
+            # Binance's own TP algo order is the ground truth for this leg's
+            # exact fill price/PnL — _sync_close_from_fills applies the precise
+            # figure once the position is fully closed (see below). But that
+            # lookup can fail (API error, rate limit, no matching fills), and
+            # when it does, close_trade()'s own _partial_close(fraction=1) only
+            # covers whatever quantity remains at that point — silently losing
+            # every earlier TP leg's profit from the trade's total. Accrue a
+            # same-formula estimate now, using the leg's own target price, so
+            # realized_pnl is never simply missing a leg if that fallback fires.
+            if closed_quantity > 0:
+                estimate_price = (
+                    trade.take_profit_2 if (trade.tp2_hit and not was_tp2_hit)
+                    else trade.take_profit_1 if (trade.tp1_hit and not was_tp1_hit)
+                    else price
+                )
+                direction = Decimal("1") if trade.side == Trade.Side.LONG else Decimal("-1")
+                gross = (estimate_price - trade.entry_price) * closed_quantity * direction
+                fee = estimate_price * closed_quantity * TAKER_FEE_RATE
+                trade.realized_pnl += gross - fee
+                trade.fees += fee
 
         # TP3 trailing stop: managed locally when tp3_trailing_percent > 0
         if tp3_trailing_percent > 0 and trade.tp2_hit:

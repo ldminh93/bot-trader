@@ -37,9 +37,12 @@ interface DaySummary {
 function buildDaySummaries(trades: Trade[]): Map<string, DaySummary> {
   const map = new Map<string, DaySummary>();
   for (const trade of trades) {
-    // Group closed trades by closed_at date; open trades by opened_at
+    // Group closed trades by closed_at date; open trades by opened_at.
+    // Bucket by the viewer's local calendar day (not a raw UTC slice of the
+    // ISO string) — otherwise a trade that closed late at night locally can
+    // land on the wrong day once its timestamp crosses the UTC date boundary.
     const ts = trade.closed_at ?? trade.opened_at;
-    const date = ts.slice(0, 10);
+    const date = toLocalDateString(new Date(ts));
     const existing = map.get(date) ?? { date, trades: [], totalPnl: 0, totalMarginRoi: 0, wins: 0, losses: 0 };
     existing.trades.push(trade);
     if (trade.status === "CLOSED") {
@@ -70,18 +73,24 @@ export function CalendarConsole() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
 
-  useEffect(() => {
-    void api.trades().then((data) => {
-      setTrades(data);
-      setLoading(false);
-    });
-  }, []);
-
-  const summaries = useMemo(() => buildDaySummaries(trades), [trades]);
-
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const monthLabel = viewDate.toLocaleString("default", { month: "long", year: "numeric" });
+
+  useEffect(() => {
+    // Scoped to the month being viewed, not just "the 200 most recent trades
+    // overall" — an account with more history than that was silently missing
+    // older months entirely under the previous unscoped fetch.
+    const from = toLocalDateString(new Date(year, month, 1));
+    const to = toLocalDateString(new Date(year, month + 1, 0));
+    setLoading(true);
+    void api.trades(undefined, undefined, { from, to }).then((data) => {
+      setTrades(data);
+      setLoading(false);
+    });
+  }, [year, month]);
+
+  const summaries = useMemo(() => buildDaySummaries(trades), [trades]);
 
   // Calendar grid: start on Sunday of the week containing the 1st
   const firstDay = new Date(year, month, 1).getDay();

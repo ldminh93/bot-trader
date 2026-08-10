@@ -91,6 +91,59 @@ def test_sync_registers_new_coins_with_fixed_margin_and_leverage(mock_binance_cl
 @pytest.mark.django_db
 @patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_registers_new_coins_without_restrictive_defaults(mock_binance_cls, mock_log):
+    """
+    An auto-registered top-mover coin hasn't been reviewed by the operator —
+    it must not silently inherit the model's normally-True defaults for
+    auto_suppress_losing_tags/daily_loss_limit_enabled, which the operator
+    never chose for this specific coin.
+    """
+    user = get_user_model().objects.create_user("scanner-no-restrict@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    config = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
+    assert config.auto_suppress_losing_tags is False
+    assert config.daily_loss_limit_enabled is False
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_inherits_account_live_mode_for_new_coins(mock_binance_cls, mock_log):
+    """
+    Mirrors BotConfigView.post's manual-add behavior: if the operator already
+    has live trading enabled for any existing coin, a freshly auto-registered
+    coin must inherit that, not silently fall back to paper-only.
+    """
+    user = get_user_model().objects.create_user("scanner-inherit-live@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", live_mode_requested=True)
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    config = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
+    assert config.live_mode_requested is True
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_leaves_new_coins_paper_only_when_no_live_coin_exists(mock_binance_cls, mock_log):
+    user = get_user_model().objects.create_user("scanner-no-live@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", live_mode_requested=False)
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    config = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
+    assert config.live_mode_requested is False
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-manual@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="ADAUSDT", is_running=True, auto_registered=False)

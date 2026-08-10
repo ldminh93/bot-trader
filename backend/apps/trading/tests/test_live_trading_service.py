@@ -3,7 +3,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from django.contrib.auth import get_user_model
 
+from apps.trading.models import Trade
 from apps.trading.services.binance_service import SymbolRules
 from apps.trading.services.live_trading_service import (
     ExistingExchangePosition,
@@ -96,6 +98,113 @@ def test_close_position_skips_min_notional_check():
     service.client.place_market_order.assert_called_once_with(
         "BTCUSDT", "SELL", Decimal("0.100"), reduce_only=True
     )
+
+
+def _open_trade(**overrides) -> Trade:
+    user = get_user_model().objects.create_user("live-update@example.com", password="secure-pass")
+    defaults = dict(
+        user=user,
+        symbol="BTCUSDT",
+        side=Trade.Side.LONG,
+        status=Trade.Status.OPEN,
+        entry_price=Decimal("100"),
+        quantity=Decimal("1.000"),
+        remaining_quantity=Decimal("1.000"),
+        leverage=10,
+        stop_loss=Decimal("95"),
+        initial_stop_loss=Decimal("95"),
+        take_profit_1=Decimal("105"),
+        take_profit_2=Decimal("110"),
+        take_profit_3=Decimal("115"),
+        open_reason="test",
+        is_paper=False,
+    )
+    defaults.update(overrides)
+    return Trade.objects.create(**defaults)
+
+
+def _live_service(trade: Trade) -> LiveTradingService:
+    service = LiveTradingService.__new__(LiveTradingService)
+    service.config = SimpleNamespace(symbol=trade.symbol, margin_type="isolated", leverage=trade.leverage)
+    service.client = Mock()
+    service.client.position_unrealized_pnl.return_value = Decimal("0")
+    return service
+
+
+@pytest.mark.django_db
+def test_update_trade_accrues_tp1_estimate_when_exchange_reports_partial_fill():
+    """
+    Reproduces the reported bug: a position that hit TP1/TP2/TP3 sometimes
+    shows a wrong total profit. Root cause — the live path only recorded
+    realized_pnl at the very end via _sync_close_from_fills; if that Binance
+    fills lookup ever failed, close_trade()'s own partial-close only covered
+    the final remaining slice, silently losing every earlier TP leg's profit.
+    This asserts TP1's leg is accrued the moment the exchange reports the
+    corresponding quantity drop, using TP1's own target price.
+    """
+    trade = _open_trade()
+    service = _live_service(trade)
+    service.client.position_amount.return_value = trade.quantity * Decimal("0.70")
+
+    service.update_trade(trade, current_price=102, atr=0, trailing_multiplier=0)
+
+    assert trade.tp1_hit is True
+    assert trade.remaining_quantity == trade.quantity * Decimal("0.70")
+    expected_qty = trade.quantity * Decimal("0.30")
+    expected_gross = (trade.take_profit_1 - trade.entry_price) * expected_qty
+    expected_fee = trade.take_profit_1 * expected_qty * Decimal("0.0005")
+    assert trade.realized_pnl == expected_gross - expected_fee
+
+
+@pytest.mark.django_db
+def test_update_trade_final_close_does_not_lose_earlier_tp_legs_when_fills_lookup_fails():
+    """
+    The core regression: TP1 accrues its estimate, then the position fully
+    closes but Binance's fills lookup fails (user_trades raises/returns
+    nothing) — realized_pnl must still include TP1's profit, not just the
+    final leg's, which was the reported symptom.
+    """
+    trade = _open_trade()
+    service = _live_service(trade)
+
+    service.client.position_amount.return_value = trade.quantity * Decimal("0.70")
+    service.update_trade(trade, current_price=102, atr=0, trailing_multiplier=0)
+    tp1_accrual = trade.realized_pnl
+    assert tp1_accrual > 0
+
+    service.client.position_amount.return_value = Decimal("0")
+    service.client.user_trades.side_effect = RuntimeError("Binance API error -1003")
+
+    service.update_trade(trade, current_price=115, atr=0, trailing_multiplier=0)
+
+    assert trade.status == Trade.Status.CLOSED
+    final_leg_qty = trade.quantity * Decimal("0.70")
+    final_gross = (Decimal("115") - trade.entry_price) * final_leg_qty
+    final_fee = Decimal("115") * final_leg_qty * Decimal("0.0005")
+    assert trade.realized_pnl == tp1_accrual + final_gross - final_fee
+
+
+@pytest.mark.django_db
+def test_update_trade_final_close_prefers_exact_fills_sum_when_available():
+    """When the fills lookup succeeds, its authoritative sum overwrites the
+    running estimate — no regression to the already-correct fast path."""
+    trade = _open_trade()
+    service = _live_service(trade)
+
+    service.client.position_amount.return_value = trade.quantity * Decimal("0.70")
+    service.update_trade(trade, current_price=102, atr=0, trailing_multiplier=0)
+
+    service.client.position_amount.return_value = Decimal("0")
+    service.client.user_trades.return_value = [
+        {"side": "SELL", "price": "105", "qty": "0.300", "realizedPnl": "1.5", "commission": "0.01"},
+        {"side": "SELL", "price": "115", "qty": "0.700", "realizedPnl": "10.5", "commission": "0.02"},
+        {"side": "BUY", "price": "100", "qty": "1.000", "realizedPnl": "0", "commission": "0.03"},
+    ]
+
+    service.update_trade(trade, current_price=115, atr=0, trailing_multiplier=0)
+
+    assert trade.status == Trade.Status.CLOSED
+    assert trade.realized_pnl == Decimal("1.5") + Decimal("10.5") - Decimal("0.06")
 
 
 def test_close_position_skips_order_when_quantity_rounds_to_zero():
