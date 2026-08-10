@@ -16,23 +16,47 @@ const inputClass =
 // strategy config — neither out via export (they're meaningless to another
 // account/coin) nor in via import (an imported file must not silently flip
 // live trading on or change which coin is running).
-const NON_SHAREABLE_CONFIG_KEYS = [
+const NON_SHAREABLE_STATUS_KEYS = [
   "id",
-  "symbol",
   "is_running",
   "live_mode_requested",
   "live_trading_available",
   "live_trading_message",
 ] as const;
+// Single-coin export/import also drops `symbol` — it's implied by whichever
+// coin you're currently viewing. The all-coins export keeps it (each entry
+// in the array needs to say which coin it's for).
+const NON_SHAREABLE_CONFIG_KEYS = [...NON_SHAREABLE_STATUS_KEYS, "symbol"] as const;
+
+function omitFields(config: BotConfig, keys: readonly string[]): Record<string, unknown> {
+  const clone: Record<string, unknown> = { ...config };
+  for (const key of keys) delete clone[key];
+  return clone;
+}
 
 function shareableStrategyFields(config: BotConfig): Partial<BotConfig> {
-  const clone: Record<string, unknown> = { ...config };
-  for (const key of NON_SHAREABLE_CONFIG_KEYS) delete clone[key];
-  return clone as Partial<BotConfig>;
+  return omitFields(config, NON_SHAREABLE_CONFIG_KEYS) as Partial<BotConfig>;
+}
+
+function downloadJson(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+interface PendingImportEntry {
+  symbol: string;
+  fields: Record<string, unknown>;
 }
 
 export function SettingsConsole() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importAllInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingImportAll, setPendingImportAll] = useState<PendingImportEntry[] | null>(null);
   const [configs, setConfigs] = useState<BotConfig[]>([]);
   const [config, setConfig] = useState<BotConfig | null>(null);
   const [newSymbol, setNewSymbol] = useState("");
@@ -126,15 +150,71 @@ export function SettingsConsole() {
 
   function exportConfig() {
     if (!config) return;
-    const payload = shareableStrategyFields(config);
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${config.symbol}-strategy-config.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadJson(`${config.symbol}-strategy-config.json`, shareableStrategyFields(config));
     setMessage(`${config.symbol} strategy exported. Share the file with another user to import.`);
+  }
+
+  function exportAllConfigs() {
+    if (!configs.length) return;
+    const payload = configs.map((item) => omitFields(item, NON_SHAREABLE_STATUS_KEYS));
+    downloadJson("strategy-configs-all.json", payload);
+    setMessage(`Exported ${configs.length} coin${configs.length > 1 ? "s" : ""}. Share the file with another user to import.`);
+  }
+
+  function triggerImportAll() {
+    importAllInputRef.current?.click();
+  }
+
+  async function handleImportAllFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!Array.isArray(parsed)) {
+        throw new Error("That file doesn't look like an all-coins strategy export.");
+      }
+      const entries: PendingImportEntry[] = [];
+      for (const entry of parsed) {
+        if (typeof entry !== "object" || entry === null || typeof entry.symbol !== "string" || !entry.symbol.trim()) {
+          continue;
+        }
+        const fields = omitFields(entry as BotConfig, NON_SHAREABLE_STATUS_KEYS);
+        entries.push({ symbol: entry.symbol.trim().toUpperCase(), fields });
+      }
+      if (!entries.length) {
+        throw new Error("No valid coin entries found in that file.");
+      }
+      setPendingImportAll(entries);
+      setMessage(`Ready to import ${entries.length} coin${entries.length > 1 ? "s" : ""} — confirm below.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to import config file");
+    }
+  }
+
+  async function confirmImportAll() {
+    if (!pendingImportAll) return;
+    setBusy(true);
+    setError("");
+    try {
+      const existingSymbols = new Set(configs.map((item) => item.symbol));
+      for (const { symbol, fields } of pendingImportAll) {
+        if (!existingSymbols.has(symbol)) {
+          await api.addConfig(symbol);
+        }
+        await api.saveConfig({ ...fields, symbol });
+      }
+      const refreshed = await api.configs();
+      setConfigs(refreshed);
+      setConfig(refreshed.find((item) => item.symbol === pendingImportAll[0].symbol) ?? refreshed[0] ?? null);
+      setMessage(`Imported ${pendingImportAll.length} coin${pendingImportAll.length > 1 ? "s" : ""}.`);
+      setPendingImportAll(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to import configs");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function triggerImport() {
@@ -151,8 +231,7 @@ export function SettingsConsole() {
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         throw new Error("That file doesn't look like a strategy config export.");
       }
-      const imported: Record<string, unknown> = { ...parsed };
-      for (const key of NON_SHAREABLE_CONFIG_KEYS) delete imported[key];
+      const imported = omitFields(parsed as BotConfig, NON_SHAREABLE_CONFIG_KEYS);
       setConfig({ ...config, ...imported } as BotConfig);
       setMessage("Config imported — review the fields below, then Save to apply.");
     } catch (reason) {
@@ -367,6 +446,29 @@ export function SettingsConsole() {
             <Button type="button" size="sm" variant="secondary" disabled={busy || !configs.length} onClick={() => void scanAllCoins()}>
               Scan all
             </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy || !configs.length} onClick={exportAllConfigs}>
+              <DownloadSimple size={16} />Export all
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={triggerImportAll}>
+              <UploadSimple size={16} />Import all
+            </Button>
+            <input
+              ref={importAllInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => void handleImportAllFile(event)}
+            />
+            {pendingImportAll && (
+              <>
+                <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => void confirmImportAll()}>
+                  Confirm: import {pendingImportAll.length} coin{pendingImportAll.length === 1 ? "" : "s"}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setPendingImportAll(null)}>
+                  Cancel
+                </Button>
+              </>
+            )}
             {!confirmRemoveAll ? (
               <Button
                 type="button"
