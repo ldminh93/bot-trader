@@ -93,6 +93,21 @@ def calculate_risk_plan(
                 f"SL is {risk_per_unit / atr:.1f}× ATR from entry (max 3×) — "
                 f"nearest MA is too far away; wait for a closer pullback"
             )
+        # Margin-loss cap: the nearest-MA stop is structural (it sits at whatever
+        # the nearest support/resistance is), so its *price* distance from entry
+        # is not adjustable — but at leverage, that price distance can still
+        # imply losing more of the position margin than the operator is willing
+        # to risk. Documented in the Settings UI ("Skip entries when the
+        # technical stop would lose more than this percent of position
+        # margin. Set to 0 to disable this check.") but was never actually
+        # enforced here, so entries proceeded regardless of this setting.
+        if max_margin_loss_percent > 0:
+            margin_loss_percent = risk_per_unit / entry_price * leverage * 100
+            if margin_loss_percent > max_margin_loss_percent:
+                raise RiskLimitExceeded(
+                    f"Stop loss implies losing {margin_loss_percent:.1f}% of margin at "
+                    f"{leverage}x leverage, above the {max_margin_loss_percent:.1f}% cap"
+                )
 
     if position_margin is not None:
         if position_margin <= 0 or leverage <= 0:

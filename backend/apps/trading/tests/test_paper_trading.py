@@ -24,8 +24,6 @@ def test_paper_trade_opens_and_closes_with_fees(fetch_klines):
         10_000,
         1,
         2,
-        104,
-        96,
         ma7=99,
         ma25=98,
         ma99=97,
