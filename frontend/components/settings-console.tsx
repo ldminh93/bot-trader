@@ -1,7 +1,7 @@
 "use client";
 
-import { FloppyDisk, Key, Plus, ShieldCheck, TrendDown, TrendUp, Trash, Warning } from "@phosphor-icons/react";
-import { FormEvent, useEffect, useState } from "react";
+import { DownloadSimple, FloppyDisk, Key, Plus, ShieldCheck, TrendDown, TrendUp, Trash, UploadSimple, Warning } from "@phosphor-icons/react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
 import { PageFrame } from "@/components/page-frame";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,27 @@ import type { BotConfig, DiscordAlertConfig } from "@/lib/types";
 const inputClass =
   "h-10 w-full rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]";
 
+// Per-coin identity/status fields that must never travel with a shared
+// strategy config — neither out via export (they're meaningless to another
+// account/coin) nor in via import (an imported file must not silently flip
+// live trading on or change which coin is running).
+const NON_SHAREABLE_CONFIG_KEYS = [
+  "id",
+  "symbol",
+  "is_running",
+  "live_mode_requested",
+  "live_trading_available",
+  "live_trading_message",
+] as const;
+
+function shareableStrategyFields(config: BotConfig): Partial<BotConfig> {
+  const clone: Record<string, unknown> = { ...config };
+  for (const key of NON_SHAREABLE_CONFIG_KEYS) delete clone[key];
+  return clone as Partial<BotConfig>;
+}
+
 export function SettingsConsole() {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [configs, setConfigs] = useState<BotConfig[]>([]);
   const [config, setConfig] = useState<BotConfig | null>(null);
   const [newSymbol, setNewSymbol] = useState("");
@@ -88,16 +108,7 @@ export function SettingsConsole() {
     setError("");
     setConfirmApplyAll(false);
     try {
-      // Strip per-coin identity and status; copy all strategy settings
-      const {
-        id: _id,
-        symbol: _sym,
-        is_running: _run,
-        live_mode_requested: _live,
-        live_trading_available: _avail,
-        live_trading_message: _msg,
-        ...strategy
-      } = config;
+      const strategy = shareableStrategyFields(config);
       await Promise.all([
         api.saveConfig(config),
         ...others.map((other) => api.saveConfig({ ...strategy, symbol: other.symbol })),
@@ -110,6 +121,42 @@ export function SettingsConsole() {
       setError(reason instanceof Error ? reason.message : "Unable to apply settings to all coins");
     } finally {
       setBusy(false);
+    }
+  }
+
+  function exportConfig() {
+    if (!config) return;
+    const payload = shareableStrategyFields(config);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${config.symbol}-strategy-config.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setMessage(`${config.symbol} strategy exported. Share the file with another user to import.`);
+  }
+
+  function triggerImport() {
+    importInputRef.current?.click();
+  }
+
+  async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !config) return;
+    setError("");
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new Error("That file doesn't look like a strategy config export.");
+      }
+      const imported: Record<string, unknown> = { ...parsed };
+      for (const key of NON_SHAREABLE_CONFIG_KEYS) delete imported[key];
+      setConfig({ ...config, ...imported } as BotConfig);
+      setMessage("Config imported — review the fields below, then Save to apply.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to import config file");
     }
   }
 
@@ -855,6 +902,19 @@ export function SettingsConsole() {
                       Apply to all coins
                     </Button>
                   )}
+                  <Button type="button" variant="secondary" disabled={busy} onClick={exportConfig}>
+                    <DownloadSimple size={17} />Export config
+                  </Button>
+                  <Button type="button" variant="secondary" disabled={busy} onClick={triggerImport}>
+                    <UploadSimple size={17} />Import config
+                  </Button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(event) => void handleImportFile(event)}
+                  />
                   {confirmApplyAll && (
                     <>
                       <Button type="button" variant="danger" disabled={busy} onClick={() => void applyToAll()}>
