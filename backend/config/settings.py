@@ -95,6 +95,18 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3333").split(",")
     if origin.strip()
 ]
+# Django's CSRF middleware checks the Origin header against this list for any
+# CSRF-protected view (e.g. /admin/ login) regardless of DRF/JWT auth, which
+# doesn't enforce CSRF itself. Defaults to whatever CORS_ALLOWED_ORIGINS is
+# set to — same trusted frontends, one env var — with an optional separate
+# override via CSRF_TRUSTED_ORIGINS if they ever need to differ.
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CSRF_TRUSTED_ORIGINS", os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3333")
+    ).split(",")
+    if origin.strip()
+]
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CHANNEL_LAYERS = {
