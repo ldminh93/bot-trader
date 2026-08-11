@@ -134,6 +134,76 @@ def test_max_open_positions_is_shared_across_coin_configs():
 
 
 @pytest.mark.django_db
+def test_account_wide_strategy_fields_are_shared_across_coin_configs():
+    """
+    position_margin_usdt, confidence_leverage_enabled, min_effective_leverage,
+    auto_suppress_losing_tags, and auto_suppress_losing_symbols are account-wide
+    (TradingBotConfig.ACCOUNT_WIDE_FIELDS): saving any of them on one coin must
+    propagate to every other coin, same as max_open_positions/live_mode_requested.
+    """
+    user = get_user_model().objects.create_user(
+        "shared-strategy@example.com",
+        password="secure-pass",
+    )
+    btc = TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
+    eth = TradingBotConfig.objects.create(user=user, symbol="ETHUSDT")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.put(
+        "/api/bot/config",
+        {
+            "symbol": btc.symbol,
+            "position_margin_usdt": "75",
+            "confidence_leverage_enabled": False,
+            "min_effective_leverage": 5,
+            "auto_suppress_losing_tags": False,
+            "auto_suppress_losing_symbols": True,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    eth.refresh_from_db()
+    assert eth.position_margin_usdt == 75
+    assert eth.confidence_leverage_enabled is False
+    assert eth.min_effective_leverage == 5
+    assert eth.auto_suppress_losing_tags is False
+    assert eth.auto_suppress_losing_symbols is True
+
+
+@pytest.mark.django_db
+def test_new_coin_inherits_account_wide_strategy_fields_without_explicit_copy():
+    """
+    Adding a coin without copy_from_symbol must still pick up the account's
+    current shared value for the account-wide fields, since they're no longer
+    meant to vary per coin.
+    """
+    user = get_user_model().objects.create_user(
+        "new-coin-inherits@example.com",
+        password="secure-pass",
+    )
+    TradingBotConfig.objects.create(
+        user=user,
+        symbol="BTCUSDT",
+        position_margin_usdt=60,
+        auto_suppress_losing_tags=False,
+    )
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post(
+        "/api/bot/config",
+        {"symbol": "ethusdt"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.data["position_margin_usdt"] == "60.00000000"
+    assert response.data["auto_suppress_losing_tags"] is False
+
+
+@pytest.mark.django_db
 def test_pause_all_stops_every_running_coin():
     user = get_user_model().objects.create_user("pause-all@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", is_running=True)

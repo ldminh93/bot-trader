@@ -144,6 +144,39 @@ def test_sync_leaves_new_coins_paper_only_when_no_live_coin_exists(mock_binance_
 @pytest.mark.django_db
 @patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls, mock_log):
+    """
+    position_margin_usdt, confidence_leverage_enabled, min_effective_leverage,
+    auto_suppress_losing_tags, and auto_suppress_losing_symbols are account-wide
+    (TradingBotConfig.ACCOUNT_WIDE_FIELDS): a freshly auto-registered coin must
+    match whatever value the operator has already set on their other coins,
+    instead of the auto-scanner's literal fallback defaults.
+    """
+    user = get_user_model().objects.create_user("scanner-inherit-shared@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(
+        user=user,
+        symbol="ETHUSDT",
+        position_margin_usdt=250,
+        confidence_leverage_enabled=False,
+        min_effective_leverage=4,
+        auto_suppress_losing_tags=True,
+        auto_suppress_losing_symbols=True,
+    )
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    config = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
+    assert config.position_margin_usdt == 250
+    assert config.confidence_leverage_enabled is False
+    assert config.min_effective_leverage == 4
+    assert config.auto_suppress_losing_tags is True
+    assert config.auto_suppress_losing_symbols is True
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-manual@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="ADAUSDT", is_running=True, auto_registered=False)

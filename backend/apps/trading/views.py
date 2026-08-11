@@ -105,17 +105,19 @@ class BotConfigView(APIView):
                 "require_ma7_slope_confirmation",
                 "require_funding_confirmation",
                 "min_confidence_to_trade",
-                "auto_suppress_losing_symbols",
                 "auto_regime_enabled",
-                "confidence_leverage_enabled",
                 "use_closed_candle_confirmation",
                 "pullback_entry_enabled",
                 "max_entry_distance_atr",
-                "live_mode_requested",
                 "paper_balance",
-                "position_margin_usdt",
             )
             defaults = {field: getattr(source, field) for field in copy_fields}
+        # ACCOUNT_WIDE_FIELDS (position margin, confidence leverage, auto-suppress
+        # tags/symbols, live mode, max open positions) are shared account-wide, so a
+        # newly added coin always inherits the account's current value for these —
+        # not the value on whichever coin was picked as copy_from_symbol, and not
+        # this model's per-field default.
+        defaults.update(TradingBotConfig.account_wide_defaults(request.user))
         account_live_mode = TradingBotConfig.objects.filter(
             user=request.user,
             live_mode_requested=True,
@@ -140,8 +142,9 @@ class BotConfigView(APIView):
 
     def put(self, request):
         config = get_config(request.user, request.data.get("symbol"))
-        previous_live_mode_requested = config.live_mode_requested
-        previous_max_open_positions = config.max_open_positions
+        previous_values = {
+            field: getattr(config, field) for field in TradingBotConfig.ACCOUNT_WIDE_FIELDS
+        }
         serializer = TradingBotConfigSerializer(config, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         if serializer.validated_data.get("live_mode_requested") and not settings.ENABLE_LIVE_TRADING:
@@ -150,26 +153,23 @@ class BotConfigView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         saved_config = serializer.save()
-        # These two fields are account-wide: changing either for one coin is meant
-        # to apply to every scanner coin. But the settings UI always PUTs the full
-        # config object (not just the edited field), so the key is present on
-        # every save regardless of whether the user touched it — only propagate
-        # when the value actually changed, or saving an unrelated field on one coin
-        # would silently overwrite this account-wide flag on every other coin.
-        if (
-            "live_mode_requested" in serializer.validated_data
-            and saved_config.live_mode_requested != previous_live_mode_requested
-        ):
+        # ACCOUNT_WIDE_FIELDS are account-wide: changing any of them for one coin
+        # is meant to apply to every scanner coin. But the settings UI always PUTs
+        # the full config object (not just the edited field), so each key is
+        # present on every save regardless of whether the user touched it — only
+        # propagate fields whose value actually changed, or saving an unrelated
+        # field on one coin would silently overwrite these account-wide settings
+        # on every other coin.
+        changed = {
+            field: getattr(saved_config, field)
+            for field in TradingBotConfig.ACCOUNT_WIDE_FIELDS
+            if field in serializer.validated_data
+            and getattr(saved_config, field) != previous_values[field]
+        }
+        if changed:
             TradingBotConfig.objects.filter(user=request.user).exclude(
                 pk=saved_config.pk
-            ).update(live_mode_requested=saved_config.live_mode_requested)
-        if (
-            "max_open_positions" in serializer.validated_data
-            and saved_config.max_open_positions != previous_max_open_positions
-        ):
-            TradingBotConfig.objects.filter(user=request.user).exclude(
-                pk=saved_config.pk
-            ).update(max_open_positions=saved_config.max_open_positions)
+            ).update(**changed)
         return Response(serializer.data)
 
     def delete(self, request):

@@ -608,6 +608,7 @@ export function SettingsConsole() {
                   })}
                 />
                 <span className="font-normal leading-5 text-[var(--muted)]">
+                  Account-wide: applies to every scanner coin.{" "}
                   {config.position_margin_usdt
                     ? `${config.position_margin_usdt} USDT margin creates about ${(Number(config.position_margin_usdt) * config.leverage).toFixed(2)} USDT notional at x${config.leverage}.`
                     : "Leave empty to size positions from risk percentage and stop distance."}
@@ -816,7 +817,7 @@ export function SettingsConsole() {
                     onChange={(value) => setConfig({ ...config, confidence_leverage_enabled: value })}
                   />
                   <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
-                    Scales leverage <strong>down</strong> from your configured max based on regime and confidence. e.g. x5 max → x2 in a choppy market. Set a min floor below to prevent it dropping too low.
+                    Account-wide: applies to every scanner coin. Scales leverage <strong>down</strong> from your configured max based on regime and confidence. e.g. x5 max → x2 in a choppy market. Set a min floor below to prevent it dropping too low.
                   </p>
                 </div>
               </div>
@@ -946,16 +947,26 @@ export function SettingsConsole() {
                       How long entries stay blocked once the consecutive-loss circuit breaker trips.
                     </span>
                   </Field>
-                  <Toggle
-                    label="Auto-suppress losing tags"
-                    checked={config.auto_suppress_losing_tags ?? false}
-                    onChange={(value) => setConfig({ ...config, auto_suppress_losing_tags: value })}
-                  />
-                  <Toggle
-                    label="Auto-suppress losing symbols"
-                    checked={config.auto_suppress_losing_symbols ?? false}
-                    onChange={(value) => setConfig({ ...config, auto_suppress_losing_symbols: value })}
-                  />
+                  <div>
+                    <Toggle
+                      label="Auto-suppress losing tags"
+                      checked={config.auto_suppress_losing_tags ?? false}
+                      onChange={(value) => setConfig({ ...config, auto_suppress_losing_tags: value })}
+                    />
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                      Account-wide: applies to every scanner coin.
+                    </p>
+                  </div>
+                  <div>
+                    <Toggle
+                      label="Auto-suppress losing symbols"
+                      checked={config.auto_suppress_losing_symbols ?? false}
+                      onChange={(value) => setConfig({ ...config, auto_suppress_losing_symbols: value })}
+                    />
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                      Account-wide: applies to every scanner coin.
+                    </p>
+                  </div>
                   <Field label="Minimum confidence to trade">
                     <input
                       className={inputClass}

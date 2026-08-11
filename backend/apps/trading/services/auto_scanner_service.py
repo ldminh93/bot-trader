@@ -77,6 +77,15 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
     # every auto-added coin silently starts paper-only even when the operator
     # already has live trading enabled account-wide for every other coin.
     account_live_mode = TradingBotConfig.objects.filter(user=user, live_mode_requested=True).exists()
+    # position_margin_usdt, confidence_leverage_enabled, min_effective_leverage,
+    # and auto_suppress_losing_tags/symbols are account-wide (see
+    # TradingBotConfig.ACCOUNT_WIDE_FIELDS) — a newly auto-registered coin should
+    # match whatever every other coin already has, not a hardcoded per-coin
+    # default. account_wide_defaults() is empty only when this is the very first
+    # coin ever registered for the account, in which case the literal fallbacks
+    # below apply (10 USDT margin, auto-suppress-tags off since nothing has been
+    # reviewed by the operator yet).
+    account_defaults = TradingBotConfig.account_wide_defaults(user)
 
     for symbol, (side, price_change_percent) in desired.items():
         config, created = TradingBotConfig.objects.get_or_create(
@@ -89,14 +98,18 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 "require_confirmed_higher_tf": True,
                 "require_ma7_slope_confirmation": True,
                 "require_funding_confirmation": True,
-                "position_margin_usdt": 10,
+                "position_margin_usdt": account_defaults.get("position_margin_usdt", 10),
                 "leverage": 3,
                 "live_mode_requested": account_live_mode,
+                "confidence_leverage_enabled": account_defaults.get("confidence_leverage_enabled", True),
+                "min_effective_leverage": account_defaults.get("min_effective_leverage", 0),
                 # These two default to True on the model for manually-configured
                 # coins, but a freshly auto-registered top-mover coin hasn't been
                 # reviewed by the operator yet — don't silently gate/restrict it
-                # with settings they never chose.
-                "auto_suppress_losing_tags": False,
+                # with settings they never chose, unless the account already has
+                # a shared preference set from other coins.
+                "auto_suppress_losing_tags": account_defaults.get("auto_suppress_losing_tags", False),
+                "auto_suppress_losing_symbols": account_defaults.get("auto_suppress_losing_symbols", False),
                 "daily_loss_limit_enabled": False,
             },
         )

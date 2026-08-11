@@ -61,7 +61,10 @@ class TradingBotConfig(models.Model):
     )
     max_margin_loss_percent = models.DecimalField(max_digits=5, decimal_places=2, default=20)
     entry_score_threshold = models.PositiveSmallIntegerField(default=55)
-    max_open_positions = models.PositiveSmallIntegerField(default=5)
+    max_open_positions = models.PositiveSmallIntegerField(
+        default=5,
+        help_text="Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
+    )
     adx_min = models.DecimalField(max_digits=6, decimal_places=2, default=20)
     adx_period = models.PositiveSmallIntegerField(
         default=14,
@@ -77,10 +80,14 @@ class TradingBotConfig(models.Model):
     require_open_interest_confirmation = models.BooleanField(default=False)
     require_volume_confirmation = models.BooleanField(default=False)
     auto_regime_enabled = models.BooleanField(default=True)
-    confidence_leverage_enabled = models.BooleanField(default=True)
+    confidence_leverage_enabled = models.BooleanField(
+        default=True,
+        help_text="Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
+    )
     min_effective_leverage = models.PositiveSmallIntegerField(
         default=0,
-        help_text="Minimum leverage when confidence scaling is active. 0 = no floor (allow full scaling).",
+        help_text="Minimum leverage when confidence scaling is active. 0 = no floor (allow full scaling). "
+        "Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
     )
     block_choppy_entries = models.BooleanField(
         default=False,
@@ -106,14 +113,18 @@ class TradingBotConfig(models.Model):
         blank=True,
         help_text="Which top-movers side (gainer/long or loser/short) this coin was registered from. Null for manually added coins.",
     )
-    live_mode_requested = models.BooleanField(default=False)
+    live_mode_requested = models.BooleanField(
+        default=False,
+        help_text="Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
+    )
     paper_balance = models.DecimalField(max_digits=20, decimal_places=8, default=10000)
     position_margin_usdt = models.DecimalField(
         max_digits=20,
         decimal_places=8,
         null=True,
         blank=True,
-        help_text="Fixed margin allocated to each new position. Null uses risk-based sizing.",
+        help_text="Fixed margin allocated to each new position. Null uses risk-based sizing. "
+        "Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
     )
     atr_min_percent = models.DecimalField(
         max_digits=6,
@@ -127,7 +138,8 @@ class TradingBotConfig(models.Model):
     )
     auto_suppress_losing_tags = models.BooleanField(
         default=True,
-        help_text="Block entries when a setup tag has <40% win rate over 20+ recent trades.",
+        help_text="Block entries when a setup tag has <40% win rate over 20+ recent trades. "
+        "Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
     )
     funding_rate_threshold = models.DecimalField(
         max_digits=8,
@@ -155,7 +167,8 @@ class TradingBotConfig(models.Model):
     )
     auto_suppress_losing_symbols = models.BooleanField(
         default=False,
-        help_text="Block entries on this symbol when its last 20+ closed trades have <40% win rate.",
+        help_text="Block entries on this symbol when its last 20+ closed trades have <40% win rate. "
+        "Account-wide: applies to every scanner coin, kept in sync across all of a user's configs.",
     )
     partial_entry_enabled = models.BooleanField(
         default=False,
@@ -236,10 +249,35 @@ class TradingBotConfig(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Fields that represent a single account-wide setting rather than a
+    # per-coin one, even though each is stored as a column on this per-coin
+    # row (no separate account-settings table exists). BotConfigView.put
+    # propagates any change to one of these fields across every other
+    # TradingBotConfig row for the same user; account_wide_defaults() below
+    # is the read-side counterpart, used to seed a brand-new coin (manual add
+    # or top-movers auto-sync) with the account's current shared value
+    # instead of this model's per-field default.
+    ACCOUNT_WIDE_FIELDS = (
+        "live_mode_requested",
+        "max_open_positions",
+        "position_margin_usdt",
+        "confidence_leverage_enabled",
+        "min_effective_leverage",
+        "auto_suppress_losing_tags",
+        "auto_suppress_losing_symbols",
+    )
+
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["user", "symbol"], name="unique_user_symbol_config")
         ]
+
+    @classmethod
+    def account_wide_defaults(cls, user) -> dict:
+        existing = cls.objects.filter(user=user).first()
+        if not existing:
+            return {}
+        return {field: getattr(existing, field) for field in cls.ACCOUNT_WIDE_FIELDS}
 
 
 class MarketSnapshot(models.Model):
