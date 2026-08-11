@@ -47,6 +47,33 @@ def test_signed_error_omits_signature_url(request):
     assert "Invalid API-key" in str(exc_info.value)
 
 
+@patch("apps.trading.services.binance_service.httpx.request")
+def test_user_trades_chunks_windows_longer_than_seven_days(request):
+    """
+    /fapi/v1/userTrades rejects a startTime more than 7 days before endTime
+    (error -1127). A position held open longer than a week must still get
+    its full fill history instead of that single call failing outright —
+    this is the bug behind closed-trade PnL not matching Binance's actual
+    numbers for any trade that wasn't closed within a week of opening.
+    """
+    now_ms = 1_700_000_000_000
+    start_ms = now_ms - (15 * 24 * 60 * 60 * 1000)  # opened 15 days ago
+    request.side_effect = [
+        response(200, [{"id": 1, "side": "BUY", "price": "100", "qty": "1", "realizedPnl": "0", "commission": "0.01"}]),
+        response(200, [{"id": 2, "side": "SELL", "price": "110", "qty": "1", "realizedPnl": "10", "commission": "0.01"}]),
+        response(200, []),
+    ]
+
+    with patch("apps.trading.services.binance_service.time.time", return_value=now_ms / 1000):
+        fills = BinanceService("key", "secret").user_trades("BTCUSDT", start_ms)
+
+    assert [f["id"] for f in fills] == [1, 2]
+    assert request.call_count == 3
+    called_windows = [call.args[1].split("?", 1)[1] for call in request.call_args_list]
+    for window in called_windows:
+        assert "startTime=" in window and "endTime=" in window
+
+
 def _rules() -> SymbolRules:
     return SymbolRules(
         tick_size=Decimal("0.10"),

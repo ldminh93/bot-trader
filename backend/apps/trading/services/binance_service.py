@@ -429,13 +429,40 @@ class BinanceService:
             return Decimal("0")
         return Decimal(str(position.get("unRealizedProfit", "0")))
 
-    def user_trades(self, symbol: str, start_time_ms: int, limit: int = 200) -> list[dict]:
-        """Fetch actual trade fills for a symbol since start_time_ms."""
-        return self._signed_request(
-            "GET",
-            "/fapi/v1/userTrades",
-            {"symbol": symbol.upper(), "startTime": start_time_ms, "limit": limit},
-        )
+    def user_trades(
+        self, symbol: str, start_time_ms: int, end_time_ms: int | None = None, limit: int = 200
+    ) -> list[dict]:
+        """
+        Fetch actual trade fills for a symbol since start_time_ms.
+
+        /fapi/v1/userTrades rejects a startTime more than 7 days before
+        endTime (Binance error -1127), so a position held open longer than
+        that would otherwise always fail this call and silently fall back to
+        an estimated close price (see live_trading_service._sync_close_from_fills,
+        which is exactly the caller that hit this). Chunk into <=6-day windows,
+        staying under the 7-day cap with margin, so long-held trades still get
+        their real fill history instead of failing outright.
+        """
+        end_time_ms = end_time_ms if end_time_ms is not None else int(time.time() * 1000)
+        max_window_ms = 6 * 24 * 60 * 60 * 1000
+        fills: list[dict] = []
+        chunk_start = start_time_ms
+        while chunk_start < end_time_ms:
+            chunk_end = min(chunk_start + max_window_ms, end_time_ms)
+            fills.extend(
+                self._signed_request(
+                    "GET",
+                    "/fapi/v1/userTrades",
+                    {
+                        "symbol": symbol.upper(),
+                        "startTime": chunk_start,
+                        "endTime": chunk_end,
+                        "limit": limit,
+                    },
+                )
+            )
+            chunk_start = chunk_end + 1
+        return fills
 
     @staticmethod
     def _mock_klines(symbol: str, interval: str, limit: int) -> list[dict]:
