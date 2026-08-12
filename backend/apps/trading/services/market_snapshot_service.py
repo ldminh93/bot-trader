@@ -287,8 +287,13 @@ def collect_market_snapshot(config: TradingBotConfig) -> MarketEvaluation:
     with ThreadPoolExecutor(max_workers=4) as pool:
         signal_future = pool.submit(client.fetch_klines, config.symbol, config.timeframe_signal, 300)
         trend_future = pool.submit(client.fetch_klines, config.symbol, config.timeframe_trend, 200)
+        # Fetch one extra candle beyond the calculate_indicators() minimum of 100
+        # (see indicator_service.calculate_indicators) — when
+        # use_closed_candle_confirmation is on, _closed_candles() below drops the
+        # still-forming last candle, which would otherwise leave exactly 99 and
+        # raise "At least 100 candles are required" on every cycle.
         bias_future = (
-            pool.submit(client.fetch_klines, config.symbol, "4h", 100) if needs_bias else None
+            pool.submit(client.fetch_klines, config.symbol, "4h", 101) if needs_bias else None
         )
         metrics_future = pool.submit(client.market_metrics, config.symbol, config.timeframe_signal)
 
