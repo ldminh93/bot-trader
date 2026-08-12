@@ -251,6 +251,7 @@ export interface AutoScannerSyncResult {
   added: string[];
   removed: string[];
   skipped: string[];
+  ignored_new_listings: string[];
 }
 
 export interface OpportunityItem {

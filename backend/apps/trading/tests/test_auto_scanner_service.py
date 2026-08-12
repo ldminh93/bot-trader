@@ -22,6 +22,10 @@ def _movers_with_losers(gainers: list[str], losers: list[str]) -> dict:
     }
 
 
+def _candles(count: int = 100) -> list[dict]:
+    return [{"close": 100.0} for _ in range(count)]
+
+
 def _open_symbols(user) -> set[str]:
     return set(TradingBotConfig.objects.filter(user=user).values_list("symbol", flat=True))
 
@@ -31,6 +35,7 @@ def _open_symbols(user) -> set[str]:
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_replaces_stale_movers_but_keeps_open_positions(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-sync@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT", "ETHUSDT", "SOLUSDT")
 
     result = sync_top_movers_to_scanner(user, top_n=3, quote_asset="USDT")
@@ -79,6 +84,7 @@ def test_sync_registers_new_coins_with_fixed_margin_and_leverage(mock_binance_cl
     """Auto-registered top-mover coins default to a 10 USDT fixed margin and
     3x leverage, not the general TradingBotConfig defaults (null margin / 10x)."""
     user = get_user_model().objects.create_user("scanner-defaults@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
 
     sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
@@ -99,6 +105,7 @@ def test_sync_registers_new_coins_without_restrictive_defaults(mock_binance_cls,
     never chose for this specific coin.
     """
     user = get_user_model().objects.create_user("scanner-no-restrict@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
 
     sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
@@ -119,6 +126,7 @@ def test_sync_inherits_account_live_mode_for_new_coins(mock_binance_cls, mock_lo
     """
     user = get_user_model().objects.create_user("scanner-inherit-live@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", live_mode_requested=True)
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
 
     sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
@@ -133,6 +141,7 @@ def test_sync_inherits_account_live_mode_for_new_coins(mock_binance_cls, mock_lo
 def test_sync_leaves_new_coins_paper_only_when_no_live_coin_exists(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-no-live@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="ETHUSDT", live_mode_requested=False)
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
 
     sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
@@ -162,6 +171,7 @@ def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls
         auto_suppress_losing_tags=True,
         auto_suppress_losing_symbols=True,
     )
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
 
     sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
@@ -181,6 +191,7 @@ def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-manual@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=user, symbol="ADAUSDT", is_running=True, auto_registered=False)
 
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
     result = sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
 
@@ -194,6 +205,7 @@ def test_sync_does_not_remove_manually_added_config(mock_binance_cls, mock_log):
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_tags_and_updates_top_mover_side(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-side@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers_with_losers(["BTCUSDT"], ["ETHUSDT"])
 
     sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
@@ -217,6 +229,7 @@ def test_sync_tags_and_updates_top_mover_side(mock_binance_cls, mock_log):
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_leaves_existing_scanner_coins_untouched_when_fetch_returns_empty(mock_binance_cls, mock_log):
     user = get_user_model().objects.create_user("scanner-empty-fetch@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT", "ETHUSDT")
     sync_top_movers_to_scanner(user, top_n=2, quote_asset="USDT")
     assert _open_symbols(user) == {"BTCUSDT", "ETHUSDT"}
@@ -227,8 +240,55 @@ def test_sync_leaves_existing_scanner_coins_untouched_when_fetch_returns_empty(m
     mock_binance_cls.return_value.fetch_top_movers.return_value = {"gainers": [], "losers": []}
     result = sync_top_movers_to_scanner(user, top_n=2, quote_asset="USDT")
 
-    assert result == {"added": [], "removed": [], "skipped": []}
+    assert result == {"added": [], "removed": [], "skipped": [], "ignored_new_listings": []}
     assert _open_symbols(user) == {"BTCUSDT", "ETHUSDT"}
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_ignores_new_listing_without_enough_candle_history(mock_binance_cls, mock_log):
+    """
+    calculate_indicators() requires >=100 candles and raises otherwise — a
+    symbol newly listed on Binance may not have that much klines history yet.
+    Registering it anyway would just make every subsequent bot cycle fail
+    with "At least 100 candles are required" until Binance accumulates
+    enough candles, so a brand-new top-mover without enough history must be
+    left out of the scanner (and retried on a future sync) instead.
+    """
+    user = get_user_model().objects.create_user("scanner-new-listing@example.com", password="secure-pass")
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT", "ZBRAND1USDT")
+
+    def _fake_klines(symbol, interval, limit=100):
+        return _candles(5) if symbol == "ZBRAND1USDT" else _candles(limit)
+
+    mock_binance_cls.return_value.fetch_klines.side_effect = _fake_klines
+
+    result = sync_top_movers_to_scanner(user, top_n=2, quote_asset="USDT")
+
+    assert result["added"] == ["BTCUSDT"]
+    assert result["ignored_new_listings"] == ["ZBRAND1USDT"]
+    assert _open_symbols(user) == {"BTCUSDT"}
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_does_not_recheck_candle_history_for_already_tracked_coins(mock_binance_cls, mock_log):
+    """The candle-history check only gates brand-new registrations — an
+    already-tracked coin must not be re-validated (and can't be silently
+    dropped) just because a later sync call's klines mock/response looks thin."""
+    user = get_user_model().objects.create_user("scanner-already-tracked@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", auto_registered=True, is_running=True)
+    mock_binance_cls.return_value.fetch_klines.return_value = _candles(5)
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    result = sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    assert result["added"] == []
+    assert result["ignored_new_listings"] == []
+    mock_binance_cls.return_value.fetch_klines.assert_not_called()
+    assert _open_symbols(user) == {"BTCUSDT"}
 
 
 @pytest.mark.django_db

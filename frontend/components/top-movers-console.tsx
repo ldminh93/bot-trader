@@ -236,6 +236,9 @@ export function TopMoversConsole() {
                 {syncResult.skipped.length > 0 && (
                   <> · Kept (open position): {syncResult.skipped.join(", ")}</>
                 )}
+                {syncResult.ignored_new_listings.length > 0 && (
+                  <> · Ignored (not enough candle history yet): {syncResult.ignored_new_listings.join(", ")}</>
+                )}
               </p>
             )}
           </div>

@@ -3,6 +3,14 @@ from .binance_service import BinanceService
 from .discord_alert_service import send_discord_alert
 from .websocket_service import broadcast_user_update
 
+# calculate_indicators() (indicator_service.py) requires at least this many
+# candles and raises ValueError otherwise — a symbol newly listed on Binance
+# may not have this much klines history yet. Checked here so a brand-new
+# top-mover coin without enough history isn't registered only to have every
+# subsequent bot cycle fail with "At least 100 candles are required" until
+# Binance accumulates enough candles for it.
+MIN_CANDLES_REQUIRED = 100
+
 
 def log_scanner_event(
     user,
@@ -24,7 +32,8 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
     limit = top_n or settings_obj.top_n
     quote = (quote_asset or settings_obj.quote_asset).upper()
 
-    movers = BinanceService().fetch_top_movers(limit=limit, quote_asset=quote)
+    binance = BinanceService()
+    movers = binance.fetch_top_movers(limit=limit, quote_asset=quote)
     desired: dict[str, tuple[str, float]] = {}
     for side, items in (("gainer", movers["gainers"]), ("loser", movers["losers"])):
         for item in items:
@@ -45,11 +54,12 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
             "(likely a transient fetch failure) — existing scanner coins were left unchanged.",
             level=BotLog.Level.WARNING,
         )
-        return {"added": [], "removed": [], "skipped": []}
+        return {"added": [], "removed": [], "skipped": [], "ignored_new_listings": []}
 
     added: list[str] = []
     removed: list[str] = []
     skipped: list[str] = []
+    ignored_new_listings: list[str] = []
 
     stale_configs = TradingBotConfig.objects.filter(user=user, auto_registered=True).exclude(
         symbol__in=desired.keys()
@@ -87,7 +97,28 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
     # reviewed by the operator yet).
     account_defaults = TradingBotConfig.account_wide_defaults(user)
 
+    already_tracked = set(
+        TradingBotConfig.objects.filter(user=user, symbol__in=desired.keys()).values_list(
+            "symbol", flat=True
+        )
+    )
+
     for symbol, (side, price_change_percent) in desired.items():
+        if symbol not in already_tracked:
+            candles = binance.fetch_klines(symbol, "15m", limit=MIN_CANDLES_REQUIRED)
+            if len(candles) < MIN_CANDLES_REQUIRED:
+                ignored_new_listings.append(symbol)
+                log_scanner_event(
+                    user,
+                    symbol,
+                    f"Ignored top-{side} ({price_change_percent:.2f}%): only {len(candles)} candles of "
+                    f"history available on Binance (need {MIN_CANDLES_REQUIRED}) — likely a newly-listed "
+                    "pair. Will retry on a future sync once enough history exists.",
+                    level=BotLog.Level.WARNING,
+                    category="scanner_membership",
+                )
+                continue
+
         config, created = TradingBotConfig.objects.get_or_create(
             user=user,
             symbol=symbol,
@@ -146,4 +177,9 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
     settings_obj.last_synced_at = timezone.now()
     settings_obj.save(update_fields=["last_synced_at"])
 
-    return {"added": added, "removed": removed, "skipped": skipped}
+    return {
+        "added": added,
+        "removed": removed,
+        "skipped": skipped,
+        "ignored_new_listings": ignored_new_listings,
+    }
