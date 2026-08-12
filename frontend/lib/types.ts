@@ -374,3 +374,21 @@ export interface TradeStats {
   };
   block_reasons: BlockReasonStat[];
 }
+
+export interface CurrentUser {
+  is_staff: boolean;
+}
+
+export interface UserPerformanceEntry {
+  id: number;
+  username: string;
+  email: string;
+  is_active: boolean;
+  total_trades: number;
+  win_rate: number | null;
+  total_profit: number;
+}
+
+export interface UserPerformanceResult {
+  results: UserPerformanceEntry[];
+}

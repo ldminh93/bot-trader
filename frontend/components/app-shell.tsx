@@ -10,11 +10,13 @@ import {
   SignOut,
   SquaresFour,
   TrendUp,
+  Users,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -27,9 +29,18 @@ const navigation = [
   { href: "/settings", label: "Settings", icon: GearSix },
 ];
 
+const adminNavigation = [{ href: "/users", label: "Users", icon: Users }];
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [isStaff, setIsStaff] = useState(false);
+
+  useEffect(() => {
+    api.me().then((currentUser) => setIsStaff(currentUser.is_staff)).catch(() => setIsStaff(false));
+  }, []);
+
+  const visibleNavigation = isStaff ? [...navigation, ...adminNavigation] : navigation;
 
   function signOut() {
     localStorage.removeItem("access_token");
@@ -49,8 +60,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">Paper-first system</p>
           </div>
         </div>
-        <nav className="grid grid-cols-7 gap-1 px-2 py-2 [padding-bottom:calc(env(safe-area-inset-bottom)+0.5rem)] lg:flex lg:flex-1 lg:flex-col lg:gap-1 lg:p-3">
-          {navigation.map((item) => {
+        <nav
+          className={cn(
+            "grid gap-1 px-2 py-2 [padding-bottom:calc(env(safe-area-inset-bottom)+0.5rem)] lg:flex lg:flex-1 lg:flex-col lg:gap-1 lg:p-3",
+            isStaff ? "grid-cols-8" : "grid-cols-7",
+          )}
+        >
+          {visibleNavigation.map((item) => {
             const active = pathname === item.href;
             return (
               <Link

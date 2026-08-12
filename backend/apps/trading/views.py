@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -551,6 +552,66 @@ class TradeStatsView(APIView):
                 "block_reasons": build_block_reason_stats(request.user),
             }
         )
+
+
+class UserPerformanceListView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    ORDERING_FIELDS = {"total_profit", "win_rate", "username"}
+
+    def get(self, request):
+        User = get_user_model()
+        users = User.objects.annotate(
+            total_trades=Count("trades", filter=Q(trades__status=Trade.Status.CLOSED)),
+            wins=Count(
+                "trades",
+                filter=Q(trades__status=Trade.Status.CLOSED, trades__realized_pnl__gt=0),
+            ),
+            realized_pnl_sum=Sum("trades__realized_pnl", filter=Q(trades__status=Trade.Status.CLOSED)),
+            unrealized_pnl_sum=Sum("trades__unrealized_pnl", filter=Q(trades__status=Trade.Status.OPEN)),
+        )
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            users = users.filter(Q(username__icontains=search) | Q(email__icontains=search))
+
+        entries = []
+        for user in users:
+            total_trades = user.total_trades or 0
+            win_rate = (user.wins / total_trades * 100) if total_trades else None
+            total_profit = float(user.realized_pnl_sum or 0) + float(user.unrealized_pnl_sum or 0)
+            entries.append(
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                    "total_trades": total_trades,
+                    "win_rate": win_rate,
+                    "total_profit": total_profit,
+                }
+            )
+
+        self._sort(entries, request.query_params.get("ordering", "-total_profit"))
+        return Response({"results": entries})
+
+    def _sort(self, entries, ordering):
+        reverse = ordering.startswith("-")
+        field = ordering[1:] if reverse else ordering
+        if field not in self.ORDERING_FIELDS:
+            field, reverse = "total_profit", True
+
+        # Stable sort by username first so ties on the primary field always
+        # break by username ascending, independent of the primary direction.
+        entries.sort(key=lambda entry: entry["username"])
+        if field == "username":
+            if reverse:
+                entries.reverse()
+        else:
+            entries.sort(
+                key=lambda entry: entry[field] if entry[field] is not None else float("-inf"),
+                reverse=reverse,
+            )
 
 
 class BacktestView(APIView):

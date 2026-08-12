@@ -4,6 +4,7 @@ import type {
   BacktestResult,
   BotConfig,
   BotLog,
+  CurrentUser,
   DiscordAlertConfig,
   KillSwitchResult,
   LiveSyncHealth,
@@ -16,6 +17,7 @@ import type {
   TopMoversResult,
   Trade,
   TradeStats,
+  UserPerformanceResult,
 } from "./types";
 import { getApiBaseUrl } from "./runtime-config";
 
@@ -113,6 +115,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  me: () => request<CurrentUser>("/auth/me"),
+  userPerformance: (params?: { ordering?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.ordering) query.set("ordering", params.ordering);
+    if (params?.search) query.set("search", params.search);
+    const queryString = query.toString();
+    return request<UserPerformanceResult>(`/users/performance${queryString ? `?${queryString}` : ""}`);
+  },
   config: (symbol: string) => request<BotConfig>(`/bot/config?symbol=${symbol}`),
   configs: () => request<BotConfig[]>("/bot/config"),
   addConfig: (symbol: string, copyFromSymbol?: string) =>

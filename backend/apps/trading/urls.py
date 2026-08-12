@@ -26,6 +26,7 @@ from .views import (
     TradeReplayExportView,
     TradesView,
     TradeStatsView,
+    UserPerformanceListView,
 )
 
 urlpatterns = [
@@ -48,6 +49,7 @@ urlpatterns = [
     path("trades", TradesView.as_view()),
     path("trades/export-replay", TradeReplayExportView.as_view()),
     path("trades/stats", TradeStatsView.as_view()),
+    path("users/performance", UserPerformanceListView.as_view()),
     path("logs", LogsView.as_view()),
     path("binance/credentials", CredentialView.as_view()),
     path("binance/connection-test", ConnectionTestView.as_view()),

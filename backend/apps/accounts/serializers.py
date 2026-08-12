@@ -19,3 +19,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=validated_data["password"],
         )
 
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("is_staff",)
+
