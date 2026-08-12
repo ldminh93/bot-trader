@@ -105,13 +105,26 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
 
     for symbol, (side, price_change_percent) in desired.items():
         if symbol not in already_tracked:
-            candles = binance.fetch_klines(symbol, "15m", limit=MIN_CANDLES_REQUIRED)
-            if len(candles) < MIN_CANDLES_REQUIRED:
+            # Auto-registered configs get the model's default timeframe_signal
+            # ("15m") and timeframe_trend ("1h") — see the get_or_create defaults
+            # below, which don't override either field. A coarser interval covers
+            # less wall-clock history per candle, so "1h" is the tighter
+            # constraint for a freshly-listed symbol: it can fail this check
+            # while "15m" alone would pass. Check both so registration accurately
+            # predicts what process_config's first cycle will be able to fetch.
+            insufficient_history = False
+            min_available = None
+            for interval in ("15m", "1h"):
+                candles = binance.fetch_klines(symbol, interval, limit=MIN_CANDLES_REQUIRED)
+                if len(candles) < MIN_CANDLES_REQUIRED:
+                    insufficient_history = True
+                    min_available = len(candles) if min_available is None else min(min_available, len(candles))
+            if insufficient_history:
                 ignored_new_listings.append(symbol)
                 log_scanner_event(
                     user,
                     symbol,
-                    f"Ignored top-{side} ({price_change_percent:.2f}%): only {len(candles)} candles of "
+                    f"Ignored top-{side} ({price_change_percent:.2f}%): only {min_available} candles of "
                     f"history available on Binance (need {MIN_CANDLES_REQUIRED}) — likely a newly-listed "
                     "pair. Will retry on a future sync once enough history exists.",
                     level=BotLog.Level.WARNING,
