@@ -62,6 +62,66 @@ def test_live_entry_places_exchange_stop_and_take_profit():
     assert tp3_call.kwargs == {"quantity": Decimal("0.030")}
 
 
+def test_live_entry_places_trailing_stop_for_tp3_when_configured():
+    """
+    Reproduces the reported bug: TP3 never appeared on Binance as a trailing
+    stop because it was only tracked in bot-side software. When
+    tp3_trailing_percent is set, TP3 must be a real TRAILING_STOP_MARKET
+    order on the exchange, and the fixed TP1/TP2 orders are unaffected.
+    """
+    service = service_with_client()
+    service.config.tp3_trailing_percent = Decimal("3.00")
+
+    service.place_entry(
+        "LONG",
+        Decimal("0.100"),
+        Decimal("100"),
+        Decimal("95.07"),
+        (Decimal("105.09"), Decimal("110.09"), Decimal("115.09")),
+    )
+
+    assert service.client.place_close_algo_order.call_count == 4
+    stop_call, tp1_call, tp2_call, trailing_call = service.client.place_close_algo_order.call_args_list
+    assert stop_call.args[2] == "STOP_MARKET"
+    assert tp1_call.args[2:4] == ("TAKE_PROFIT_MARKET", Decimal("105.00"))
+    assert tp2_call.args[2:4] == ("TAKE_PROFIT_MARKET", Decimal("110.00"))
+    assert trailing_call.args[2:4] == ("TRAILING_STOP_MARKET", Decimal("115.00"))
+    assert trailing_call.kwargs == {
+        "close_position": True,
+        "callback_rate": Decimal("3.0"),
+    }
+
+
+def test_live_entry_skips_tp_leg_that_rounds_to_zero_quantity():
+    """
+    Reproduces the reported bug: a position small enough that TP1/TP2's 30%/40%
+    share floors to 0 at the symbol's step size used to submit a doomed
+    0-quantity order, which Binance rejects, tripping place_entry's emergency
+    full-close of the entire freshly-opened position. The zero legs must be
+    skipped instead.
+    """
+    service = service_with_client()
+    service.client.normalize_order.return_value = (Decimal("100.00"), Decimal("0.002"))
+    service.client.place_market_order.return_value = {
+        "avgPrice": "100.00",
+        "executedQty": "0.002",
+    }
+
+    service.place_entry(
+        "LONG",
+        Decimal("0.002"),
+        Decimal("100"),
+        Decimal("95.07"),
+        (Decimal("105.09"), Decimal("110.09"), Decimal("115.09")),
+    )
+
+    assert service.client.place_close_algo_order.call_count == 2
+    stop_call, tp3_call = service.client.place_close_algo_order.call_args_list
+    assert stop_call.args[2] == "STOP_MARKET"
+    assert tp3_call.args[2:4] == ("TAKE_PROFIT_MARKET", Decimal("115.00"))
+    assert tp3_call.kwargs == {"quantity": Decimal("0.002")}
+
+
 def test_live_entry_closes_position_when_protection_fails():
     service = service_with_client()
     service.client.place_close_algo_order.side_effect = RuntimeError("protection failed")
@@ -129,6 +189,36 @@ def _live_service(trade: Trade) -> LiveTradingService:
     service.client = Mock()
     service.client.position_unrealized_pnl.return_value = Decimal("0")
     return service
+
+
+@pytest.mark.django_db
+def test_update_exchange_sl_replaces_trailing_stop_for_unfired_tp3():
+    """
+    Reproduces the reported bug: TP3's trailing stop never appeared on
+    Binance. Every SL-step update cancels and re-places protective orders;
+    the still-open TP3 leg must be re-placed as a TRAILING_STOP_MARKET, not
+    silently dropped.
+    """
+    trade = _open_trade(tp1_hit=True, tp2_hit=True)
+    service = _live_service(trade)
+    service.client.symbol_rules.return_value = SymbolRules(
+        tick_size=Decimal("0.10"),
+        step_size=Decimal("0.001"),
+        min_notional=Decimal("5"),
+    )
+    service.client.mark_price.return_value = Decimal("100.00")
+
+    service._update_exchange_sl(trade, tp3_trailing_percent=3.0)
+
+    calls = service.client.place_close_algo_order.call_args_list
+    assert len(calls) == 2
+    sl_call, trailing_call = calls
+    assert sl_call.args[2] == "STOP_MARKET"
+    assert trailing_call.args[2:4] == ("TRAILING_STOP_MARKET", Decimal("115.00"))
+    assert trailing_call.kwargs == {
+        "close_position": True,
+        "callback_rate": Decimal("3.0"),
+    }
 
 
 @pytest.mark.django_db

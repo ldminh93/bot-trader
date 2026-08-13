@@ -159,9 +159,33 @@ class LiveTradingService:
                 f"bot-tp{index}-{nonce}",
                 quantity=target_quantity,
             )
+            # A leg quantity can floor to 0 at the symbol's LOT_SIZE step for
+            # small positions; submitting a 0-quantity order gets rejected by
+            # Binance, which used to bubble up and trip place_entry's
+            # emergency full-close right after every such entry.
             for index, (target, target_quantity) in enumerate(tp_targets, start=1)
+            if target_quantity > 0
         )
-        return (stop_order, *take_profit_orders)
+        # TP3 is the "runner" leg: rather than a fixed TAKE_PROFIT_MARKET,
+        # place a real exchange-side trailing stop so it's visible on Binance
+        # and still executes if the bot process is down. It only starts
+        # trailing once price reaches take_profit_3 (activationPrice), which
+        # is beyond TP1/TP2's targets, so it won't fire before those legs
+        # have already been taken — and close_position=True means it always
+        # closes whatever quantity remains at that point.
+        trailing_order = None
+        if tp3_trailing > 0:
+            trailing_order = self.client.place_close_algo_order(
+                self.config.symbol,
+                close_side,
+                "TRAILING_STOP_MARKET",
+                normalized_take_profits[2],
+                f"bot-tp3trail-{nonce}",
+                close_position=True,
+                callback_rate=Decimal(str(tp3_trailing)).quantize(Decimal("0.1")),
+            )
+        orders = (stop_order, *take_profit_orders)
+        return orders + (trailing_order,) if trailing_order else orders
 
     def close_position(self, position_side: str, quantity, price) -> dict | None:
         rules = self.client.symbol_rules(self.config.symbol)
@@ -186,6 +210,11 @@ class LiveTradingService:
         exchange_quantity = self.client.position_amount(self.config.symbol)
         if exchange_quantity <= 0:
             self.client.cancel_all_algo_orders(self.config.symbol)
+            # TP1/TP2 are inferred from quantity fraction below; a full close
+            # after TP2 already fired means the TP3 trailing leg is what closed
+            # the runner, so mirror that bookkeeping for admin/analytics.
+            if trade.tp2_hit:
+                trade.tp3_hit = True
             avg_exit_price, gross_pnl, total_commission = self._sync_close_from_fills(trade)
             closed = PaperTradingService.close_trade(
                 trade,
@@ -228,25 +257,10 @@ class LiveTradingService:
                 trade.realized_pnl += gross - fee
                 trade.fees += fee
 
-        # TP3 trailing stop: managed locally when tp3_trailing_percent > 0
-        if tp3_trailing_percent > 0 and trade.tp2_hit:
-            if not trade.tp3_hit and PaperTradingService._target_reached(trade, price, trade.take_profit_3):
-                trade.tp3_hit = True
-                trade.tp3_trail_price = price
-            if trade.tp3_hit:
-                trail_pct = Decimal(str(tp3_trailing_percent)) / 100
-                if trade.side == Trade.Side.LONG:
-                    if price > trade.tp3_trail_price:
-                        trade.tp3_trail_price = price
-                    if price <= trade.tp3_trail_price * (1 - trail_pct):
-                        self.close_trade(trade, price, "TP3 trailing stop")
-                        return trade
-                else:
-                    if price < trade.tp3_trail_price:
-                        trade.tp3_trail_price = price
-                    if price >= trade.tp3_trail_price * (1 + trail_pct):
-                        self.close_trade(trade, price, "TP3 trailing stop")
-                        return trade
+        # TP3 trailing is now a real TRAILING_STOP_MARKET order resting on
+        # Binance (see place_protective_orders/_update_exchange_sl) rather
+        # than software-polled — its fill is picked up generically by the
+        # exchange_quantity <= 0 branch above, so no local tracking here.
 
         # Stepped profit-protection SL — update exchange SL if it moved
         early_be = float(getattr(self.config, "early_breakeven_r", 0) or 0)
@@ -320,6 +334,20 @@ class LiveTradingService:
                     f"bot-{label}-{nonce}",
                     quantity=normalized_qty,
                 )
+        if not trade.tp3_hit and tp3_trailing_percent > 0:
+            normalized_tp3 = (trade.take_profit_3 / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+            normalized_tp3 = (
+                _safe_take_profit_price(trade.side, normalized_tp3, mark_price, tick) / tick
+            ).to_integral_value(rounding=ROUND_DOWN) * tick
+            self.client.place_close_algo_order(
+                self.config.symbol,
+                close_side,
+                "TRAILING_STOP_MARKET",
+                normalized_tp3,
+                f"bot-tp3trail-{nonce}",
+                close_position=True,
+                callback_rate=Decimal(str(tp3_trailing_percent)).quantize(Decimal("0.1")),
+            )
 
     def _sync_close_from_fills(
         self, trade: Trade
