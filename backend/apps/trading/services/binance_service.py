@@ -380,26 +380,32 @@ class BinanceService:
         close_position: bool = False,
         callback_rate: Decimal | None = None,
     ) -> dict:
-        # STOP_MARKET/TAKE_PROFIT_MARKET/TRAILING_STOP_MARKET are conditional
-        # orders placed through the regular order endpoint on USDS-M Futures —
-        # /fapi/v1/algoOrder is a spot/TWAP endpoint and doesn't exist here, so
-        # every protective order used to fail and trip the emergency full-close
-        # in place_entry's except block right after every live entry.
+        # STOP_MARKET/TAKE_PROFIT_MARKET/TRAILING_STOP_MARKET/STOP/TAKE_PROFIT
+        # were migrated by Binance (effective 2025-12-09) from the regular
+        # /fapi/v1/order endpoint to the dedicated Algo Order service — placing
+        # them on /fapi/v1/order now fails with -4120 "Order type not
+        # supported for this endpoint. Please use the Algo Order API
+        # endpoints instead." /fapi/v1/algoOrder is the correct, current
+        # endpoint; its param names differ slightly from the regular order
+        # endpoint (triggerPrice instead of stopPrice, activatePrice instead
+        # of activationPrice, clientAlgoId instead of newClientOrderId).
         params = {
+            "algoType": "CONDITIONAL",
             "symbol": symbol.upper(),
             "side": side,
+            "positionSide": "BOTH",
             "type": order_type,
             "workingType": "MARK_PRICE",
-            "newClientOrderId": client_algo_id,
+            "priceProtect": "false",
+            "clientAlgoId": client_algo_id,
         }
         if order_type == "TRAILING_STOP_MARKET":
             if callback_rate is None:
                 raise ValueError("TRAILING_STOP_MARKET requires callback_rate")
             params["callbackRate"] = format(callback_rate, "f")
-            params["activationPrice"] = format(trigger_price, "f")
+            params["activatePrice"] = format(trigger_price, "f")
         else:
-            params["stopPrice"] = format(trigger_price, "f")
-            params["priceProtect"] = "TRUE"
+            params["triggerPrice"] = format(trigger_price, "f")
         if close_position:
             params["closePosition"] = "true"
         elif quantity is not None:
@@ -407,12 +413,12 @@ class BinanceService:
             params["reduceOnly"] = "true"
         else:
             raise ValueError("Protective order requires quantity or close_position=True")
-        return self._signed_request("POST", "/fapi/v1/order", params)
+        return self._signed_request("POST", "/fapi/v1/algoOrder", params)
 
     def cancel_all_algo_orders(self, symbol: str) -> dict:
         return self._signed_request(
             "DELETE",
-            "/fapi/v1/allOpenOrders",
+            "/fapi/v1/algoOpenOrders",
             {"symbol": symbol.upper()},
         )
 
