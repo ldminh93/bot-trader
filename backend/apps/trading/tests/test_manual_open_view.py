@@ -119,9 +119,15 @@ def test_manual_open_rejected_for_invalid_side():
 
 @pytest.mark.django_db
 @patch("apps.trading.views.collect_market_snapshot", return_value=FAKE_EVALUATION)
-def test_manual_open_rejected_when_no_ma_support_for_side(mock_snapshot):
-    """A SHORT has no resistance above price in the fake evaluation (all MAs are
-    below price) — risk_service must reject it rather than opening blind."""
+def test_manual_open_falls_back_to_flat_percent_stop_when_no_ma_support(mock_snapshot):
+    """
+    Reproduces the reported bug: a SHORT has no resistance above price in this
+    evaluation (all MAs are below price), so the MA-anchored stop the bot uses
+    for its own entries has no anchor — that's a sane reason to reject an
+    *autonomous* entry, but blocking a manual one the same way means the human
+    who explicitly chose to trade can never override it. Must fall back to a
+    flat stop at the config's own max_margin_loss_percent instead of rejecting.
+    """
     user, client = _user_and_client()
     TradingBotConfig.objects.create(user=user, symbol="BTCUSDT", is_running=True)
 
@@ -131,7 +137,31 @@ def test_manual_open_rejected_when_no_ma_support_for_side(mock_snapshot):
         format="json",
     )
 
+    assert response.status_code == 201
+    trade = Trade.objects.get(symbol="BTCUSDT")
+    assert trade.side == Trade.Side.SHORT
+    # forced_stop_loss_percent = max_margin_loss_percent (20, default) / leverage (10, default) = 2% price move
+    assert trade.stop_loss == Decimal("102")
+
+
+@pytest.mark.django_db
+@patch("apps.trading.views.collect_market_snapshot", return_value=FAKE_EVALUATION)
+def test_manual_open_rejected_when_no_ma_support_and_no_fallback_available(mock_snapshot):
+    """With max_margin_loss_percent disabled (0), there's no configured flat-%
+    distance to fall back to — the original MA-support error must surface."""
+    user, client = _user_and_client()
+    TradingBotConfig.objects.create(
+        user=user, symbol="BTCUSDT", is_running=True, max_margin_loss_percent=0,
+    )
+
+    response = client.post(
+        "/api/bot/open-position",
+        {"symbol": "BTCUSDT", "side": "SHORT"},
+        format="json",
+    )
+
     assert response.status_code == 400
+    assert "resistance" in response.data["detail"]
     assert not Trade.objects.filter(symbol="BTCUSDT").exists()
 
 

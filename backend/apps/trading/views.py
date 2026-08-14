@@ -348,6 +348,7 @@ class BotManualOpenView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        max_margin_loss = float(config.max_margin_loss_percent)
         try:
             plan = calculate_risk_plan(
                 side,
@@ -362,10 +363,36 @@ class BotManualOpenView(APIView):
                 config.leverage,
                 float(config.atr_multiplier_sl),
                 float(config.atr_multiplier_tp),
-                float(config.max_margin_loss_percent),
+                max_margin_loss,
             )
         except (RiskLimitExceeded, ValueError) as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            # The MA-anchored stop (nearest support/resistance) is the same
+            # structural gate the autonomous bot uses to reject its own bad
+            # setups — for a manual entry the user already decided to trade,
+            # so when there's no usable MA anchor (or it's >3x ATR away) fall
+            # back to a flat stop at the user's own configured max acceptable
+            # margin loss, rather than blocking the entry outright.
+            if max_margin_loss <= 0:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                plan = calculate_risk_plan(
+                    side,
+                    price,
+                    account_balance,
+                    float(config.risk_per_trade_percent),
+                    indicators.atr,
+                    indicators.ma7,
+                    indicators.ma25,
+                    indicators.ma99,
+                    position_margin,
+                    config.leverage,
+                    float(config.atr_multiplier_sl),
+                    float(config.atr_multiplier_tp),
+                    max_margin_loss,
+                    forced_stop_loss_percent=max_margin_loss,
+                )
+            except (RiskLimitExceeded, ValueError) as fallback_exc:
+                return Response({"detail": str(fallback_exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         if live_service:
             try:
