@@ -171,17 +171,19 @@ class LiveTradingService:
         # and still executes if the bot process is down. It only starts
         # trailing once price reaches take_profit_3 (activationPrice), which
         # is beyond TP1/TP2's targets, so it won't fire before those legs
-        # have already been taken — and close_position=True means it always
-        # closes whatever quantity remains at that point.
+        # have already been taken. TRAILING_STOP_MARKET rejects
+        # closePosition=true outright (Binance error -4136 "Target strategy
+        # invalid for orderType TRAILING_STOP_MARKET,closePosition true") —
+        # it only accepts an explicit quantity, same as TP1/TP2.
         trailing_order = None
-        if tp3_trailing > 0:
+        if tp3_trailing > 0 and tp3_quantity > 0:
             trailing_order = self.client.place_close_algo_order(
                 self.config.symbol,
                 close_side,
                 "TRAILING_STOP_MARKET",
                 normalized_take_profits[2],
                 f"bot-tp3trail-{nonce}",
-                close_position=True,
+                quantity=tp3_quantity,
                 callback_rate=Decimal(str(tp3_trailing)).quantize(Decimal("0.1")),
             )
         orders = (stop_order, *take_profit_orders)
@@ -339,15 +341,19 @@ class LiveTradingService:
             normalized_tp3 = (
                 _safe_take_profit_price(trade.side, normalized_tp3, mark_price, tick) / tick
             ).to_integral_value(rounding=ROUND_DOWN) * tick
-            self.client.place_close_algo_order(
-                self.config.symbol,
-                close_side,
-                "TRAILING_STOP_MARKET",
-                normalized_tp3,
-                f"bot-tp3trail-{nonce}",
-                close_position=True,
-                callback_rate=Decimal(str(tp3_trailing_percent)).quantize(Decimal("0.1")),
-            )
+            # TRAILING_STOP_MARKET rejects closePosition=true (Binance error
+            # -4136) — needs an explicit quantity, same as TP1/TP2 above.
+            normalized_tp3_qty = (tp3_qty / step).to_integral_value(rounding=ROUND_DOWN) * step
+            if normalized_tp3_qty > 0:
+                self.client.place_close_algo_order(
+                    self.config.symbol,
+                    close_side,
+                    "TRAILING_STOP_MARKET",
+                    normalized_tp3,
+                    f"bot-tp3trail-{nonce}",
+                    quantity=normalized_tp3_qty,
+                    callback_rate=Decimal(str(tp3_trailing_percent)).quantize(Decimal("0.1")),
+                )
 
     def _sync_close_from_fills(
         self, trade: Trade

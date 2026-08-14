@@ -87,7 +87,7 @@ def test_live_entry_places_trailing_stop_for_tp3_when_configured():
     assert tp2_call.args[2:4] == ("TAKE_PROFIT_MARKET", Decimal("110.00"))
     assert trailing_call.args[2:4] == ("TRAILING_STOP_MARKET", Decimal("115.00"))
     assert trailing_call.kwargs == {
-        "close_position": True,
+        "quantity": Decimal("0.030"),
         "callback_rate": Decimal("3.0"),
     }
 
@@ -216,7 +216,7 @@ def test_update_exchange_sl_replaces_trailing_stop_for_unfired_tp3():
     assert sl_call.args[2] == "STOP_MARKET"
     assert trailing_call.args[2:4] == ("TRAILING_STOP_MARKET", Decimal("115.00"))
     assert trailing_call.kwargs == {
-        "close_position": True,
+        "quantity": Decimal("0.300"),
         "callback_rate": Decimal("3.0"),
     }
 

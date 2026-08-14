@@ -74,6 +74,28 @@ def test_user_trades_chunks_windows_longer_than_seven_days(request):
         assert "startTime=" in window and "endTime=" in window
 
 
+@patch("apps.trading.services.binance_service.httpx.request")
+def test_place_close_algo_order_rejects_trailing_stop_with_close_position(request):
+    """
+    Reproduces the reported bug: Binance rejects TRAILING_STOP_MARKET combined
+    with closePosition=true outright (error -4136 "Target strategy invalid for
+    orderType TRAILING_STOP_MARKET,closePosition true") — unlike STOP_MARKET/
+    TAKE_PROFIT_MARKET, it only ever accepts an explicit quantity. Catch this
+    locally instead of round-tripping to Binance to find out.
+    """
+    with pytest.raises(ValueError, match="close_position"):
+        BinanceService("key", "secret").place_close_algo_order(
+            "BTCUSDT",
+            "SELL",
+            "TRAILING_STOP_MARKET",
+            Decimal("100"),
+            "client-id",
+            close_position=True,
+            callback_rate=Decimal("3.0"),
+        )
+    request.assert_not_called()
+
+
 def _rules() -> SymbolRules:
     return SymbolRules(
         tick_size=Decimal("0.10"),

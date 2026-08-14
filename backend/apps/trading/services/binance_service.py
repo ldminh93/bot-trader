@@ -402,6 +402,12 @@ class BinanceService:
         if order_type == "TRAILING_STOP_MARKET":
             if callback_rate is None:
                 raise ValueError("TRAILING_STOP_MARKET requires callback_rate")
+            # Binance rejects TRAILING_STOP_MARKET + closePosition=true outright
+            # (error -4136 "Target strategy invalid for orderType
+            # TRAILING_STOP_MARKET,closePosition true") — unlike STOP_MARKET/
+            # TAKE_PROFIT_MARKET, it only ever accepts an explicit quantity.
+            if close_position:
+                raise ValueError("TRAILING_STOP_MARKET does not support close_position; pass quantity instead")
             params["callbackRate"] = format(callback_rate, "f")
             params["activatePrice"] = format(trigger_price, "f")
         else:
