@@ -37,11 +37,12 @@ from .services.credential_service import decrypt_secret, encrypt_secret
 from .services.discord_alert_service import send_discord_alert
 from .services.discord_alert_service import send_trade_replay_export
 from .services.health_service import build_live_sync_health
-from .services.live_trading_service import LiveTradingService
+from .services.live_trading_service import ExistingExchangePosition, LiveTradingDisabled, LiveTradingService
 from .services.market_snapshot_service import collect_market_snapshot
 from .services.indicator_service import calculate_indicators
 from .services.opportunity_service import build_opportunity_scoreboard
 from .services.paper_trading_service import PaperTradingService
+from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
 
 
 def create_bot_log(user, symbol: str, level: str, message: str) -> BotLog:
@@ -296,6 +297,127 @@ class BotClosePositionView(APIView):
             message="Position close requested from dashboard.",
         )
         return Response(TradeSerializer(trade).data)
+
+
+class BotManualOpenView(APIView):
+    def post(self, request):
+        side = str(request.data.get("side", "")).strip().upper()
+        if side not in (Trade.Side.LONG, Trade.Side.SHORT):
+            return Response({"detail": "side must be LONG or SHORT."}, status=status.HTTP_400_BAD_REQUEST)
+
+        config = get_config(request.user, request.data.get("symbol"))
+        if not config.is_running:
+            return Response(
+                {"detail": "Start the bot for this symbol first — an unstarted config won't manage a position after it opens."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if Trade.objects.filter(user=request.user, symbol=config.symbol, status=Trade.Status.OPEN).exists():
+            return Response({"detail": "A position is already open for this symbol."}, status=status.HTTP_409_CONFLICT)
+        open_count = Trade.objects.filter(user=request.user, status=Trade.Status.OPEN).count()
+        if open_count >= config.max_open_positions:
+            return Response(
+                {"detail": f"Maximum open positions reached ({open_count}/{config.max_open_positions})."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        evaluation = collect_market_snapshot(config)
+        indicators = evaluation.indicators
+        price = evaluation.metrics["price"]
+
+        use_live = bool(config.live_mode_requested and settings.ENABLE_LIVE_TRADING)
+        live_service = None
+        account_balance = float(config.paper_balance)
+        if use_live:
+            credential = getattr(config.user, "binance_credential", None)
+            try:
+                live_service = LiveTradingService(credential, config)
+            except LiveTradingDisabled as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            existing_quantity = live_service.client.position_amount(config.symbol)
+            if existing_quantity > 0:
+                return Response(
+                    {"detail": f"{config.symbol} already has an open Binance position ({existing_quantity})."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            account_balance = live_service.client.account_balance()
+
+        position_margin = float(config.position_margin_usdt) if config.position_margin_usdt is not None else None
+        if position_margin is not None and position_margin > account_balance:
+            return Response(
+                {"detail": f"Position margin {position_margin:.2f} USDT exceeds available balance {account_balance:.2f} USDT."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            plan = calculate_risk_plan(
+                side,
+                price,
+                account_balance,
+                float(config.risk_per_trade_percent),
+                indicators.atr,
+                indicators.ma7,
+                indicators.ma25,
+                indicators.ma99,
+                position_margin,
+                config.leverage,
+                float(config.atr_multiplier_sl),
+                float(config.atr_multiplier_tp),
+                float(config.max_margin_loss_percent),
+            )
+        except (RiskLimitExceeded, ValueError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if live_service:
+            try:
+                order = live_service.place_entry(
+                    side,
+                    plan.quantity,
+                    Decimal(str(price)),
+                    plan.stop_loss,
+                    (plan.take_profit_1, plan.take_profit_2, plan.take_profit_3),
+                    config.leverage,
+                )
+            except ExistingExchangePosition as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+            except Exception as exc:
+                return Response({"detail": f"Live entry failed: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+            executed_price = float(order.get("avgPrice") or price)
+            executed_quantity = Decimal(str(order.get("executedQty") or plan.quantity))
+            trade = Trade.objects.create(
+                user=config.user,
+                symbol=config.symbol,
+                side=side,
+                entry_price=executed_price,
+                quantity=executed_quantity,
+                remaining_quantity=executed_quantity,
+                leverage=config.leverage,
+                stop_loss=Decimal(str(plan.stop_loss)),
+                initial_stop_loss=Decimal(str(plan.stop_loss)),
+                take_profit_1=Decimal(str(plan.take_profit_1)),
+                take_profit_2=Decimal(str(plan.take_profit_2)),
+                take_profit_3=Decimal(str(plan.take_profit_3)),
+                open_reason="Manual entry",
+                is_paper=False,
+                partial_entry_filled=True,
+            )
+        else:
+            trade = PaperTradingService.open_trade(
+                config.user,
+                config,
+                side,
+                price,
+                plan,
+                "Manual entry",
+                leverage=config.leverage,
+            )
+
+        create_bot_log(
+            request.user,
+            config.symbol,
+            BotLog.Level.INFO,
+            f"{'Live' if use_live else 'Paper'} {side} opened manually from dashboard at {price:.6f}.",
+        )
+        return Response(TradeSerializer(trade).data, status=status.HTTP_201_CREATED)
 
 
 class BotLiveSyncView(APIView):

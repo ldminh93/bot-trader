@@ -231,6 +231,17 @@ export function DashboardConsole() {
     }
   }
 
+  async function openManualPosition(side: "LONG" | "SHORT") {
+    if (!symbol || !config || openPosition) return;
+    setBusy(true);
+    try {
+      await api.openPosition(symbol, side);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runBacktest() {
     if (!symbol) return;
     setBusy(true);
@@ -542,10 +553,34 @@ export function DashboardConsole() {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid min-h-48 place-items-center px-6 text-center">
-                    <div>
-                      <p className="font-semibold">No open position</p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--muted)]">The bot will wait until score, trend, risk, and entry-location rules align.</p>
+                  <div className="grid min-h-48 place-items-center px-6 py-4 text-center">
+                    <div className="grid gap-3">
+                      <div>
+                        <p className="font-semibold">No open position</p>
+                        <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+                          {config?.is_running
+                            ? "The bot will wait until score, trend, risk, and entry-location rules align — or open one manually below."
+                            : "Start the bot for this symbol before opening a position manually, so it gets managed afterward."}
+                        </p>
+                      </div>
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          variant="primary"
+                          disabled={!config?.is_running || busy}
+                          onClick={() => void openManualPosition("LONG")}
+                        >
+                          <ArrowUpRight size={16} weight="bold" />
+                          Open long
+                        </Button>
+                        <Button
+                          variant="danger"
+                          disabled={!config?.is_running || busy}
+                          onClick={() => void openManualPosition("SHORT")}
+                        >
+                          <ArrowDownRight size={16} weight="bold" />
+                          Open short
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}

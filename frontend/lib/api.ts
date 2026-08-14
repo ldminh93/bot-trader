@@ -144,6 +144,8 @@ export const api = {
     request<BotConfig>("/bot/stop", { method: "POST", body: JSON.stringify({ symbol }) }),
   closePosition: (symbol: string) =>
     request<Trade>("/bot/close-position", { method: "POST", body: JSON.stringify({ symbol }) }),
+  openPosition: (symbol: string, side: "LONG" | "SHORT") =>
+    request<Trade>("/bot/open-position", { method: "POST", body: JSON.stringify({ symbol, side }) }),
   liveSync: () => request<LiveSyncHealth>("/bot/live-sync"),
   killSwitch: () => request<KillSwitchResult>("/bot/kill-switch", { method: "POST" }),
   pauseAllConfigs: () => request<PauseAllResult>("/bot/config/pause-all", { method: "POST" }),
