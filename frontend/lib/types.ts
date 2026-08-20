@@ -27,6 +27,7 @@ export interface BotConfig {
   confidence_leverage_enabled: boolean;
   min_effective_leverage: number;
   block_choppy_entries: boolean;
+  block_sideway_entries: boolean;
   use_closed_candle_confirmation: boolean;
   pullback_entry_enabled: boolean;
   max_entry_distance_atr: string;

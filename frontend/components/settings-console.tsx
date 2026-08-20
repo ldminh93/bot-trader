@@ -781,6 +781,18 @@ export function SettingsConsole() {
                   (regime = CHOPPY or PULLBACK). Use together with "Confirmed HTF only" to ensure both timeframes are trending before entry.
                 </p>
               </div>
+              <div className="sm:col-span-2">
+                <Toggle
+                  label="Block sideway-state entries"
+                  checked={config.block_sideway_entries ?? true}
+                  onChange={(value) => setConfig({ ...config, block_sideway_entries: value })}
+                />
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  Skip new entries while the signal timeframe's trend state is SIDEWAY, including the pullback-recovery
+                  path (a trend that was confirmed recently but has since cooled to SIDEWAY). These setups enter close
+                  to the anchor MA with a thin stop and have shown a worse win rate.
+                </p>
+              </div>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2">
                 <div>
                   <Toggle

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import math
 import random
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,60 @@ _EXCHANGE_INFO_CACHE: dict | None = None
 _EXCHANGE_INFO_CACHE_AT = 0.0
 _EXCHANGE_INFO_TTL_SECONDS = 3600
 _exchange_info_lock = threading.Lock()
+
+# Once Binance returns 418/429, every further request from this IP during the
+# ban window still counts against it and can push a short ban into a much
+# longer repeat-offender one. Track the ban process-wide (shared by every
+# BinanceService instance/thread) and refuse to make any more HTTP calls
+# until it lifts, instead of finding out via another 418 per bot cycle.
+_ban_lock = threading.Lock()
+_banned_until = 0.0
+_BAN_FALLBACK_SECONDS = 120.0
+_BANNED_UNTIL_RE = re.compile(r"banned until (\d+)")
+
+
+def _record_ban(response: "httpx.Response") -> None:
+    global _banned_until
+    cooldown = None
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            cooldown = float(retry_after)
+        except ValueError:
+            cooldown = None
+    banned_until_ms = None
+    if cooldown is None:
+        try:
+            body = response.json()
+            match = _BANNED_UNTIL_RE.search(str(body.get("msg", "")))
+        except ValueError:
+            match = None
+        if match:
+            banned_until_ms = int(match.group(1))
+    with _ban_lock:
+        if banned_until_ms is not None:
+            candidate = banned_until_ms / 1000.0
+        else:
+            # No ban-until timestamp available (e.g. a plain 429): back off,
+            # doubling if we get hit again before the previous ban lifted —
+            # Binance escalates repeat-offender bans, so blindly retrying at a
+            # fixed interval risks turning a 2-minute ban into a multi-hour one.
+            base = cooldown if cooldown is not None else _BAN_FALLBACK_SECONDS
+            if time.time() < _banned_until:
+                base = max(base, (_banned_until - time.time()) * 2)
+            candidate = time.time() + base
+        _banned_until = max(_banned_until, candidate)
+
+
+def _check_not_banned() -> None:
+    with _ban_lock:
+        remaining = _banned_until - time.time()
+    if remaining > 0:
+        raise BinanceAPIError(
+            418,
+            -1003,
+            f"IP is banned by Binance for {remaining:.0f} more second(s); refusing to send more requests",
+        )
 
 
 @dataclass(frozen=True)
@@ -52,7 +107,10 @@ class BinanceService:
         )
 
     def _get(self, path: str, params: dict | None = None) -> dict | list:
+        _check_not_banned()
         response = httpx.get(f"{self.public_base_url}{path}", params=params, timeout=10)
+        if response.status_code in (418, 429):
+            _record_ban(response)
         response.raise_for_status()
         return response.json()
 
@@ -65,6 +123,7 @@ class BinanceService:
     ) -> dict | list:
         if not self.api_key or not self.api_secret:
             raise ValueError("API key and secret are required for signed requests")
+        _check_not_banned()
         payload = {**(params or {}), "timestamp": int(time.time() * 1000), "recvWindow": 5000}
         query = urlencode(payload)
         signature = hmac.new(self.api_secret.encode(), query.encode(), hashlib.sha256).hexdigest()
@@ -75,6 +134,8 @@ class BinanceService:
             timeout=15,
         )
         if response.is_error:
+            if response.status_code in (418, 429):
+                _record_ban(response)
             try:
                 error = response.json()
             except ValueError:

@@ -93,6 +93,12 @@ class TradingBotConfig(models.Model):
         default=False,
         help_text="Block new entries when the calculated regime is CHOPPY or PULLBACK (signal TF is sideways or weakening).",
     )
+    block_sideway_entries = models.BooleanField(
+        default=True,
+        help_text="Skip new entries while the signal-timeframe trend state is SIDEWAY, including the "
+        "pullback-recovery path (a recently-confirmed trend that has since cooled to SIDEWAY). "
+        "These setups enter close to the anchor MA with a thin stop and have shown a worse win rate.",
+    )
     use_closed_candle_confirmation = models.BooleanField(default=True)
     pullback_entry_enabled = models.BooleanField(default=True)
     max_entry_distance_atr = models.DecimalField(max_digits=6, decimal_places=2, default=1)

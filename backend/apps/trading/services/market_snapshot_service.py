@@ -14,7 +14,7 @@ from .signal_service import (
     SignalResult,
     score_signal,
 )
-from .trend_service import calculate_slope, detect_trend_state, explain_trend_state
+from .trend_service import TrendState, calculate_slope, detect_trend_state, explain_trend_state
 
 
 @dataclass(frozen=True)
@@ -159,6 +159,14 @@ def evaluate_market_conditions(
         # confirmation.
         is_ma_stack_reversal = signal.forced_stop_loss_percent is not None
         extra_reasons: list[str] = []
+        if (
+            config.block_sideway_entries
+            and not is_ma_stack_reversal
+            and trend_state == TrendState.SIDEWAY
+        ):
+            extra_reasons.append(
+                f"{signal.signal} entry blocked: signal timeframe trend state is SIDEWAY"
+            )
         if (
             config.require_trend_alignment
             and not is_ma_stack_reversal
