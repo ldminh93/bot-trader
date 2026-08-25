@@ -87,6 +87,16 @@ def _apply_profit_steps(
             else min(trade.stop_loss, price + trail_distance)
         )
 
+    # The ATR trail is unbounded and can otherwise run the SL past the
+    # runner's TP3 target in a strong trend — TP3's exchange-side trailing
+    # order activates at a fixed price, so an SL beyond it puts the two
+    # protective orders in an inconsistent state (SL above TP for a LONG,
+    # below TP for a SHORT) and can arm the trailing stop prematurely.
+    trade.stop_loss = (
+        min(trade.stop_loss, trade.take_profit_3) if is_long
+        else max(trade.stop_loss, trade.take_profit_3)
+    )
+
     return trade.stop_loss != old_sl
 
 
