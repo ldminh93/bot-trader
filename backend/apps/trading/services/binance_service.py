@@ -79,6 +79,14 @@ def _check_not_banned() -> None:
         )
 
 
+def _finite_float(value, default: float = 0.0) -> float:
+    """float() silently returns inf for out-of-range numeric literals (no
+    exception), so a malformed/extreme API field must be scrubbed before it
+    reaches a DecimalField — Django rejects inf/nan outright on save."""
+    value = float(value)
+    return value if math.isfinite(value) else default
+
+
 @dataclass(frozen=True)
 class SymbolRules:
     tick_size: Decimal
@@ -243,15 +251,15 @@ class BinanceService:
             oi_change_available = False
 
         return {
-            "price": float(premium["markPrice"]),
-            "funding_rate": float(premium["lastFundingRate"]),
-            "open_interest": latest_oi,
-            "open_interest_change_percent": oi_change,
+            "price": _finite_float(premium["markPrice"]),
+            "funding_rate": _finite_float(premium["lastFundingRate"]),
+            "open_interest": _finite_float(latest_oi),
+            "open_interest_change_percent": _finite_float(oi_change),
             "open_interest_change_available": oi_change_available,
             "statistics_period": statistics_period,
-            "top_trader_account_ratio": account_ratio,
-            "top_trader_position_ratio": position_ratio,
-            "top_ratio_direction": position_direction,
+            "top_trader_account_ratio": _finite_float(account_ratio),
+            "top_trader_position_ratio": _finite_float(position_ratio),
+            "top_ratio_direction": _finite_float(position_direction),
             "source": "binance",
         }
 

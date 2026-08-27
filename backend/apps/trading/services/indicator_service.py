@@ -491,6 +491,13 @@ def _wilder(series: pd.Series, period: int) -> pd.Series:
     return series.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
 
 
+def _finite(value, default: float = 0.0) -> float:
+    """Last-resort guard: DecimalField.to_python rejects inf/nan outright, so
+    a stray non-finite indicator value must never reach MarketSnapshot.save()."""
+    value = float(value)
+    return value if np.isfinite(value) else default
+
+
 def calculate_indicators(candles: list[dict], period: int = 14) -> IndicatorResult:
     if len(candles) < 100:
         raise ValueError("At least 100 candles are required")
@@ -524,9 +531,18 @@ def calculate_indicators(candles: list[dict], period: int = 14) -> IndicatorResu
     plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0), index=frame.index)
     minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0), index=frame.index)
     atr = _wilder(true_range, period)
-    plus_di = 100 * _wilder(plus_dm, period) / atr.replace(0, np.nan)
-    minus_di = 100 * _wilder(minus_dm, period) / atr.replace(0, np.nan)
-    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    atr_safe = atr.replace(0, np.nan)
+    # atr_safe only guards an *exact* zero ATR. During long flat-price stretches
+    # (thin/illiquid symbols) Wilder's EMA can decay through tiny non-zero
+    # values first, so 100 * dm / atr can literally overflow to inf. Because
+    # ADX is itself a recursive EMA (_wilder), a single inf poisons every
+    # later value forever, so it must be scrubbed to NaN immediately after
+    # each division rather than left to propagate.
+    plus_di = (100 * _wilder(plus_dm, period) / atr_safe).replace([np.inf, -np.inf], np.nan)
+    minus_di = (100 * _wilder(minus_dm, period) / atr_safe).replace([np.inf, -np.inf], np.nan)
+    dx = (
+        100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    ).replace([np.inf, -np.inf], np.nan)
     frame["adx"] = _wilder(dx, period).fillna(0)
 
     recent = frame.tail(20)
@@ -534,17 +550,17 @@ def calculate_indicators(candles: list[dict], period: int = 14) -> IndicatorResu
     enriched = frame.tail(120).replace({np.nan: None}).to_dict("records")
     return IndicatorResult(
         candles=enriched,
-        price=float(row["close"]),
-        ma7=float(row["ma7"]),
-        ma25=float(row["ma25"]),
-        ma99=float(row["ma99"]),
-        delta=float(row["delta"]),
-        cvd=float(row["cvd"]),
-        atr=float(row["atr"]),
-        atr_ma20=float(row["atr_ma20"]),
-        adx=float(row["adx"]),
-        volume=float(row["volume"]),
-        volume_ma20=float(row["volume_ma20"]),
-        swing_high=float(recent["high"].max()),
-        swing_low=float(recent["low"].min()),
+        price=_finite(row["close"]),
+        ma7=_finite(row["ma7"]),
+        ma25=_finite(row["ma25"]),
+        ma99=_finite(row["ma99"]),
+        delta=_finite(row["delta"]),
+        cvd=_finite(row["cvd"]),
+        atr=_finite(row["atr"]),
+        atr_ma20=_finite(row["atr_ma20"]),
+        adx=_finite(row["adx"]),
+        volume=_finite(row["volume"]),
+        volume_ma20=_finite(row["volume_ma20"]),
+        swing_high=_finite(recent["high"].max()),
+        swing_low=_finite(recent["low"].min()),
     )
