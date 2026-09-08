@@ -104,6 +104,16 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Max entry distance must be between 0.2 ATR and 5 ATR")
         return value
 
+    def validate_extended_move_lookback_candles(self, value: int) -> int:
+        if value < 0 or value > 200:
+            raise serializers.ValidationError("Extended-move lookback must be between 0 and 200 candles")
+        return value
+
+    def validate_extended_move_min_pct(self, value):
+        if value < 0 or value > 50:
+            raise serializers.ValidationError("Extended-move threshold must be between 0% and 50%")
+        return value
+
 
 class AutoScannerSettingsSerializer(serializers.ModelSerializer):
     class Meta:

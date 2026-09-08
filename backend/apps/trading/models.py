@@ -102,6 +102,21 @@ class TradingBotConfig(models.Model):
     use_closed_candle_confirmation = models.BooleanField(default=True)
     pullback_entry_enabled = models.BooleanField(default=True)
     max_entry_distance_atr = models.DecimalField(max_digits=6, decimal_places=2, default=1)
+    extended_move_lookback_candles = models.PositiveSmallIntegerField(
+        default=20,
+        help_text="Candles to look back for a big move that already happened before this entry "
+        "(see extended_move_min_pct). 0 = disabled.",
+    )
+    extended_move_min_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=10,
+        help_text="Minimum price move %% over extended_move_lookback_candles that counts as an "
+        "already-completed move. If reached and the current candle isn't making a fresh "
+        "high/low in that direction, the entry is blocked as chasing a finished move "
+        "(e.g. shorting a coin that already dumped and is now just chopping near the low). "
+        "0 = disabled.",
+    )
     is_running = models.BooleanField(default=False)
     auto_registered = models.BooleanField(
         default=False,

@@ -26,6 +26,20 @@ SIDEWAY_REVERSAL_RISK_MULTIPLIER = 0.5
 # Prevents chasing price after it has already moved far from the MA zone.
 MAX_ENTRY_DISTANCE_ATR = 1.0
 
+# ── Extended-move gate ─────────────────────────────────────────────────────────
+# The MA-distance gate above stops working once a fast move is followed by
+# sideways chop: MA7/MA25 catch back down (or up) to meet price within a few
+# candles, so "price is near MA25" no longer means "price recently pulled
+# back" — it can just mean "the MAs finally caught up to an already-finished
+# dump/pump". This gate looks further back than the MAs do: if price already
+# moved at least EXTENDED_MOVE_MIN_PCT over the last EXTENDED_MOVE_LOOKBACK
+# candles, a new same-direction entry is only allowed if the current candle
+# is making a *fresh* extreme (i.e. the move is still actively happening).
+# If it isn't — price is just basing near the extreme of a move that already
+# played out — the entry is blocked as chasing a completed move.
+EXTENDED_MOVE_LOOKBACK_CANDLES = 20
+EXTENDED_MOVE_MIN_PCT = 0.10
+
 # ── Score thresholds ───────────────────────────────────────────────────────────
 # Rescaled from the old 0-137 scoring system (default 85) to the current
 # 0-90 scale (see migration 0025_rescale_entry_score_threshold). Default is
@@ -127,6 +141,60 @@ def entry_location_block_reason(
 
 def entry_score_threshold_for_state(state: TrendState) -> int:
     return DEFAULT_ENTRY_SCORE_THRESHOLD
+
+
+def extended_move_block_reason(
+    side: str,
+    candles: list[dict],
+    lookback: int = EXTENDED_MOVE_LOOKBACK_CANDLES,
+    min_move_pct: float = EXTENDED_MOVE_MIN_PCT,
+) -> str | None:
+    """
+    Block chasing a move that already happened.
+
+    Looks at the ``lookback`` candles before the current one: if price already
+    moved by ``min_move_pct`` or more in the trade's direction, the entry is
+    only allowed when the current candle extends that move to a fresh extreme
+    (new low for SHORT, new high for LONG). Otherwise price is just chopping
+    near the extreme of a finished move, which is exactly the setup where
+    MA7/MA25 have caught back up to price and would otherwise look like a
+    fresh pullback.
+    """
+    if lookback <= 0 or min_move_pct <= 0:
+        return None
+    if len(candles) < lookback + 1:
+        return None
+    window = candles[-(lookback + 1):]
+    prior, current = window[:-1], window[-1]
+    if side == "SHORT":
+        prior_high = max(float(c["high"]) for c in prior)
+        prior_low = min(float(c["low"]) for c in prior)
+        current_low = float(current["low"])
+        if prior_high <= 0:
+            return None
+        move_pct = (prior_high - current_low) / prior_high
+        if move_pct >= min_move_pct and current_low >= prior_low:
+            return (
+                f"SHORT entry blocked: price already fell {move_pct:.1%} over the last "
+                f"{lookback} candles without making a fresh low; avoid chasing a "
+                f"move that has already played out"
+            )
+        return None
+    if side == "LONG":
+        prior_low = min(float(c["low"]) for c in prior)
+        prior_high = max(float(c["high"]) for c in prior)
+        current_high = float(current["high"])
+        if prior_low <= 0:
+            return None
+        move_pct = (current_high - prior_low) / prior_low
+        if move_pct >= min_move_pct and current_high <= prior_high:
+            return (
+                f"LONG entry blocked: price already rose {move_pct:.1%} over the last "
+                f"{lookback} candles without making a fresh high; avoid chasing a "
+                f"move that has already played out"
+            )
+        return None
+    return f"Unsupported entry side: {side}"
 
 
 def _pre_pullback_series(series: list[float], pullback_candles: int) -> list[float]:
@@ -254,6 +322,8 @@ def score_signal(
     pullback_entry_enabled: bool = True,
     max_entry_distance_atr: float = MAX_ENTRY_DISTANCE_ATR,
     oi_history: list[float] | None = None,
+    extended_move_lookback_candles: int = EXTENDED_MOVE_LOOKBACK_CANDLES,
+    extended_move_min_pct: float = EXTENDED_MOVE_MIN_PCT,
 ) -> SignalResult:
     state = TrendState(trend_state)
     candles = signal_data.candles
@@ -467,6 +537,15 @@ def score_signal(
                 state.value, multiplier,
             )
 
+        # ── Hard Gate G3.5: extended-move gate ────────────────────────────────
+        extended_reason = extended_move_block_reason(
+            "SHORT", candles, extended_move_lookback_candles, extended_move_min_pct
+        )
+        if extended_reason:
+            return SignalResult(
+                "NO_TRADE", 0, short_score, [extended_reason], state.value, multiplier
+            )
+
         if pullback_entry_enabled:
             eq = short_eq
 
@@ -599,6 +678,15 @@ def score_signal(
                 "NO_TRADE", long_score, 0,
                 ["LONG requires price above MA99"],
                 state.value, multiplier,
+            )
+
+        # ── Hard Gate G3.5: extended-move gate ────────────────────────────────
+        extended_reason = extended_move_block_reason(
+            "LONG", candles, extended_move_lookback_candles, extended_move_min_pct
+        )
+        if extended_reason:
+            return SignalResult(
+                "NO_TRADE", long_score, 0, [extended_reason], state.value, multiplier
             )
 
         if pullback_entry_enabled:

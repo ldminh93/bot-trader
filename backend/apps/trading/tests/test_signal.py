@@ -4,6 +4,7 @@ from apps.trading.services.indicator_service import calculate_indicators
 from apps.trading.services.signal_service import (
     DEFAULT_ENTRY_SCORE_THRESHOLD,
     entry_location_block_reason,
+    extended_move_block_reason,
     score_signal,
 )
 from apps.trading.services.trend_service import TrendState
@@ -628,4 +629,92 @@ def test_entry_location_uses_nearest_ma_support():
     )
     assert reason is not None
     assert "1.25 ATR above MA7" in reason
+
+
+# ── Extended-move gate: unit tests ─────────────────────────────────────────────
+#
+# Regression coverage for a case the MA-distance gate above misses: after a
+# fast dump, price chops sideways near the low while MA7/MA25 catch back down
+# to meet it, so "price is in the MA25 pullback zone" no longer means a real
+# pullback happened. See specs/001-block-overextended-long for the original
+# (MA-distance) gate this one is meant to close the gap on.
+
+def _dump_then_chop_candles() -> list[dict]:
+    """21 candles: sharp dump from ~150 to ~99, then 4 candles chopping at the low."""
+    dump = [_candle(150 - i, 150 - i - 0.3, 150 - i - 1.5, 150 - i - 1.0, volume=1200) for i in range(17)]
+    chop = [
+        _candle(99.2, 99.5, 99.0, 99.3, volume=400),
+        _candle(99.3, 99.6, 99.1, 99.4, volume=400),
+        _candle(99.4, 99.7, 99.2, 99.5, volume=400),
+        _candle(99.5, 99.8, 99.3, 99.6, volume=400),
+    ]
+    return dump + chop
+
+
+def test_extended_move_blocks_short_after_dump_without_fresh_low():
+    """Coin already dumped >10% over the lookback and isn't making a new low → block."""
+    candles = _dump_then_chop_candles()
+    reason = extended_move_block_reason("SHORT", candles, lookback=20, min_move_pct=0.10)
+    assert reason is not None
+    assert "already fell" in reason
+    assert "fresh low" in reason
+
+
+def test_extended_move_allows_short_that_makes_a_fresh_low():
+    """Same prior dump, but the current candle extends to a new low → not chasing, allow it."""
+    candles = _dump_then_chop_candles()
+    candles[-1] = _candle(99.5, 99.6, 96.0, 96.5, volume=1200)  # breaks below the chop low
+    reason = extended_move_block_reason("SHORT", candles, lookback=20, min_move_pct=0.10)
+    assert reason is None
+
+
+def test_extended_move_ignores_small_moves():
+    """A normal, small pullback (< min_move_pct) is never blocked by this gate."""
+    candles = short_pullback_candles()
+    reason = extended_move_block_reason("SHORT", candles, lookback=20, min_move_pct=0.10)
+    assert reason is None  # too few candles for the lookback window in the first place
+
+
+def test_extended_move_gate_disabled_when_min_pct_is_zero():
+    candles = _dump_then_chop_candles()
+    reason = extended_move_block_reason("SHORT", candles, lookback=20, min_move_pct=0)
+    assert reason is None
+
+
+# ── Extended-move gate: score_signal integration test ──────────────────────────
+
+def test_score_signal_blocks_short_chasing_a_completed_dump():
+    """
+    Reproduces the reported case: SHORT would otherwise pass every existing
+    gate (CONFIRMED_DOWNTREND, MA7<MA25, price<MA99, MA25 pullback zone,
+    bearish rejection candle) but the coin already dumped hard and is just
+    chopping near the low without making a fresh low. The extended-move gate
+    should block it even though the legacy MA-distance gate would not.
+    """
+    dump = [_candle(150 - i, 150 - i + 0.3, 150 - i - 1.2, 150 - i - 1.0, volume=1200) for i in range(12)]
+    candles = _with_cumulative_cvd(dump) + short_pullback_candles(ma25=100.0, atr=1.0)
+    signal = score_signal(
+        replace(_short_setup_indicators(), candles=candles),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert "already fell" in signal.reasons[0]
+
+
+def test_score_signal_short_unaffected_when_extended_move_gate_disabled():
+    """Same setup as above, but with the gate turned off (min_pct=0) → SHORT still fires."""
+    dump = [_candle(150 - i, 150 - i + 0.3, 150 - i - 1.2, 150 - i - 1.0, volume=1200) for i in range(12)]
+    candles = _with_cumulative_cvd(dump) + short_pullback_candles(ma25=100.0, atr=1.0)
+    signal = score_signal(
+        replace(_short_setup_indicators(), candles=candles),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        extended_move_min_pct=0,
+    )
+    assert signal.signal == "SHORT"
 

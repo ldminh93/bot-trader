@@ -142,6 +142,8 @@ def evaluate_market_conditions(
         config.pullback_entry_enabled,
         float(config.max_entry_distance_atr),
         oi_values,
+        extended_move_lookback_candles=config.extended_move_lookback_candles,
+        extended_move_min_pct=float(config.extended_move_min_pct) / 100,
     )
     trend_reasons = explain_trend_state(
         signal_indicators,
