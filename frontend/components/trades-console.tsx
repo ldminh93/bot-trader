@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -8,6 +9,7 @@ import { TradeTable } from "@/components/dashboard/trade-table";
 import { PageFrame } from "@/components/page-frame";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api, getToken } from "@/lib/api";
+import { useCurrentUser } from "@/lib/current-user-context";
 import type { Trade, TradeStats } from "@/lib/types";
 import { formatNumber, pnlColor } from "@/lib/utils";
 
@@ -71,7 +73,7 @@ function computeDailyPnl(trades: Trade[]): { day: string; pnl: number }[] {
     .map(([day, pnl]) => ({ day, pnl }));
 }
 
-export function TradesConsole() {
+export function TradesConsole({ userId, username }: { userId?: number; username?: string } = {}) {
   const router = useRouter();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [stats, setStats] = useState<TradeStats | null>(null);
@@ -87,24 +89,34 @@ export function TradesConsole() {
     tag: "",
     hour: "",
   });
+  const { isStaff, loading: userLoading } = useCurrentUser();
 
   useEffect(() => {
     if (!getToken()) {
       window.location.href = "/login";
       return;
     }
+    if (userId && !userLoading && !isStaff) {
+      window.location.href = "/dashboard";
+      return;
+    }
     setFilters(readFilters());
-    api.stats().then(setStats);
-  }, []);
+  }, [userId, userLoading, isStaff]);
 
   useEffect(() => {
+    if (userId && !isStaff) return;
+    api.stats(userId).then(setStats);
+  }, [userId, isStaff]);
+
+  useEffect(() => {
+    if (userId && !isStaff) return;
     setLoading(true);
-    api.trades(undefined, date || undefined).then((nextTrades) => {
+    api.trades(undefined, date || undefined, undefined, userId).then((nextTrades) => {
       setTrades(nextTrades);
       setSelectedTradeId(nextTrades[0]?.id ?? null);
       setLoading(false);
     });
-  }, [date]);
+  }, [date, userId, isStaff]);
 
   const activeFilters = FILTER_KEYS.filter((key) => filters[key]);
   const isDateScoped = date !== "";
@@ -134,7 +146,7 @@ export function TradesConsole() {
   }, [stats, filteredTrades, activeFilters.length, isDateScoped]);
 
   function clearFilters() {
-    router.push("/trades");
+    router.push(userId ? `/users/${userId}/trades?username=${encodeURIComponent(username ?? "")}` : "/trades");
     setFilters({ symbol: "", side: "", close_reason: "", grade: "", tag: "", hour: "" });
   }
 
@@ -147,8 +159,16 @@ export function TradesConsole() {
   }
 
   return (
-    <PageFrame title="Trades" description="Execution history and realized strategy performance.">
+    <PageFrame
+      title={userId ? `${username ?? "User"}'s Trades` : "Trades"}
+      description="Execution history and realized strategy performance."
+    >
       <div className="grid gap-4">
+        {userId ? (
+          <Link href="/users" className="text-xs font-semibold text-[var(--muted)] hover:text-[var(--accent)]">
+            ← Back to Users
+          </Link>
+        ) : null}
         {message && (
           <div className="rounded-[var(--radius)] border border-[var(--positive)]/40 bg-[var(--positive)]/10 p-3 text-sm text-[#8ce9b8]">
             {message}

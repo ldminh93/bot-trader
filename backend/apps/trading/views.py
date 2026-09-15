@@ -609,18 +609,44 @@ class AutoScannerSyncView(APIView):
         return Response(result)
 
 
+def resolve_target_user(request):
+    """Resolve the user whose data should be returned: request.user, unless a
+    staff caller passes ?user_id= to view another user's calendar/trades from
+    the Users page. Returns (user, None) or (None, error_response)."""
+    user_id = request.query_params.get("user_id")
+    if not user_id:
+        return request.user, None
+    if not request.user.is_staff:
+        return None, Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+    target_user = get_user_model().objects.filter(id=user_id).first()
+    if not target_user:
+        return None, Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    return target_user, None
+
+
 class TradesView(APIView):
     def get(self, request):
-        trades = Trade.objects.filter(user=request.user)
+        target_user, error = resolve_target_user(request)
+        if error:
+            return error
+        trades = Trade.objects.filter(user=target_user)
         symbol = request.query_params.get("symbol")
         if symbol:
             trades = trades.filter(symbol=symbol.upper())
+        date_re = r"\d{4}-\d{2}-\d{2}"
         date = request.query_params.get("date")
-        if date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-            trades = trades.filter(opened_at__date=date)
+        if date and re.fullmatch(date_re, date):
+            # Bucket the same way the Calendar does: closed trades by their
+            # close date (when their PnL actually landed), everything else by
+            # open date. Using opened_at for every status here made the
+            # Trades page disagree with the Calendar's daily counts.
+            trades = trades.filter(
+                Q(status=Trade.Status.CLOSED, closed_at__date=date)
+                | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__date=date))
+            )
+            return Response(TradeSerializer(trades, many=True).data)
         date_from = request.query_params.get("from")
         date_to = request.query_params.get("to")
-        date_re = r"\d{4}-\d{2}-\d{2}"
         if date_from and date_to and re.fullmatch(date_re, date_from) and re.fullmatch(date_re, date_to):
             # A range-scoped request (e.g. the Calendar page's currently-viewed
             # month) wants every trade relevant to that period, not just the
@@ -653,7 +679,10 @@ class TradeReplayExportView(APIView):
 
 class TradeStatsView(APIView):
     def get(self, request):
-        closed = Trade.objects.filter(user=request.user, status=Trade.Status.CLOSED)
+        target_user, error = resolve_target_user(request)
+        if error:
+            return error
+        closed = Trade.objects.filter(user=target_user, status=Trade.Status.CLOSED)
         totals = closed.aggregate(
             realized_pnl=Sum("realized_pnl"),
             trades=Count("id"),
@@ -668,13 +697,13 @@ class TradeStatsView(APIView):
             .order_by("day")
         )
         open_pnl = (
-            Trade.objects.filter(user=request.user, status=Trade.Status.OPEN).aggregate(
+            Trade.objects.filter(user=target_user, status=Trade.Status.OPEN).aggregate(
                 value=Sum("unrealized_pnl")
             )["value"]
             or 0
         )
         # Drawdown from peak balance
-        config = TradingBotConfig.objects.filter(user=request.user).first()
+        config = TradingBotConfig.objects.filter(user=target_user).first()
         starting_balance = float(config.paper_balance) if config else 10000.0
         current_balance = starting_balance + float(totals["realized_pnl"] or 0) + float(open_pnl)
         running = starting_balance
@@ -697,8 +726,8 @@ class TradeStatsView(APIView):
                 "peak_balance": peak_balance,
                 "drawdown_pct": drawdown_pct,
                 "daily": daily,
-                "analytics": build_trade_analytics(request.user),
-                "block_reasons": build_block_reason_stats(request.user),
+                "analytics": build_trade_analytics(target_user),
+                "block_reasons": build_block_reason_stats(target_user),
             }
         )
 

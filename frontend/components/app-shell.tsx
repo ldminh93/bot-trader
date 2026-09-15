@@ -14,9 +14,10 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 
-import { api } from "@/lib/api";
+import { useCurrentUser } from "@/lib/current-user-context";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -34,13 +35,27 @@ const adminNavigation = [{ href: "/users", label: "Users", icon: Users }];
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isStaff, setIsStaff] = useState(false);
+  const { isStaff } = useCurrentUser();
+  const [usernameParam, setUsernameParam] = useState("");
+
+  // Carries the currently-viewed user (e.g. from /users/[id]/calendar) into
+  // the Trades/Calendar nav links so staff don't get bounced back to their
+  // own data while browsing someone else's.
+  const viewedUserMatch = pathname.match(/^\/users\/(\d+)\/(?:calendar|trades)/);
+  const viewedUserId = viewedUserMatch?.[1];
 
   useEffect(() => {
-    api.me().then((currentUser) => setIsStaff(currentUser.is_staff)).catch(() => setIsStaff(false));
-  }, []);
+    setUsernameParam(new URLSearchParams(window.location.search).get("username") ?? "");
+  }, [pathname]);
 
-  const visibleNavigation = isStaff ? [...navigation, ...adminNavigation] : navigation;
+  const visibleNavigation = (isStaff ? [...navigation, ...adminNavigation] : navigation).map((item) => {
+    if (viewedUserId && (item.href === "/trades" || item.href === "/calendar")) {
+      const suffix = item.href.slice(1);
+      const query = usernameParam ? `?username=${encodeURIComponent(usernameParam)}` : "";
+      return { ...item, href: `/users/${viewedUserId}/${suffix}${query}` };
+    }
+    return item;
+  });
 
   function signOut() {
     localStorage.removeItem("access_token");
@@ -67,7 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         >
           {visibleNavigation.map((item) => {
-            const active = pathname === item.href;
+            const active = pathname === item.href.split("?")[0];
             return (
               <Link
                 key={item.href}

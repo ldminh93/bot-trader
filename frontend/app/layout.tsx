@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 
+import { CurrentUserProvider } from "@/lib/current-user-context";
+
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -19,7 +21,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <Script src="/runtime-config.js" strategy="beforeInteractive" />
-        {children}
+        <CurrentUserProvider>{children}</CurrentUserProvider>
       </body>
     </html>
   );

@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { PageFrame } from "@/components/page-frame";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api, getToken } from "@/lib/api";
+import { useCurrentUser } from "@/lib/current-user-context";
 import type { UserPerformanceEntry } from "@/lib/types";
 import { formatNumber, pnlColor } from "@/lib/utils";
 
@@ -22,23 +25,18 @@ export function UsersConsole() {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("total_profit");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const { isStaff, loading: userLoading } = useCurrentUser();
+  const router = useRouter();
 
   useEffect(() => {
     if (!getToken()) {
       window.location.href = "/login";
       return;
     }
-    api
-      .me()
-      .then((currentUser) => {
-        if (!currentUser.is_staff) {
-          window.location.href = "/dashboard";
-        }
-      })
-      .catch(() => {
-        window.location.href = "/dashboard";
-      });
-  }, []);
+    if (!userLoading && !isStaff) {
+      window.location.href = "/dashboard";
+    }
+  }, [userLoading, isStaff]);
 
   useEffect(() => {
     setLoading(true);
@@ -134,9 +132,19 @@ export function UsersConsole() {
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]">
+                  <tr
+                    key={user.id}
+                    onClick={() => router.push(`/users/${user.id}/calendar?username=${encodeURIComponent(user.username)}`)}
+                    className="cursor-pointer border-b border-[var(--line)] last:border-0 hover:bg-[var(--surface-raised)]"
+                  >
                     <td className="px-4 py-3">
-                      <div className="font-semibold">{user.username}</div>
+                      <Link
+                        href={`/users/${user.id}/calendar?username=${encodeURIComponent(user.username)}`}
+                        className="font-semibold hover:text-[var(--accent)]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {user.username}
+                      </Link>
                       <div className="text-[10px] text-[var(--muted)]">{user.email}</div>
                     </td>
                     <td className="px-3 py-3 font-mono">{user.total_trades}</td>

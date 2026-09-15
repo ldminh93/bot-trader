@@ -1,11 +1,13 @@
 "use client";
 
 import { CaretLeft, CaretRight, CalendarBlank } from "@phosphor-icons/react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
+import { useCurrentUser } from "@/lib/current-user-context";
 import type { Trade } from "@/lib/types";
 import { formatNumber, formatPrice, pnlColor } from "@/lib/utils";
 
@@ -64,7 +66,7 @@ function toLocalDateString(date: Date) {
   return `${y}-${m}-${d}`;
 }
 
-export function CalendarConsole() {
+export function CalendarConsole({ userId, username }: { userId?: number; username?: string } = {}) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -72,6 +74,17 @@ export function CalendarConsole() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const { isStaff, loading: userLoading } = useCurrentUser();
+
+  useEffect(() => {
+    if (!getToken()) {
+      window.location.href = "/login";
+      return;
+    }
+    if (userId && !userLoading && !isStaff) {
+      window.location.href = "/dashboard";
+    }
+  }, [userId, userLoading, isStaff]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -84,11 +97,11 @@ export function CalendarConsole() {
     const from = toLocalDateString(new Date(year, month, 1));
     const to = toLocalDateString(new Date(year, month + 1, 0));
     setLoading(true);
-    void api.trades(undefined, undefined, { from, to }).then((data) => {
+    void api.trades(undefined, undefined, { from, to }, userId).then((data) => {
       setTrades(data);
       setLoading(false);
     });
-  }, [year, month]);
+  }, [year, month, userId]);
 
   const summaries = useMemo(() => buildDaySummaries(trades), [trades]);
 
@@ -144,7 +157,14 @@ export function CalendarConsole() {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <CalendarBlank size={20} className="text-[var(--accent)]" />
-            <h1 className="font-bold">Trade Calendar</h1>
+            <div>
+              <h1 className="font-bold">{userId ? `${username ?? "User"}'s Trade Calendar` : "Trade Calendar"}</h1>
+              {userId ? (
+                <Link href="/users" className="text-xs text-[var(--muted)] hover:text-[var(--accent)]">
+                  ← Back to Users
+                </Link>
+              ) : null}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button

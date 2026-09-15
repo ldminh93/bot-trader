@@ -163,7 +163,7 @@ export const api = {
   saveAutoScannerSettings: (body: Partial<AutoScannerSettings>) =>
     request<AutoScannerSettings>("/scanner/auto-settings", { method: "PUT", body: JSON.stringify(body) }),
   syncAutoScanner: () => request<AutoScannerSyncResult>("/scanner/sync", { method: "POST" }),
-  trades: (symbol?: string, date?: string, range?: { from: string; to: string }) => {
+  trades: (symbol?: string, date?: string, range?: { from: string; to: string }, userId?: number) => {
     const params = new URLSearchParams();
     if (symbol) params.set("symbol", symbol);
     if (date) params.set("date", date);
@@ -171,12 +171,14 @@ export const api = {
       params.set("from", range.from);
       params.set("to", range.to);
     }
+    if (userId) params.set("user_id", String(userId));
     const query = params.toString();
     return request<Trade[]>(`/trades${query ? `?${query}` : ""}`);
   },
   exportReplay: (tradeId: number) =>
     request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),
-  stats: () => request<TradeStats>("/trades/stats"),
+  stats: (userId?: number) =>
+    request<TradeStats>(`/trades/stats${userId ? `?user_id=${userId}` : ""}`),
   logs: () => request<BotLog[]>("/logs"),
   saveCredential: (apiKey: string, apiSecret: string) =>
     request("/binance/credentials", {
