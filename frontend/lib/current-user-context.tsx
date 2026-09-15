@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 import type { CurrentUser } from "@/lib/types";
 
 type CurrentUserState = {
@@ -29,18 +29,38 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
   const requested = useRef(cachedUser !== null || cachedFetchFailed);
 
   useEffect(() => {
-    if (requested.current) return;
-    requested.current = true;
-    api
-      .me()
-      .then((currentUser) => {
-        cachedUser = currentUser;
-        setState({ user: currentUser, isStaff: currentUser.is_staff, loading: false });
-      })
-      .catch(() => {
-        cachedFetchFailed = true;
+    function fetchUser() {
+      requested.current = true;
+      setState((s) => ({ ...s, loading: true }));
+      api
+        .me()
+        .then((currentUser) => {
+          cachedUser = currentUser;
+          setState({ user: currentUser, isStaff: currentUser.is_staff, loading: false });
+        })
+        .catch(() => {
+          cachedFetchFailed = true;
+          setState({ user: null, isStaff: false, loading: false });
+        });
+    }
+
+    if (!requested.current) fetchUser();
+
+    // A login/logout in this tab means the account may have changed —
+    // without this, the cached is_staff from the previous account kept
+    // hiding (or wrongly showing) the Users nav tab after switching accounts.
+    function handleAuthChanged() {
+      cachedUser = null;
+      cachedFetchFailed = false;
+      requested.current = false;
+      if (getToken()) {
+        fetchUser();
+      } else {
         setState({ user: null, isStaff: false, loading: false });
-      });
+      }
+    }
+    window.addEventListener("auth-changed", handleAuthChanged);
+    return () => window.removeEventListener("auth-changed", handleAuthChanged);
   }, []);
 
   return <CurrentUserContext.Provider value={state}>{children}</CurrentUserContext.Provider>;

@@ -17,6 +17,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
+import { clearSession } from "@/lib/api";
 import { useCurrentUser } from "@/lib/current-user-context";
 import { cn } from "@/lib/utils";
 
@@ -58,8 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
 
   function signOut() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+    clearSession();
     router.push("/login");
   }
 

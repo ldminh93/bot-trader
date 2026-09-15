@@ -26,10 +26,14 @@ export function getToken() {
   return localStorage.getItem("access_token");
 }
 
-function clearSession() {
+export function clearSession() {
   if (typeof window === "undefined") return;
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
+  // Lets CurrentUserProvider drop its cached identity so a different account
+  // logging in afterwards (in the same tab, no full reload) doesn't inherit
+  // the previous account's is_staff value.
+  window.dispatchEvent(new Event("auth-changed"));
 }
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -108,6 +112,7 @@ export const api = {
     });
     localStorage.setItem("access_token", result.access);
     localStorage.setItem("refresh_token", result.refresh);
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("auth-changed"));
     return result;
   },
   register: (email: string, password: string) =>

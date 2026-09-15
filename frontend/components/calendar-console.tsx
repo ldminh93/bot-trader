@@ -40,11 +40,13 @@ function buildDaySummaries(trades: Trade[]): Map<string, DaySummary> {
   const map = new Map<string, DaySummary>();
   for (const trade of trades) {
     // Group closed trades by closed_at date; open trades by opened_at.
-    // Bucket by the viewer's local calendar day (not a raw UTC slice of the
-    // ISO string) — otherwise a trade that closed late at night locally can
-    // land on the wrong day once its timestamp crosses the UTC date boundary.
+    // Bucket by UTC calendar day, matching the backend's closed_at__date /
+    // opened_at__date filter (Django TIME_ZONE=UTC) used by the Trades page's
+    // date filter — bucketing by the viewer's local day here instead made a
+    // trade's date disagree between the two pages whenever its timestamp was
+    // near the UTC day boundary.
     const ts = trade.closed_at ?? trade.opened_at;
-    const date = toLocalDateString(new Date(ts));
+    const date = toUTCDateString(new Date(ts));
     const existing = map.get(date) ?? { date, trades: [], totalPnl: 0, totalMarginRoi: 0, wins: 0, losses: 0 };
     existing.trades.push(trade);
     if (trade.status === "CLOSED") {
@@ -63,6 +65,13 @@ function toLocalDateString(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function toUTCDateString(date: Date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
