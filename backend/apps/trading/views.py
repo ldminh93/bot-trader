@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from .models import (
     AutoScannerSettings,
     BotLog,
+    CoinCatalog,
     MarketSnapshot,
     Trade,
     TradingBotConfig,
@@ -23,6 +24,7 @@ from .models import (
 from .serializers import (
     AutoScannerSettingsSerializer,
     BotLogSerializer,
+    CoinCatalogSerializer,
     CredentialSerializer,
     DiscordAlertConfigSerializer,
     MarketSnapshotSerializer,
@@ -57,6 +59,53 @@ def get_config(user, symbol: str | None = None) -> TradingBotConfig:
     return config
 
 
+def require_existing_config(user, symbol: str | None) -> TradingBotConfig | None:
+    """Like get_config, but never silently creates a row for an explicit symbol.
+
+    Editing/starting/stopping a coin should only work on a coin the user already
+    added via BotConfigView.post (which enforces the coin-catalog gate) — otherwise
+    a PUT/start/stop with an arbitrary symbol would bypass that gate.
+    """
+    if not symbol:
+        return get_config(user)
+    return TradingBotConfig.objects.filter(user=user, symbol=str(symbol).strip().upper()).first()
+
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view) -> bool:
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_staff)
+
+
+class CoinCatalogView(APIView):
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get(self, request):
+        catalog = CoinCatalog.objects.all()
+        return Response(CoinCatalogSerializer(catalog, many=True).data)
+
+    def post(self, request):
+        serializer = CoinCatalogSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        symbol = serializer.validated_data["symbol"]
+        entry, created = CoinCatalog.objects.get_or_create(
+            symbol=symbol, defaults={"added_by": request.user}
+        )
+        return Response(
+            CoinCatalogSerializer(entry).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        symbol = str(request.query_params.get("symbol") or request.data.get("symbol") or "").strip().upper()
+        entry = CoinCatalog.objects.filter(symbol=symbol).first()
+        if not entry:
+            return Response({"detail": "Symbol not found in catalog."}, status=status.HTTP_404_NOT_FOUND)
+        entry.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class BotConfigView(APIView):
     def get(self, request):
         symbol = request.query_params.get("symbol")
@@ -74,6 +123,12 @@ class BotConfigView(APIView):
         existing = TradingBotConfig.objects.filter(user=request.user, symbol=symbol).first()
         if existing:
             return Response(TradingBotConfigSerializer(existing).data)
+
+        if not CoinCatalog.objects.filter(symbol=symbol).exists():
+            return Response(
+                {"detail": f"{symbol} is not in the coin catalog yet. Ask an admin to add it."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         source_symbol = str(request.data.get("copy_from_symbol", "")).strip().upper()
         source = TradingBotConfig.objects.filter(
@@ -143,7 +198,12 @@ class BotConfigView(APIView):
         )
 
     def put(self, request):
-        config = get_config(request.user, request.data.get("symbol"))
+        config = require_existing_config(request.user, request.data.get("symbol"))
+        if not config:
+            return Response(
+                {"detail": "Coin configuration not found. Add it first."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         previous_values = {
             field: getattr(config, field) for field in TradingBotConfig.ACCOUNT_WIDE_FIELDS
         }
@@ -239,7 +299,12 @@ class BotConfigRemoveAllView(APIView):
 
 class BotStartView(APIView):
     def post(self, request):
-        config = get_config(request.user, request.data.get("symbol"))
+        config = require_existing_config(request.user, request.data.get("symbol"))
+        if not config:
+            return Response(
+                {"detail": "Coin configuration not found. Add it first."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         config.is_running = True
         config.save(update_fields=["is_running", "updated_at"])
         create_bot_log(request.user, config.symbol, BotLog.Level.INFO, "Bot started.")
@@ -248,7 +313,12 @@ class BotStartView(APIView):
 
 class BotStopView(APIView):
     def post(self, request):
-        config = get_config(request.user, request.data.get("symbol"))
+        config = require_existing_config(request.user, request.data.get("symbol"))
+        if not config:
+            return Response(
+                {"detail": "Coin configuration not found. Add it first."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         config.is_running = False
         config.save(update_fields=["is_running", "updated_at"])
         create_bot_log(request.user, config.symbol, BotLog.Level.INFO, "Bot stopped.")

@@ -7,7 +7,8 @@ import { PageFrame } from "@/components/page-frame";
 import { Button } from "@/components/ui/button";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api, getToken } from "@/lib/api";
-import type { BotConfig, DiscordAlertConfig } from "@/lib/types";
+import { useCurrentUser } from "@/lib/current-user-context";
+import type { BotConfig, CoinCatalogEntry, DiscordAlertConfig } from "@/lib/types";
 
 const inputClass =
   "h-10 w-full rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--background)] px-3 text-sm outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]";
@@ -54,12 +55,15 @@ interface PendingImportEntry {
 }
 
 export function SettingsConsole() {
+  const { isStaff } = useCurrentUser();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importAllInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingImportAll, setPendingImportAll] = useState<PendingImportEntry[] | null>(null);
   const [configs, setConfigs] = useState<BotConfig[]>([]);
   const [config, setConfig] = useState<BotConfig | null>(null);
+  const [catalog, setCatalog] = useState<CoinCatalogEntry[]>([]);
   const [newSymbol, setNewSymbol] = useState("");
+  const [newCatalogSymbol, setNewCatalogSymbol] = useState("");
   const [busy, setBusy] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
@@ -96,6 +100,9 @@ export function SettingsConsole() {
         setConfig(items[0] ?? null);
       })
       .catch((reason) => setError(reason.message));
+    api.coinCatalog()
+      .then(setCatalog)
+      .catch(() => undefined);
     api.discordAlerts()
       .then(setDiscordConfig)
       .catch(() => undefined);
@@ -236,6 +243,28 @@ export function SettingsConsole() {
       setMessage("Config imported — review the fields below, then Save to apply.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to import config file");
+    }
+  }
+
+  async function addCatalogSymbol(event: FormEvent) {
+    event.preventDefault();
+    const symbol = newCatalogSymbol.trim().toUpperCase();
+    if (!symbol) return;
+    setBusy(true);
+    setError("");
+    try {
+      const entry = await api.addCoinCatalogEntry(symbol);
+      setCatalog((items) => {
+        const withoutDuplicate = items.filter((item) => item.symbol !== entry.symbol);
+        return [...withoutDuplicate, entry].sort((a, b) => a.symbol.localeCompare(b.symbol));
+      });
+      setNewSymbol(entry.symbol);
+      setNewCatalogSymbol("");
+      setMessage(`${entry.symbol} added to the coin catalog.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to add symbol to catalog");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -491,21 +520,48 @@ export function SettingsConsole() {
             )}
           </div>
           <div className="border-b border-[var(--line)] p-4">
+            {isStaff && (
+              <form onSubmit={addCatalogSymbol} className="mb-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  aria-label="New catalog symbol"
+                  className={inputClass}
+                  value={newCatalogSymbol}
+                  onChange={(event) => setNewCatalogSymbol(event.target.value.toUpperCase().replace(/\s/g, ""))}
+                  placeholder="New symbol, e.g. ETHUSDT"
+                  required
+                />
+                <Button variant="secondary" disabled={busy || !newCatalogSymbol.trim()}>
+                  <Plus size={17} />Add to catalog
+                </Button>
+              </form>
+            )}
             <form onSubmit={addCoin} className="flex flex-col gap-2 sm:flex-row">
-              <input
-                aria-label="New futures symbol"
+              <select
+                aria-label="Coin to add"
                 className={inputClass}
                 value={newSymbol}
-                onChange={(event) => setNewSymbol(event.target.value.toUpperCase().replace(/\s/g, ""))}
-                placeholder="ETHUSDT"
+                onChange={(event) => setNewSymbol(event.target.value)}
                 required
-              />
+              >
+                <option value="" disabled>
+                  Select a coin from the catalog
+                </option>
+                {catalog
+                  .filter((entry) => !configs.some((item) => item.symbol === entry.symbol))
+                  .map((entry) => (
+                    <option key={entry.symbol} value={entry.symbol}>
+                      {entry.symbol}
+                    </option>
+                  ))}
+              </select>
               <Button disabled={busy || !newSymbol.trim()}>
                 <Plus size={17} />Add coin
               </Button>
             </form>
             <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-              New coins copy the selected coin&apos;s strategy settings and stay paused until you click Scan.
+              {isStaff
+                ? "Add a new symbol to the catalog, then add it below. New coins copy the selected coin's strategy settings and stay paused until you click Scan."
+                : "Coins come from the catalog an admin maintains. New coins copy the selected coin's strategy settings and stay paused until you click Scan."}
             </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {configs.map((item) => (

@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     AutoScannerSettings,
     BotLog,
+    CoinCatalog,
     MarketSnapshot,
     Trade,
     TradingBotConfig,
@@ -36,6 +37,13 @@ class AutoScannerSettingsAdmin(admin.ModelAdmin):
     list_filter = ("enabled", "quote_asset")
     search_fields = ("user__username", "user__email")
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(CoinCatalog)
+class CoinCatalogAdmin(admin.ModelAdmin):
+    list_display = ("symbol", "added_by", "created_at")
+    search_fields = ("symbol",)
+    readonly_fields = ("created_at",)
 
 
 @admin.register(TradingBotConfig)

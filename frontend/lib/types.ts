@@ -380,6 +380,11 @@ export interface CurrentUser {
   is_staff: boolean;
 }
 
+export interface CoinCatalogEntry {
+  symbol: string;
+  created_at: string;
+}
+
 export interface UserPerformanceEntry {
   id: number;
   username: string;

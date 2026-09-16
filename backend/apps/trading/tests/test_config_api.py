@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from apps.trading.models import Trade, TradingBotConfig
+from apps.trading.models import CoinCatalog, Trade, TradingBotConfig
 
 
 @pytest.mark.django_db
@@ -18,6 +18,7 @@ def test_config_api_lists_and_adds_multiple_scanner_coins():
         timeframe_signal="5m",
         is_running=True,
     )
+    CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
     client.force_authenticate(user)
 
@@ -55,6 +56,7 @@ def test_config_api_adds_new_coin_paused_by_default():
         timeframe_signal="5m",
         is_running=True,
     )
+    CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
     client.force_authenticate(user)
 
@@ -78,6 +80,7 @@ def test_config_api_accepts_one_character_base_symbol():
         "short-symbol@example.com",
         password="secure-pass",
     )
+    CoinCatalog.objects.create(symbol="HUSDT")
     client = APIClient()
     client.force_authenticate(user)
 
@@ -189,6 +192,7 @@ def test_new_coin_inherits_account_wide_strategy_fields_without_explicit_copy():
         position_margin_usdt=60,
         auto_suppress_losing_tags=False,
     )
+    CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
     client.force_authenticate(user)
 
@@ -364,6 +368,72 @@ def test_saving_unrelated_field_does_not_reset_max_open_positions_on_other_coins
 
 
 @pytest.mark.django_db
+def test_regular_user_cannot_add_coin_not_in_catalog():
+    user = get_user_model().objects.create_user("no-catalog@example.com", password="secure-pass")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/bot/config", {"symbol": "ETHUSDT"}, format="json")
+
+    assert response.status_code == 403
+    assert not TradingBotConfig.objects.filter(user=user, symbol="ETHUSDT").exists()
+
+
+@pytest.mark.django_db
+def test_regular_user_can_add_coin_already_in_catalog():
+    CoinCatalog.objects.create(symbol="ETHUSDT")
+    user = get_user_model().objects.create_user("self-enable@example.com", password="secure-pass")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/bot/config", {"symbol": "ETHUSDT"}, format="json")
+
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_regular_user_cannot_add_symbol_to_catalog():
+    user = get_user_model().objects.create_user("regular-catalog@example.com", password="secure-pass")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/coin-catalog", {"symbol": "ETHUSDT"}, format="json")
+
+    assert response.status_code == 403
+    assert not CoinCatalog.objects.filter(symbol="ETHUSDT").exists()
+
+
+@pytest.mark.django_db
+def test_admin_can_add_symbol_to_catalog():
+    admin = get_user_model().objects.create_user(
+        "catalog-admin@example.com", password="secure-pass", is_staff=True
+    )
+    client = APIClient()
+    client.force_authenticate(admin)
+
+    response = client.post("/api/coin-catalog", {"symbol": "ethusdt"}, format="json")
+
+    assert response.status_code == 201
+    assert CoinCatalog.objects.filter(symbol="ETHUSDT").exists()
+
+
+@pytest.mark.django_db
+def test_put_start_stop_do_not_silently_create_uncatalogued_coin():
+    user = get_user_model().objects.create_user("no-upsert@example.com", password="secure-pass")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    put_response = client.put("/api/bot/config", {"symbol": "ETHUSDT", "leverage": 5}, format="json")
+    start_response = client.post("/api/bot/start", {"symbol": "ETHUSDT"}, format="json")
+    stop_response = client.post("/api/bot/stop", {"symbol": "ETHUSDT"}, format="json")
+
+    assert put_response.status_code == 404
+    assert start_response.status_code == 404
+    assert stop_response.status_code == 404
+    assert not TradingBotConfig.objects.filter(user=user, symbol="ETHUSDT").exists()
+
+
+@pytest.mark.django_db
 def test_new_scanner_coin_inherits_account_live_mode():
     user = get_user_model().objects.create_user(
         "new-live-coin@example.com",
@@ -374,6 +444,7 @@ def test_new_scanner_coin_inherits_account_live_mode():
         symbol="BTCUSDT",
         live_mode_requested=True,
     )
+    CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
     client.force_authenticate(user)
 

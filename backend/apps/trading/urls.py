@@ -15,6 +15,7 @@ from .views import (
     BotManualOpenView,
     BotStartView,
     BotStopView,
+    CoinCatalogView,
     ConnectionTestView,
     CredentialView,
     DiscordAlertConfigView,
@@ -32,6 +33,7 @@ from .views import (
 
 urlpatterns = [
     path("bot/config", BotConfigView.as_view()),
+    path("coin-catalog", CoinCatalogView.as_view()),
     path("bot/config/pause-all", BotConfigPauseAllView.as_view()),
     path("bot/config/scan-all", BotConfigScanAllView.as_view()),
     path("bot/config/remove-all", BotConfigRemoveAllView.as_view()),

@@ -301,6 +301,20 @@ class TradingBotConfig(models.Model):
         return {field: getattr(existing, field) for field in cls.ACCOUNT_WIDE_FIELDS}
 
 
+class CoinCatalog(models.Model):
+    """Admin-curated whitelist of symbols users are allowed to add to their own scanner."""
+
+    symbol = models.CharField(max_length=24, unique=True)
+    added_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["symbol"]
+
+    def __str__(self) -> str:
+        return self.symbol
+
+
 class MarketSnapshot(models.Model):
     class Trend(models.TextChoices):
         SIDEWAY = "SIDEWAY", "Sideway"

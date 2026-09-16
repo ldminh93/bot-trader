@@ -2,7 +2,28 @@ import re
 
 from rest_framework import serializers
 
-from .models import AutoScannerSettings, BotLog, MarketSnapshot, Trade, TradingBotConfig, UserDiscordAlertConfig
+from .models import (
+    AutoScannerSettings,
+    BotLog,
+    CoinCatalog,
+    MarketSnapshot,
+    Trade,
+    TradingBotConfig,
+    UserDiscordAlertConfig,
+)
+
+
+class CoinCatalogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CoinCatalog
+        fields = ("symbol", "created_at")
+        read_only_fields = ("created_at",)
+
+    def validate_symbol(self, value: str) -> str:
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{1,20}USDT", normalized):
+            raise serializers.ValidationError("Symbol must be a valid USDT futures pair, for example BTCUSDT")
+        return normalized
 
 
 class TradingBotConfigSerializer(serializers.ModelSerializer):

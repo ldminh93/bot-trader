@@ -4,6 +4,7 @@ import type {
   BacktestResult,
   BotConfig,
   BotLog,
+  CoinCatalogEntry,
   CurrentUser,
   DiscordAlertConfig,
   KillSwitchResult,
@@ -128,6 +129,11 @@ export const api = {
     const queryString = query.toString();
     return request<UserPerformanceResult>(`/users/performance${queryString ? `?${queryString}` : ""}`);
   },
+  coinCatalog: () => request<CoinCatalogEntry[]>("/coin-catalog"),
+  addCoinCatalogEntry: (symbol: string) =>
+    request<CoinCatalogEntry>("/coin-catalog", { method: "POST", body: JSON.stringify({ symbol }) }),
+  removeCoinCatalogEntry: (symbol: string) =>
+    request<void>(`/coin-catalog?symbol=${encodeURIComponent(symbol)}`, { method: "DELETE" }),
   config: (symbol: string) => request<BotConfig>(`/bot/config?symbol=${symbol}`),
   configs: () => request<BotConfig[]>("/bot/config"),
   addConfig: (symbol: string, copyFromSymbol?: string) =>
