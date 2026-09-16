@@ -79,6 +79,18 @@ class IsAdminOrReadOnly(permissions.BasePermission):
         return bool(request.user and request.user.is_staff)
 
 
+class IsAdminForCoinMembership(permissions.BasePermission):
+    """A regular user's coin list is mirrored from admins (coin_mirror_service)
+    and must not drift from it, so only GET (view) and PUT (edit strategy) are
+    open to any authenticated user — POST (add) and DELETE (remove), which
+    change which coins exist, are admin-only."""
+
+    def has_permission(self, request, view) -> bool:
+        if request.method in ("POST", "DELETE"):
+            return bool(request.user and request.user.is_staff)
+        return True
+
+
 class CoinCatalogView(APIView):
     permission_classes = [IsAdminOrReadOnly]
 
@@ -108,6 +120,8 @@ class CoinCatalogView(APIView):
 
 
 class BotConfigView(APIView):
+    permission_classes = [IsAdminForCoinMembership]
+
     def get(self, request):
         symbol = request.query_params.get("symbol")
         if symbol:
@@ -278,6 +292,8 @@ class BotConfigScanAllView(APIView):
 
 
 class BotConfigRemoveAllView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
     def post(self, request):
         removed = []
         skipped = []

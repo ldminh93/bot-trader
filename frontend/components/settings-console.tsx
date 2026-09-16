@@ -478,9 +478,11 @@ export function SettingsConsole() {
             <Button type="button" size="sm" variant="secondary" disabled={busy || !configs.length} onClick={exportAllConfigs}>
               <DownloadSimple size={16} />Export all
             </Button>
-            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={triggerImportAll}>
-              <UploadSimple size={16} />Import all
-            </Button>
+            {isStaff && (
+              <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={triggerImportAll}>
+                <UploadSimple size={16} />Import all
+              </Button>
+            )}
             <input
               ref={importAllInputRef}
               type="file"
@@ -488,7 +490,7 @@ export function SettingsConsole() {
               className="hidden"
               onChange={(event) => void handleImportAllFile(event)}
             />
-            {pendingImportAll && (
+            {isStaff && pendingImportAll && (
               <>
                 <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => void confirmImportAll()}>
                   Confirm: import {pendingImportAll.length} coin{pendingImportAll.length === 1 ? "" : "s"}
@@ -498,29 +500,31 @@ export function SettingsConsole() {
                 </Button>
               </>
             )}
-            {!confirmRemoveAll ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="danger"
-                disabled={busy || !configs.length}
-                onClick={() => setConfirmRemoveAll(true)}
-              >
-                <Trash size={16} />Remove all
-              </Button>
-            ) : (
-              <>
-                <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => void removeAllCoins()}>
-                  Confirm: remove {configs.length} coin{configs.length === 1 ? "" : "s"}
+            {isStaff && (
+              !confirmRemoveAll ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="danger"
+                  disabled={busy || !configs.length}
+                  onClick={() => setConfirmRemoveAll(true)}
+                >
+                  <Trash size={16} />Remove all
                 </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmRemoveAll(false)}>
-                  Cancel
-                </Button>
-              </>
+              ) : (
+                <>
+                  <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => void removeAllCoins()}>
+                    Confirm: remove {configs.length} coin{configs.length === 1 ? "" : "s"}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmRemoveAll(false)}>
+                    Cancel
+                  </Button>
+                </>
+              )
             )}
           </div>
-          <div className="border-b border-[var(--line)] p-4">
-            {isStaff && (
+          {isStaff && (
+            <div className="border-b border-[var(--line)] p-4">
               <form onSubmit={addCatalogSymbol} className="mb-3 flex flex-col gap-2 sm:flex-row">
                 <input
                   aria-label="New catalog symbol"
@@ -534,35 +538,43 @@ export function SettingsConsole() {
                   <Plus size={17} />Add to catalog
                 </Button>
               </form>
+              <form onSubmit={addCoin} className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  aria-label="Coin to add"
+                  className={inputClass}
+                  value={newSymbol}
+                  onChange={(event) => setNewSymbol(event.target.value)}
+                  required
+                >
+                  <option value="" disabled>
+                    Select a coin from the catalog
+                  </option>
+                  {catalog
+                    .filter((entry) => !configs.some((item) => item.symbol === entry.symbol))
+                    .map((entry) => (
+                      <option key={entry.symbol} value={entry.symbol}>
+                        {entry.symbol}
+                      </option>
+                    ))}
+                </select>
+                <Button disabled={busy || !newSymbol.trim()}>
+                  <Plus size={17} />Add coin
+                </Button>
+              </form>
+              <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                Add a new symbol to the catalog, then add it below. New coins copy the selected coin&apos;s strategy
+                settings and stay paused until you click Scan. Regular users automatically get the same coins as
+                admin and can only adjust strategy settings.
+              </p>
+            </div>
+          )}
+          <div className="border-b border-[var(--line)] p-4">
+            {!isStaff && (
+              <p className="text-xs leading-5 text-[var(--muted)]">
+                Your coin list is managed by an admin and always matches theirs — you can adjust each coin&apos;s
+                strategy settings below.
+              </p>
             )}
-            <form onSubmit={addCoin} className="flex flex-col gap-2 sm:flex-row">
-              <select
-                aria-label="Coin to add"
-                className={inputClass}
-                value={newSymbol}
-                onChange={(event) => setNewSymbol(event.target.value)}
-                required
-              >
-                <option value="" disabled>
-                  Select a coin from the catalog
-                </option>
-                {catalog
-                  .filter((entry) => !configs.some((item) => item.symbol === entry.symbol))
-                  .map((entry) => (
-                    <option key={entry.symbol} value={entry.symbol}>
-                      {entry.symbol}
-                    </option>
-                  ))}
-              </select>
-              <Button disabled={busy || !newSymbol.trim()}>
-                <Plus size={17} />Add coin
-              </Button>
-            </form>
-            <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-              {isStaff
-                ? "Add a new symbol to the catalog, then add it below. New coins copy the selected coin's strategy settings and stay paused until you click Scan."
-                : "Coins come from the catalog an admin maintains. New coins copy the selected coin's strategy settings and stay paused until you click Scan."}
-            </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {configs.map((item) => (
                 <div
@@ -592,17 +604,19 @@ export function SettingsConsole() {
                   <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void toggleScan(item)}>
                     {item.is_running ? "Pause" : "Scan"}
                   </Button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => void removeCoin(item)}
-                    aria-label={`Remove ${item.symbol}`}
-                    title={`Remove ${item.symbol}`}
-                  >
-                    <Trash size={16} />
-                  </Button>
+                  {isStaff && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => void removeCoin(item)}
+                      aria-label={`Remove ${item.symbol}`}
+                      title={`Remove ${item.symbol}`}
+                    >
+                      <Trash size={16} />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

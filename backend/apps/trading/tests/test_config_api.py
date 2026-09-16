@@ -5,14 +5,15 @@ from rest_framework.test import APIClient
 from apps.trading.models import CoinCatalog, Trade, TradingBotConfig
 
 
+def _admin(email: str):
+    return get_user_model().objects.create_user(email, password="secure-pass", is_staff=True)
+
+
 @pytest.mark.django_db
 def test_config_api_lists_and_adds_multiple_scanner_coins():
-    user = get_user_model().objects.create_user(
-        "scanner@example.com",
-        password="secure-pass",
-    )
+    admin = _admin("scanner@example.com")
     source = TradingBotConfig.objects.create(
-        user=user,
+        user=admin,
         symbol="BTCUSDT",
         leverage=25,
         timeframe_signal="5m",
@@ -20,7 +21,7 @@ def test_config_api_lists_and_adds_multiple_scanner_coins():
     )
     CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     created = client.post(
         "/api/bot/config",
@@ -45,12 +46,9 @@ def test_config_api_lists_and_adds_multiple_scanner_coins():
 
 @pytest.mark.django_db
 def test_config_api_adds_new_coin_paused_by_default():
-    user = get_user_model().objects.create_user(
-        "paused-default@example.com",
-        password="secure-pass",
-    )
+    admin = _admin("paused-default@example.com")
     source = TradingBotConfig.objects.create(
-        user=user,
+        user=admin,
         symbol="BTCUSDT",
         leverage=25,
         timeframe_signal="5m",
@@ -58,7 +56,7 @@ def test_config_api_adds_new_coin_paused_by_default():
     )
     CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     created = client.post(
         "/api/bot/config",
@@ -76,13 +74,10 @@ def test_config_api_adds_new_coin_paused_by_default():
 
 @pytest.mark.django_db
 def test_config_api_accepts_one_character_base_symbol():
-    user = get_user_model().objects.create_user(
-        "short-symbol@example.com",
-        password="secure-pass",
-    )
+    admin = _admin("short-symbol@example.com")
     CoinCatalog.objects.create(symbol="HUSDT")
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     response = client.post(
         "/api/bot/config",
@@ -97,20 +92,17 @@ def test_config_api_accepts_one_character_base_symbol():
 
 @pytest.mark.django_db
 def test_config_api_removes_only_requested_coin():
-    user = get_user_model().objects.create_user(
-        "remove-scanner@example.com",
-        password="secure-pass",
-    )
-    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
-    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT")
+    admin = _admin("remove-scanner@example.com")
+    TradingBotConfig.objects.create(user=admin, symbol="BTCUSDT")
+    TradingBotConfig.objects.create(user=admin, symbol="ETHUSDT")
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     response = client.delete("/api/bot/config?symbol=ETHUSDT")
 
     assert response.status_code == 204
     assert list(
-        TradingBotConfig.objects.filter(user=user).values_list("symbol", flat=True)
+        TradingBotConfig.objects.filter(user=admin).values_list("symbol", flat=True)
     ) == ["BTCUSDT"]
 
 
@@ -182,19 +174,16 @@ def test_new_coin_inherits_account_wide_strategy_fields_without_explicit_copy():
     current shared value for the account-wide fields, since they're no longer
     meant to vary per coin.
     """
-    user = get_user_model().objects.create_user(
-        "new-coin-inherits@example.com",
-        password="secure-pass",
-    )
+    admin = _admin("new-coin-inherits@example.com")
     TradingBotConfig.objects.create(
-        user=user,
+        user=admin,
         symbol="BTCUSDT",
         position_margin_usdt=60,
         auto_suppress_losing_tags=False,
     )
     CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     response = client.post(
         "/api/bot/config",
@@ -240,11 +229,11 @@ def test_scan_all_starts_every_paused_coin():
 
 @pytest.mark.django_db
 def test_remove_all_deletes_configs_but_keeps_open_positions():
-    user = get_user_model().objects.create_user("remove-all@example.com", password="secure-pass")
-    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
-    TradingBotConfig.objects.create(user=user, symbol="ETHUSDT")
+    admin = _admin("remove-all@example.com")
+    TradingBotConfig.objects.create(user=admin, symbol="BTCUSDT")
+    TradingBotConfig.objects.create(user=admin, symbol="ETHUSDT")
     Trade.objects.create(
-        user=user,
+        user=admin,
         symbol="ETHUSDT",
         side=Trade.Side.LONG,
         status=Trade.Status.OPEN,
@@ -257,7 +246,7 @@ def test_remove_all_deletes_configs_but_keeps_open_positions():
         open_reason="test",
     )
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     response = client.post("/api/bot/config/remove-all")
 
@@ -265,7 +254,7 @@ def test_remove_all_deletes_configs_but_keeps_open_positions():
     assert response.data["removed"] == ["BTCUSDT"]
     assert response.data["skipped"] == ["ETHUSDT"]
     assert list(
-        TradingBotConfig.objects.filter(user=user).values_list("symbol", flat=True)
+        TradingBotConfig.objects.filter(user=admin).values_list("symbol", flat=True)
     ) == ["ETHUSDT"]
 
 
@@ -368,27 +357,46 @@ def test_saving_unrelated_field_does_not_reset_max_open_positions_on_other_coins
 
 
 @pytest.mark.django_db
-def test_regular_user_cannot_add_coin_not_in_catalog():
-    user = get_user_model().objects.create_user("no-catalog@example.com", password="secure-pass")
+def test_regular_user_cannot_add_coin_at_all():
+    """Coin membership is admin-only now — mirrored onto regular users by
+    coin_mirror_service, never self-serviced — regardless of catalog state."""
+    user = get_user_model().objects.create_user("no-add@example.com", password="secure-pass")
     client = APIClient()
     client.force_authenticate(user)
 
-    response = client.post("/api/bot/config", {"symbol": "ETHUSDT"}, format="json")
+    without_catalog = client.post("/api/bot/config", {"symbol": "ETHUSDT"}, format="json")
+    assert without_catalog.status_code == 403
 
-    assert response.status_code == 403
+    CoinCatalog.objects.create(symbol="ETHUSDT")
+    with_catalog = client.post("/api/bot/config", {"symbol": "ETHUSDT"}, format="json")
+    assert with_catalog.status_code == 403
     assert not TradingBotConfig.objects.filter(user=user, symbol="ETHUSDT").exists()
 
 
 @pytest.mark.django_db
-def test_regular_user_can_add_coin_already_in_catalog():
-    CoinCatalog.objects.create(symbol="ETHUSDT")
-    user = get_user_model().objects.create_user("self-enable@example.com", password="secure-pass")
+def test_regular_user_cannot_delete_own_coin():
+    user = get_user_model().objects.create_user("no-delete@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
     client = APIClient()
     client.force_authenticate(user)
 
-    response = client.post("/api/bot/config", {"symbol": "ETHUSDT"}, format="json")
+    response = client.delete("/api/bot/config?symbol=BTCUSDT")
 
-    assert response.status_code == 201
+    assert response.status_code == 403
+    assert TradingBotConfig.objects.filter(user=user, symbol="BTCUSDT").exists()
+
+
+@pytest.mark.django_db
+def test_regular_user_cannot_remove_all():
+    user = get_user_model().objects.create_user("no-remove-all@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="BTCUSDT")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.post("/api/bot/config/remove-all")
+
+    assert response.status_code == 403
+    assert TradingBotConfig.objects.filter(user=user, symbol="BTCUSDT").exists()
 
 
 @pytest.mark.django_db
@@ -405,9 +413,7 @@ def test_regular_user_cannot_add_symbol_to_catalog():
 
 @pytest.mark.django_db
 def test_admin_can_add_symbol_to_catalog():
-    admin = get_user_model().objects.create_user(
-        "catalog-admin@example.com", password="secure-pass", is_staff=True
-    )
+    admin = _admin("catalog-admin@example.com")
     client = APIClient()
     client.force_authenticate(admin)
 
@@ -435,18 +441,15 @@ def test_put_start_stop_do_not_silently_create_uncatalogued_coin():
 
 @pytest.mark.django_db
 def test_new_scanner_coin_inherits_account_live_mode():
-    user = get_user_model().objects.create_user(
-        "new-live-coin@example.com",
-        password="secure-pass",
-    )
+    admin = _admin("new-live-coin@example.com")
     TradingBotConfig.objects.create(
-        user=user,
+        user=admin,
         symbol="BTCUSDT",
         live_mode_requested=True,
     )
     CoinCatalog.objects.create(symbol="ETHUSDT")
     client = APIClient()
-    client.force_authenticate(user)
+    client.force_authenticate(admin)
 
     response = client.post(
         "/api/bot/config",
