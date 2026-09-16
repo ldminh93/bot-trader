@@ -36,6 +36,7 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "is_running",
             "auto_registered",
+            "admin_mirrored",
             "top_mover_side",
             "created_at",
             "updated_at",

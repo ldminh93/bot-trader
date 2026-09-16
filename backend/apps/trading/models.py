@@ -122,6 +122,14 @@ class TradingBotConfig(models.Model):
         default=False,
         help_text="True if this config was created by the top-movers auto-scanner (eligible for sync removal).",
     )
+    admin_mirrored = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if this config was auto-created for a regular user because an admin "
+            "has this coin (eligible for removal once no admin has it anymore). Never "
+            "set on a coin the user added themselves."
+        ),
+    )
 
     class TopMoverSide(models.TextChoices):
         GAINER = "gainer", "Long (top gainer)"

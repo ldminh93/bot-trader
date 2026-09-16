@@ -1,5 +1,6 @@
 from ..models import AutoScannerSettings, BotLog, Trade, TradingBotConfig
 from .binance_service import BinanceService
+from .coin_mirror_service import mirror_admin_coins_to_regular_users
 from .discord_alert_service import send_discord_alert
 from .websocket_service import broadcast_user_update
 
@@ -189,6 +190,9 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
 
     settings_obj.last_synced_at = timezone.now()
     settings_obj.save(update_fields=["last_synced_at"])
+
+    if user.is_staff:
+        mirror_admin_coins_to_regular_users()
 
     return {
         "added": added,

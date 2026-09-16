@@ -35,6 +35,7 @@ from .services.analytics_service import build_trade_analytics
 from .services.auto_scanner_service import sync_top_movers_to_scanner
 from .services.backtest_service import run_backtest
 from .services.binance_service import BinanceService
+from .services.coin_mirror_service import mirror_admin_coins_to_regular_users
 from .services.credential_service import decrypt_secret, encrypt_secret
 from .services.discord_alert_service import send_discord_alert
 from .services.discord_alert_service import send_trade_replay_export
@@ -192,6 +193,8 @@ class BotConfigView(APIView):
             level=BotLog.Level.INFO,
             message="Coin added to scanner." if config.is_running else "Coin configuration added.",
         )
+        if request.user.is_staff:
+            mirror_admin_coins_to_regular_users()
         return Response(
             TradingBotConfigSerializer(config).data,
             status=status.HTTP_201_CREATED,
