@@ -27,8 +27,15 @@ def mirror_admin_coins_to_regular_users() -> dict:
     and whether each one is actively scanning — in sync with admin, fully
     hands-off. A coin's scanning state is force-matched every run (a regular
     user's own Pause/Scan click on a mirrored coin will be overwritten by the
-    next sync), and any coin a regular user has that no admin has anymore is
-    pruned too, except when it has an open position.
+    next sync).
+
+    Same open-position protection sync_top_movers_to_scanner applies to admin's
+    own coins applies per regular user here too, since a paused (is_running=
+    False) config is never processed by run_active_bots — pausing one out from
+    under an open position would stop the bot from managing it. So a coin
+    is never removed, and never paused (True -> False), while that specific
+    user has an open position on it; both are skipped until the position
+    closes and a later sync catches it.
     """
     admin_status: dict[str, dict] = {}
     for cfg in TradingBotConfig.objects.filter(user__is_staff=True).order_by("symbol", "-is_running"):
@@ -42,10 +49,14 @@ def mirror_admin_coins_to_regular_users() -> dict:
     added: dict[int, list[str]] = {}
     updated: dict[int, list[str]] = {}
     removed: dict[int, list[str]] = {}
+    skipped: dict[int, list[str]] = {}
 
     for user in User.objects.filter(is_staff=False):
         existing = {c.symbol: c for c in TradingBotConfig.objects.filter(user=user)}
         existing_symbols = set(existing.keys())
+        open_position_symbols = set(
+            Trade.objects.filter(user=user, status=Trade.Status.OPEN).values_list("symbol", flat=True)
+        )
 
         missing = admin_symbols - existing_symbols
         if missing:
@@ -70,12 +81,21 @@ def mirror_admin_coins_to_regular_users() -> dict:
             added[user.id] = sorted(missing)
 
         user_updated = []
+        user_skipped = []
         for symbol in admin_symbols & existing_symbols:
             config = existing[symbol]
             status = admin_status[symbol]
+            target_is_running = status["is_running"]
+            if config.is_running and not target_is_running and symbol in open_position_symbols:
+                # Don't pause a coin out from under this user's own open
+                # position — run_active_bots skips is_running=False configs
+                # entirely, which would stop managing it mid-trade.
+                target_is_running = True
+                user_skipped.append(symbol)
+
             changed_fields = []
-            if config.is_running != status["is_running"]:
-                config.is_running = status["is_running"]
+            if config.is_running != target_is_running:
+                config.is_running = target_is_running
                 changed_fields.append("is_running")
             if config.top_mover_side != status["top_mover_side"]:
                 config.top_mover_side = status["top_mover_side"]
@@ -83,29 +103,31 @@ def mirror_admin_coins_to_regular_users() -> dict:
             if changed_fields:
                 config.save(update_fields=changed_fields)
                 user_updated.append(symbol)
-                _log_mirror_event(
-                    user,
-                    symbol,
-                    "Scanning started (mirrored from admin)."
-                    if status["is_running"]
-                    else "Scanning paused (mirrored from admin).",
-                )
+                if "is_running" in changed_fields:
+                    _log_mirror_event(
+                        user,
+                        symbol,
+                        "Scanning started (mirrored from admin)."
+                        if target_is_running
+                        else "Scanning paused (mirrored from admin).",
+                    )
+                else:
+                    _log_mirror_event(user, symbol, "Top-mover side updated (mirrored from admin).")
         if user_updated:
             updated[user.id] = sorted(user_updated)
 
         stale = existing_symbols - admin_symbols
         user_removed = []
         for symbol in stale:
-            config = existing[symbol]
-            has_open_position = Trade.objects.filter(
-                user=user, symbol=symbol, status=Trade.Status.OPEN
-            ).exists()
-            if has_open_position:
+            if symbol in open_position_symbols:
+                user_skipped.append(symbol)
                 continue
-            config.delete()
+            existing[symbol].delete()
             user_removed.append(symbol)
             _log_mirror_event(user, symbol, "Coin removed from scanner (no longer tracked by admin).")
         if user_removed:
             removed[user.id] = sorted(user_removed)
+        if user_skipped:
+            skipped[user.id] = sorted(user_skipped)
 
-    return {"added": added, "updated": updated, "removed": removed}
+    return {"added": added, "updated": updated, "removed": removed, "skipped": skipped}

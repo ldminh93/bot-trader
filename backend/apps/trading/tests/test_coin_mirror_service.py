@@ -97,6 +97,7 @@ def test_mirror_skips_removal_with_open_position():
 
     assert TradingBotConfig.objects.filter(user=regular, symbol="ETHUSDT").exists()
     assert result["removed"] == {}
+    assert result["skipped"] == {regular.id: ["ETHUSDT"]}
 
 
 @pytest.mark.django_db
@@ -133,6 +134,70 @@ def test_mirror_pauses_scanning_when_admin_no_longer_running_it():
 
     mirrored = TradingBotConfig.objects.get(user=regular, symbol="BTCUSDT")
     assert mirrored.is_running is False
+    assert result["updated"] == {regular.id: ["BTCUSDT"]}
+
+
+@pytest.mark.django_db
+def test_mirror_does_not_pause_a_coin_with_an_open_position():
+    """run_active_bots skips is_running=False configs entirely, so pausing a
+    coin mid-trade would stop the bot from managing that user's own open
+    position — same protection sync_top_movers_to_scanner gives admin."""
+    admin = get_user_model().objects.create_user(
+        "mirror-open-admin@example.com", password="secure-pass", is_staff=True
+    )
+    regular = get_user_model().objects.create_user("mirror-open-regular@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=admin, symbol="BTCUSDT", is_running=False)
+    TradingBotConfig.objects.create(
+        user=regular, symbol="BTCUSDT", is_running=True, admin_mirrored=True
+    )
+    Trade.objects.create(
+        user=regular,
+        symbol="BTCUSDT",
+        side=Trade.Side.LONG,
+        status=Trade.Status.OPEN,
+        entry_price=100,
+        quantity=1,
+        stop_loss=90,
+        take_profit_1=110,
+        take_profit_2=120,
+        take_profit_3=130,
+        open_reason="test",
+    )
+
+    result = mirror_admin_coins_to_regular_users()
+
+    assert TradingBotConfig.objects.get(user=regular, symbol="BTCUSDT").is_running is True
+    assert result["updated"] == {}
+    assert result["skipped"] == {regular.id: ["BTCUSDT"]}
+
+
+@pytest.mark.django_db
+def test_mirror_pauses_again_once_open_position_closes():
+    admin = get_user_model().objects.create_user(
+        "mirror-closed-admin@example.com", password="secure-pass", is_staff=True
+    )
+    regular = get_user_model().objects.create_user("mirror-closed-regular@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=admin, symbol="BTCUSDT", is_running=False)
+    TradingBotConfig.objects.create(
+        user=regular, symbol="BTCUSDT", is_running=True, admin_mirrored=True
+    )
+    Trade.objects.create(
+        user=regular,
+        symbol="BTCUSDT",
+        side=Trade.Side.LONG,
+        status=Trade.Status.CLOSED,
+        entry_price=100,
+        quantity=1,
+        stop_loss=90,
+        take_profit_1=110,
+        take_profit_2=120,
+        take_profit_3=130,
+        open_reason="test",
+    )
+
+    result = mirror_admin_coins_to_regular_users()
+
+    assert TradingBotConfig.objects.get(user=regular, symbol="BTCUSDT").is_running is False
     assert result["updated"] == {regular.id: ["BTCUSDT"]}
 
 
