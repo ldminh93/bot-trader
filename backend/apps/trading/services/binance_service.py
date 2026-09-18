@@ -40,6 +40,20 @@ _redis_client = Redis.from_url(settings.REDIS_URL)
 _TICKERS_CACHE_TTL_SECONDS = 20
 _TICKERS_CACHE_KEY_PREFIX = "binance:tickers24hr:"
 
+# Same redundancy problem as the tickers cache above, but bigger: every
+# user's scanner coin list is force-mirrored from admin's (see
+# coin_mirror_service.mirror_admin_coins_to_regular_users), so N users end up
+# with N separate TradingBotConfig rows for the *same* symbol/timeframe.
+# run_active_bots processes every config unconditionally every 30s cycle
+# with no cross-config dedup, so klines/market_metrics for one popular
+# symbol were being fetched once per mirrored user for identical data —
+# multiplying real request weight by however many users are mirrored, on
+# top of however many scanner coins exist. Cache both per (symbol,
+# timeframe) so only the first bot cycle to need it each window pays for
+# the Binance round-trip.
+_KLINES_CACHE_TTL_SECONDS = 20
+_METRICS_CACHE_TTL_SECONDS = 20
+
 # Once Binance returns 418/429, every further request from this IP during the
 # ban window still counts against it and can push a short ban into a much
 # longer repeat-offender one. Track the ban process-wide (shared by every
@@ -172,12 +186,16 @@ class BinanceService:
         return response.json()
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 150) -> list[dict]:
+        cache_key = f"binance:klines:{symbol.upper()}:{interval}:{limit}"
+        cached = _redis_client.get(cache_key)
+        if cached is not None:
+            return json.loads(cached)
         try:
             rows = self._get(
                 "/fapi/v1/klines",
                 {"symbol": symbol.upper(), "interval": interval, "limit": limit},
             )
-            return [
+            candles = [
                 {
                     "timestamp": row[0],
                     "close_timestamp": row[6],
@@ -192,8 +210,14 @@ class BinanceService:
             ]
         except (httpx.HTTPError, ValueError, KeyError):
             return self._mock_klines(symbol, interval, limit)
+        _redis_client.set(cache_key, json.dumps(candles), ex=_KLINES_CACHE_TTL_SECONDS)
+        return candles
 
     def market_metrics(self, symbol: str, period: str = "15m") -> dict:
+        cache_key = f"binance:metrics:{symbol}:{period}"
+        cached = _redis_client.get(cache_key)
+        if cached is not None:
+            return json.loads(cached)
         statistics_period = {
             "1m": "5m",
             "3m": "5m",
@@ -266,7 +290,7 @@ class BinanceService:
             oi_change = 0.0
             oi_change_available = False
 
-        return {
+        result = {
             "price": _finite_float(premium["markPrice"]),
             "funding_rate": _finite_float(premium["lastFundingRate"]),
             "open_interest": _finite_float(latest_oi),
@@ -278,6 +302,8 @@ class BinanceService:
             "top_ratio_direction": _finite_float(position_direction),
             "source": "binance",
         }
+        _redis_client.set(cache_key, json.dumps(result), ex=_METRICS_CACHE_TTL_SECONDS)
+        return result
 
     def open_interest_history(self, symbol: str, period: str, limit: int = 200) -> list[dict]:
         try:
