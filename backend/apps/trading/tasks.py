@@ -20,6 +20,10 @@ from .services.early_exit_service import (
     opposite_entry_has_new_candle_confirmation,
 )
 from .services.market_snapshot_service import collect_market_snapshot
+from .services.position_sync_service import (
+    sync_master_close_to_followers,
+    sync_master_trade_to_followers,
+)
 from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
 from .services.signal_service import MA_STACK_REVERSAL_REASON_PREFIX, entry_location_block_reason
 from .services.websocket_service import broadcast_user_update
@@ -197,7 +201,20 @@ def process_config(config: TradingBotConfig) -> None:
         _was_be = open_trade.breakeven_moved
         _was_lock = open_trade.profit_lock_moved
         _old_sl = open_trade.stop_loss
-        if open_trade.is_paper:
+        # A follower's paper trade doesn't run its own trailing-stop/TP
+        # decisions — each config has its own trailing_atr_multiplier/
+        # early_breakeven_r/lock_profit_r, and letting that run would drift
+        # the follower's close away from the admin's over time, which is the
+        # exact per-user divergence position syncing exists to remove. Its
+        # close instead arrives via sync_master_close_to_followers below,
+        # fired from the admin's own trade closing. A follower's live trade
+        # still carries real exchange-side protective orders (placed
+        # identical to the admin's at entry) and is reconciled against the
+        # exchange as before.
+        passive_follower = open_trade.is_paper and not config.user.is_staff
+        if passive_follower:
+            PaperTradingService.refresh_unrealized_pnl(open_trade, metrics["price"])
+        elif open_trade.is_paper:
             PaperTradingService.update_trade(
                 open_trade,
                 metrics["price"],
@@ -217,7 +234,7 @@ def process_config(config: TradingBotConfig) -> None:
                 tp3_trailing_percent=tp3_trail,
             )
         # Log SL step events
-        if open_trade.status == Trade.Status.OPEN:
+        if open_trade.status == Trade.Status.OPEN and not passive_follower:
             price_now = float(metrics["price"])
             new_sl = float(open_trade.stop_loss)
             if not _was_early_be and open_trade.early_breakeven_moved:
@@ -244,6 +261,8 @@ def process_config(config: TradingBotConfig) -> None:
                 f"PnL {pnl:+.4f} USDT ({roi:+.2f}%). "
                 f"Reason: {open_trade.close_reason}",
             )
+            if config.user.is_staff:
+                sync_master_close_to_followers(config, open_trade)
             broadcast_user_update(config.user_id, "position", TradeSerializer(open_trade).data)
             return
         # MA-stack-reversal entries are taken deliberately before the normal
@@ -257,7 +276,11 @@ def process_config(config: TradingBotConfig) -> None:
         opened_via_ma_stack_reversal = open_trade.open_reason.startswith(
             MA_STACK_REVERSAL_REASON_PREFIX
         )
-        if open_trade.status == Trade.Status.OPEN and not opened_via_ma_stack_reversal:
+        if (
+            open_trade.status == Trade.Status.OPEN
+            and not opened_via_ma_stack_reversal
+            and not passive_follower
+        ):
             early_exit = evaluate_early_exit(
                 open_trade,
                 config,
@@ -284,10 +307,20 @@ def process_config(config: TradingBotConfig) -> None:
                     BotLog.Level.WARNING,
                     early_exit.reason,
                 )
+                if config.user.is_staff:
+                    sync_master_close_to_followers(config, open_trade)
         broadcast_user_update(config.user_id, "position", TradeSerializer(open_trade).data)
         return
 
     if signal.signal == "NO_TRADE":
+        return
+
+    if not config.user.is_staff:
+        # Regular users no longer independently decide entries off their own
+        # thresholds — that's what let one user open a position while
+        # another, with slightly different settings, didn't. Every account
+        # now mirrors whatever the admin (master) account opens for this
+        # symbol via sync_master_trade_to_followers below.
         return
 
     # Consecutive-loss circuit breaker
@@ -651,6 +684,17 @@ def process_config(config: TradingBotConfig) -> None:
             replay_payload,
             quantity_override=initial_quantity if is_partial else None,
         )
+
+    sync_master_trade_to_followers(
+        config,
+        signal.signal,
+        price,
+        plan,
+        ", ".join(signal.reasons),
+        trade_setup_tags,
+        replay_payload,
+    )
+
     sizing_message = (
         f"{position_margin:.2f} USDT margin "
         f"({plan.risk_amount:.2f} USDT at stop)"

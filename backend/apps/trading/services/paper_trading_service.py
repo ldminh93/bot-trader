@@ -152,6 +152,26 @@ class PaperTradingService:
         )
 
     @staticmethod
+    def refresh_unrealized_pnl(trade: Trade, current_price: float) -> Trade:
+        """Update display-only PnL fields without touching SL/TP or evaluating
+        any close condition. Used for follower (mirrored) paper trades, whose
+        actual close is driven by the admin's trade closing (see
+        position_sync_service.sync_master_close_to_followers) rather than by
+        each follower independently re-running its own trailing-stop config."""
+        price = Decimal(str(current_price))
+        direction = Decimal("1") if trade.side == Trade.Side.LONG else Decimal("-1")
+        raw_pnl = (price - trade.entry_price) * trade.remaining_quantity * direction
+        trade.unrealized_pnl = raw_pnl
+        margin_basis = PaperTradingService._margin_basis(trade)
+        trade.pnl_percent = (
+            (trade.realized_pnl + raw_pnl) / margin_basis * 100
+            if margin_basis
+            else 0
+        )
+        trade.save(update_fields=["unrealized_pnl", "pnl_percent"])
+        return trade
+
+    @staticmethod
     def update_trade(
         trade: Trade,
         current_price: float,
