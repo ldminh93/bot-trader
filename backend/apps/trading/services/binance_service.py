@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import json
 import math
 import random
 import re
@@ -12,6 +13,7 @@ from decimal import Decimal, ROUND_DOWN
 
 import httpx
 from django.conf import settings
+from redis import Redis
 
 # Exchange-wide trading rules (tick/step size, min notional) change on the
 # order of days-to-weeks, not per-request — fetching the full /fapi/v1/exchangeInfo
@@ -23,6 +25,20 @@ _EXCHANGE_INFO_CACHE: dict | None = None
 _EXCHANGE_INFO_CACHE_AT = 0.0
 _EXCHANGE_INFO_TTL_SECONDS = 3600
 _exchange_info_lock = threading.Lock()
+
+# The 24hr-ticker snapshot behind "top movers" is the same for every caller
+# at any given moment, but was being re-fetched from scratch per user: once
+# per manual scan-button click, and once per *user* inside the scheduled
+# auto_register_top_movers loop (tasks.py) every 15 minutes. That endpoint
+# (/fapi/v1/ticker/24hr, all symbols) is one of Binance's heaviest, and N
+# users meant N redundant weight-40 calls for identical data — a direct
+# contributor to tripping the per-IP -1003 ban. Cache it in Redis (not a
+# process-local global, since the Django/daphne process and the Celery
+# worker process both need to share it) so every caller within the TTL
+# window reuses one fetch.
+_redis_client = Redis.from_url(settings.REDIS_URL)
+_TICKERS_CACHE_TTL_SECONDS = 20
+_TICKERS_CACHE_KEY_PREFIX = "binance:tickers24hr:"
 
 # Once Binance returns 418/429, every further request from this IP during the
 # ban window still counts against it and can push a short ban into a much
@@ -326,12 +342,17 @@ class BinanceService:
 
     def _fetch_24hr_tickers(self, quote_asset: str = "USDT") -> list[dict]:
         """Fetch and normalize 24hr ticker stats for all Binance Futures symbols."""
+        cache_key = f"{_TICKERS_CACHE_KEY_PREFIX}{quote_asset}"
+        cached = _redis_client.get(cache_key)
+        if cached is not None:
+            return json.loads(cached)
+
         try:
             tickers = self._get("/fapi/v1/ticker/24hr")
         except (httpx.HTTPError, ValueError, KeyError):
             return []
 
-        return [
+        normalized = [
             {
                 "symbol": t["symbol"],
                 "price": float(t["lastPrice"]),
@@ -347,6 +368,8 @@ class BinanceService:
             and t.get("symbol", "").endswith(quote_asset)
             and t.get("lastPrice")
         ]
+        _redis_client.set(cache_key, json.dumps(normalized), ex=_TICKERS_CACHE_TTL_SECONDS)
+        return normalized
 
     def fetch_top_movers(self, limit: int = 20, quote_asset: str = "USDT") -> dict:
         """Return top gainers and losers from Binance Futures 24hr ticker data."""
