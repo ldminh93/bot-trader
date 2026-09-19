@@ -14,6 +14,7 @@ from decimal import Decimal, ROUND_DOWN
 import httpx
 from django.conf import settings
 from redis import Redis
+from redis.exceptions import LockError
 
 # Exchange-wide trading rules (tick/step size, min notional) change on the
 # order of days-to-weeks, not per-request — fetching the full /fapi/v1/exchangeInfo
@@ -109,6 +110,44 @@ def _check_not_banned() -> None:
         )
 
 
+def _with_singleflight_cache(cache_key: str, ttl: int, fetch_fn):
+    """Read-through Redis cache guarded by a per-key lock.
+
+    A plain check-then-set cache (what fetch_klines/market_metrics/
+    _fetch_24hr_tickers used to do directly) is vulnerable to a stampede: once
+    mirroring made N users share the same scanner symbols
+    (coin_mirror_service.mirror_admin_coins_to_regular_users), run_active_bots
+    dispatches their configs concurrently, so N threads can all miss the cache
+    for the same key at the same instant and all hit Binance at once — which
+    is what multiplied real request weight enough to trip the per-IP -1003
+    ban. Only the first caller per key does the fetch; the rest block on the
+    lock and then read the cache entry it just wrote.
+
+    fetch_fn returning None means "don't cache this" (e.g. an upstream error
+    that should fall through to mock data without poisoning the cache).
+    """
+    cached = _redis_client.get(cache_key)
+    if cached is not None:
+        return json.loads(cached)
+    lock = _redis_client.lock(f"{cache_key}:lock", timeout=45, blocking_timeout=15)
+    acquired = lock.acquire()
+    try:
+        # Re-check: whoever held the lock before us may have just filled it.
+        cached = _redis_client.get(cache_key)
+        if cached is not None:
+            return json.loads(cached)
+        result = fetch_fn()
+        if result is not None:
+            _redis_client.set(cache_key, json.dumps(result), ex=ttl)
+        return result
+    finally:
+        if acquired:
+            try:
+                lock.release()
+            except LockError:
+                pass
+
+
 def _finite_float(value, default: float = 0.0) -> float:
     """float() silently returns inf for out-of-range numeric literals (no
     exception), so a malformed/extreme API field must be scrubbed before it
@@ -187,15 +226,16 @@ class BinanceService:
 
     def fetch_klines(self, symbol: str, interval: str, limit: int = 150) -> list[dict]:
         cache_key = f"binance:klines:{symbol.upper()}:{interval}:{limit}"
-        cached = _redis_client.get(cache_key)
-        if cached is not None:
-            return json.loads(cached)
-        try:
-            rows = self._get(
-                "/fapi/v1/klines",
-                {"symbol": symbol.upper(), "interval": interval, "limit": limit},
-            )
-            candles = [
+
+        def fetch() -> list[dict] | None:
+            try:
+                rows = self._get(
+                    "/fapi/v1/klines",
+                    {"symbol": symbol.upper(), "interval": interval, "limit": limit},
+                )
+            except (httpx.HTTPError, ValueError, KeyError):
+                return None
+            return [
                 {
                     "timestamp": row[0],
                     "close_timestamp": row[6],
@@ -208,102 +248,101 @@ class BinanceService:
                 }
                 for row in rows
             ]
-        except (httpx.HTTPError, ValueError, KeyError):
-            return self._mock_klines(symbol, interval, limit)
-        _redis_client.set(cache_key, json.dumps(candles), ex=_KLINES_CACHE_TTL_SECONDS)
-        return candles
+
+        candles = _with_singleflight_cache(cache_key, _KLINES_CACHE_TTL_SECONDS, fetch)
+        return candles if candles is not None else self._mock_klines(symbol, interval, limit)
 
     def market_metrics(self, symbol: str, period: str = "15m") -> dict:
         cache_key = f"binance:metrics:{symbol}:{period}"
-        cached = _redis_client.get(cache_key)
-        if cached is not None:
-            return json.loads(cached)
         statistics_period = {
             "1m": "5m",
             "3m": "5m",
             "4h": "1h",
         }.get(period, period)
-        try:
-            premium = self._get("/fapi/v1/premiumIndex", {"symbol": symbol})
-        except (httpx.HTTPError, ValueError, KeyError):
-            return self._mock_metrics(symbol)
 
-        mock = self._mock_metrics(symbol)
-
-        # The four calls below are independent reads (no shared state, no
-        # ordering requirement) — fetching them concurrently instead of one
-        # after another turns ~4 sequential round-trips into the time of the
-        # slowest single one, which is most of this method's latency.
-        def fetch_open_interest() -> float:
+        def fetch() -> dict | None:
             try:
-                oi = self._get("/fapi/v1/openInterest", {"symbol": symbol})
-                return float(oi["openInterest"])
-            except (httpx.HTTPError, ValueError, KeyError):
-                return mock["open_interest"]
-
-        def fetch_oi_history() -> list | None:
-            try:
-                return self._get(
-                    "/futures/data/openInterestHist",
-                    {"symbol": symbol, "period": statistics_period, "limit": 2},
-                )
+                premium = self._get("/fapi/v1/premiumIndex", {"symbol": symbol})
             except (httpx.HTTPError, ValueError, KeyError):
                 return None
 
-        def fetch_account_ratio() -> float:
+            mock = self._mock_metrics(symbol)
+
+            # The four calls below are independent reads (no shared state, no
+            # ordering requirement) — fetching them concurrently instead of one
+            # after another turns ~4 sequential round-trips into the time of the
+            # slowest single one, which is most of this method's latency.
+            def fetch_open_interest() -> float:
+                try:
+                    oi = self._get("/fapi/v1/openInterest", {"symbol": symbol})
+                    return float(oi["openInterest"])
+                except (httpx.HTTPError, ValueError, KeyError):
+                    return mock["open_interest"]
+
+            def fetch_oi_history() -> list | None:
+                try:
+                    return self._get(
+                        "/futures/data/openInterestHist",
+                        {"symbol": symbol, "period": statistics_period, "limit": 2},
+                    )
+                except (httpx.HTTPError, ValueError, KeyError):
+                    return None
+
+            def fetch_account_ratio() -> float:
+                try:
+                    accounts = self._get(
+                        "/futures/data/topLongShortAccountRatio",
+                        {"symbol": symbol, "period": statistics_period, "limit": 2},
+                    )
+                    return float(accounts[-1]["longShortRatio"])
+                except (httpx.HTTPError, ValueError, KeyError, IndexError):
+                    return 1.0
+
+            def fetch_position_ratio() -> tuple[float, float]:
+                try:
+                    positions = self._get(
+                        "/futures/data/topLongShortPositionRatio",
+                        {"symbol": symbol, "period": statistics_period, "limit": 2},
+                    )
+                    ratio = float(positions[-1]["longShortRatio"])
+                    direction = ratio - float(positions[-2]["longShortRatio"])
+                    return ratio, direction
+                except (httpx.HTTPError, ValueError, KeyError, IndexError):
+                    return 1.0, 0.0
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                oi_future = pool.submit(fetch_open_interest)
+                oi_history_future = pool.submit(fetch_oi_history)
+                account_ratio_future = pool.submit(fetch_account_ratio)
+                position_future = pool.submit(fetch_position_ratio)
+                latest_oi = oi_future.result()
+                oi_history = oi_history_future.result()
+                account_ratio = account_ratio_future.result()
+                position_ratio, position_direction = position_future.result()
+
             try:
-                accounts = self._get(
-                    "/futures/data/topLongShortAccountRatio",
-                    {"symbol": symbol, "period": statistics_period, "limit": 2},
-                )
-                return float(accounts[-1]["longShortRatio"])
-            except (httpx.HTTPError, ValueError, KeyError, IndexError):
-                return 1.0
+                previous_oi = float(oi_history[-2]["sumOpenInterest"])
+                oi_change = ((latest_oi - previous_oi) / previous_oi * 100) if previous_oi else 0
+                oi_change_available = True
+            except (TypeError, ValueError, KeyError, IndexError):
+                oi_change = 0.0
+                oi_change_available = False
 
-        def fetch_position_ratio() -> tuple[float, float]:
-            try:
-                positions = self._get(
-                    "/futures/data/topLongShortPositionRatio",
-                    {"symbol": symbol, "period": statistics_period, "limit": 2},
-                )
-                ratio = float(positions[-1]["longShortRatio"])
-                direction = ratio - float(positions[-2]["longShortRatio"])
-                return ratio, direction
-            except (httpx.HTTPError, ValueError, KeyError, IndexError):
-                return 1.0, 0.0
+            return {
+                "price": _finite_float(premium["markPrice"]),
+                "funding_rate": _finite_float(premium["lastFundingRate"]),
+                "open_interest": _finite_float(latest_oi),
+                "open_interest_change_percent": _finite_float(oi_change),
+                "open_interest_change_available": oi_change_available,
+                "statistics_period": statistics_period,
+                "top_trader_account_ratio": _finite_float(account_ratio),
+                "top_trader_position_ratio": _finite_float(position_ratio),
+                "top_ratio_direction": _finite_float(position_direction),
+                "source": "binance",
+            }
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            oi_future = pool.submit(fetch_open_interest)
-            oi_history_future = pool.submit(fetch_oi_history)
-            account_ratio_future = pool.submit(fetch_account_ratio)
-            position_future = pool.submit(fetch_position_ratio)
-            latest_oi = oi_future.result()
-            oi_history = oi_history_future.result()
-            account_ratio = account_ratio_future.result()
-            position_ratio, position_direction = position_future.result()
-
-        try:
-            previous_oi = float(oi_history[-2]["sumOpenInterest"])
-            oi_change = ((latest_oi - previous_oi) / previous_oi * 100) if previous_oi else 0
-            oi_change_available = True
-        except (TypeError, ValueError, KeyError, IndexError):
-            oi_change = 0.0
-            oi_change_available = False
-
-        result = {
-            "price": _finite_float(premium["markPrice"]),
-            "funding_rate": _finite_float(premium["lastFundingRate"]),
-            "open_interest": _finite_float(latest_oi),
-            "open_interest_change_percent": _finite_float(oi_change),
-            "open_interest_change_available": oi_change_available,
-            "statistics_period": statistics_period,
-            "top_trader_account_ratio": _finite_float(account_ratio),
-            "top_trader_position_ratio": _finite_float(position_ratio),
-            "top_ratio_direction": _finite_float(position_direction),
-            "source": "binance",
-        }
-        _redis_client.set(cache_key, json.dumps(result), ex=_METRICS_CACHE_TTL_SECONDS)
-        return result
+        result = _with_singleflight_cache(cache_key, _METRICS_CACHE_TTL_SECONDS, fetch)
+        return result if result is not None else self._mock_metrics(symbol)
 
     def open_interest_history(self, symbol: str, period: str, limit: int = 200) -> list[dict]:
         try:
@@ -369,33 +408,31 @@ class BinanceService:
     def _fetch_24hr_tickers(self, quote_asset: str = "USDT") -> list[dict]:
         """Fetch and normalize 24hr ticker stats for all Binance Futures symbols."""
         cache_key = f"{_TICKERS_CACHE_KEY_PREFIX}{quote_asset}"
-        cached = _redis_client.get(cache_key)
-        if cached is not None:
-            return json.loads(cached)
 
-        try:
-            tickers = self._get("/fapi/v1/ticker/24hr")
-        except (httpx.HTTPError, ValueError, KeyError):
-            return []
+        def fetch() -> list[dict] | None:
+            try:
+                tickers = self._get("/fapi/v1/ticker/24hr")
+            except (httpx.HTTPError, ValueError, KeyError):
+                return None
+            return [
+                {
+                    "symbol": t["symbol"],
+                    "price": float(t["lastPrice"]),
+                    "price_change_percent": float(t["priceChangePercent"]),
+                    "price_change": float(t["priceChange"]),
+                    "high": float(t["highPrice"]),
+                    "low": float(t["lowPrice"]),
+                    "volume": float(t["volume"]),
+                    "quote_volume": float(t["quoteVolume"]),
+                }
+                for t in tickers
+                if isinstance(t, dict)
+                and t.get("symbol", "").endswith(quote_asset)
+                and t.get("lastPrice")
+            ]
 
-        normalized = [
-            {
-                "symbol": t["symbol"],
-                "price": float(t["lastPrice"]),
-                "price_change_percent": float(t["priceChangePercent"]),
-                "price_change": float(t["priceChange"]),
-                "high": float(t["highPrice"]),
-                "low": float(t["lowPrice"]),
-                "volume": float(t["volume"]),
-                "quote_volume": float(t["quoteVolume"]),
-            }
-            for t in tickers
-            if isinstance(t, dict)
-            and t.get("symbol", "").endswith(quote_asset)
-            and t.get("lastPrice")
-        ]
-        _redis_client.set(cache_key, json.dumps(normalized), ex=_TICKERS_CACHE_TTL_SECONDS)
-        return normalized
+        normalized = _with_singleflight_cache(cache_key, _TICKERS_CACHE_TTL_SECONDS, fetch)
+        return normalized if normalized is not None else []
 
     def fetch_top_movers(self, limit: int = 20, quote_asset: str = "USDT") -> dict:
         """Return top gainers and losers from Binance Futures 24hr ticker data."""

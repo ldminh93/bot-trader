@@ -1,9 +1,13 @@
+import json
+import threading
+import time
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
 import pytest
 from django.test import override_settings
 
+from apps.trading.services import binance_service as binance_service_module
 from apps.trading.services.binance_service import BinanceAPIError, BinanceService, SymbolRules
 
 
@@ -120,4 +124,161 @@ def test_normalize_order_skips_min_notional_check_when_requested():
     )
     assert price == Decimal("100.00")
     assert quantity == Decimal("0.001")
+
+
+class _FakeLock:
+    """Stands in for redis-py's Lock, backed by a real threading.Lock so
+    tests exercise actual blocking/contention instead of just call counts."""
+
+    def __init__(self, lock: threading.Lock, blocking_timeout: float | None):
+        self._lock = lock
+        self._blocking_timeout = blocking_timeout
+
+    def acquire(self) -> bool:
+        timeout = self._blocking_timeout if self._blocking_timeout is not None else -1
+        return self._lock.acquire(timeout=timeout)
+
+    def release(self) -> None:
+        self._lock.release()
+
+
+class _FakeRedis:
+    """Minimal in-memory stand-in for the get/set/lock surface
+    _with_singleflight_cache relies on."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, str] = {}
+        self._data_lock = threading.Lock()
+        self._locks: dict[str, threading.Lock] = {}
+        self._locks_lock = threading.Lock()
+
+    def get(self, key: str):
+        with self._data_lock:
+            return self._data.get(key)
+
+    def set(self, key: str, value: str, ex=None) -> None:
+        with self._data_lock:
+            self._data[key] = value
+
+    def lock(self, name: str, timeout=None, blocking_timeout=None) -> _FakeLock:
+        with self._locks_lock:
+            lock = self._locks.setdefault(name, threading.Lock())
+        return _FakeLock(lock, blocking_timeout)
+
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    fake = _FakeRedis()
+    monkeypatch.setattr(binance_service_module, "_redis_client", fake)
+    return fake
+
+
+def test_singleflight_cache_hit_skips_fetch_fn(fake_redis):
+    fake_redis.set("k", json.dumps({"v": 1}))
+    calls = []
+
+    result = binance_service_module._with_singleflight_cache(
+        "k", 20, lambda: calls.append(1) or {"v": 2}
+    )
+
+    assert result == {"v": 1}
+    assert calls == []
+
+
+def test_singleflight_cache_miss_calls_fetch_fn_and_caches_result(fake_redis):
+    result = binance_service_module._with_singleflight_cache("k", 20, lambda: {"v": 42})
+
+    assert result == {"v": 42}
+    assert json.loads(fake_redis.get("k")) == {"v": 42}
+
+
+def test_singleflight_cache_does_not_cache_a_none_result(fake_redis):
+    """A None from fetch_fn signals an upstream error (see fetch_klines/
+    market_metrics/_fetch_24hr_tickers callers) — it must fall through to the
+    caller's own mock-data fallback, not get poisoned into the cache and
+    served as if it were real data for the rest of the TTL."""
+    calls = {"n": 0}
+
+    def fetch():
+        calls["n"] += 1
+        return None
+
+    first = binance_service_module._with_singleflight_cache("k", 20, fetch)
+    second = binance_service_module._with_singleflight_cache("k", 20, fetch)
+
+    assert first is None
+    assert second is None
+    assert fake_redis.get("k") is None
+    assert calls["n"] == 2
+
+
+def test_singleflight_cache_dedupes_concurrent_misses(fake_redis):
+    """
+    Reproduces the bug the mirror-trade feature exposed: once every regular
+    user's scanner list is force-mirrored from admin's
+    (coin_mirror_service.mirror_admin_coins_to_regular_users), N users can end
+    up with N TradingBotConfig rows for the same symbol/timeframe, and
+    run_active_bots dispatches them concurrently. Before this fix, all N
+    threads could miss the cache for that symbol's data at the same instant
+    and all hit Binance in parallel for identical data — the request-weight
+    multiplication that tripped the per-IP -1003 ban and stopped every user's
+    bots from opening positions. Only the first concurrent caller for a given
+    key should run fetch_fn; the rest must wait and reuse its result.
+    """
+    call_count = {"n": 0}
+    call_count_lock = threading.Lock()
+
+    def fetch():
+        with call_count_lock:
+            call_count["n"] += 1
+        time.sleep(0.2)
+        return {"v": "shared"}
+
+    results = []
+    results_lock = threading.Lock()
+
+    def worker():
+        result = binance_service_module._with_singleflight_cache("k", 20, fetch)
+        with results_lock:
+            results.append(result)
+
+    threads = [threading.Thread(target=worker) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert call_count["n"] == 1
+    assert results == [{"v": "shared"}] * 10
+
+
+@patch("apps.trading.services.binance_service.httpx.get")
+def test_fetch_klines_dedupes_concurrent_requests_for_same_symbol(get, fake_redis):
+    """End-to-end version of the dedup fix through the actual public method
+    that mirroring's stampede hit: concurrent bot cycles fetching klines for
+    the same symbol/interval must only make one real Binance request."""
+    row = [1700000000000, "1", "2", "0.5", "1.5", "10", 1700000060000, "0", "0", "5", "0", "0"]
+
+    def slow_response(*args, **kwargs):
+        time.sleep(0.2)
+        return response(200, [row])
+
+    get.side_effect = slow_response
+    results = []
+    results_lock = threading.Lock()
+
+    def worker():
+        candles = BinanceService().fetch_klines("BTCUSDT", "15m")
+        with results_lock:
+            results.append(candles)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert get.call_count == 1
+    assert len(results) == 8
+    assert all(r == results[0] for r in results)
 

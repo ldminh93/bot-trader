@@ -20,10 +20,16 @@ def grade_from_context(
 
     Bands are margin above threshold so they scale automatically with any
     custom threshold value a user sets.
+
+    A counter-trend setup (against the higher-timeframe bias) is downgraded
+    by 10 points before banding — confidence_score alone doesn't capture that
+    risk, and this is the only signal the UI has for it next to the grade.
     """
     if signal == "NO_TRADE":
         return "D"
     score = int(confidence_score or 0)
+    if alignment == "counter":
+        score -= 10
     if regime in {"CHOPPY", "HIGH_VOLATILITY"}:
         score -= 15
     elif regime == "PULLBACK":
@@ -41,6 +47,12 @@ def grade_from_context(
 
 
 def opportunity_score(payload: dict) -> int:
+    """Score used to rank the opportunity scoreboard ("Ranked by setup
+    quality"). The alignment/regime bonuses only apply to an actual LONG/
+    SHORT signal — grade_from_context always grades a NO_TRADE row "D", so a
+    blocked setup accruing the same bonuses here (e.g. aligned + EXPANSION)
+    could otherwise outscore a real, tradeable signal and float above it in
+    the ranking despite being marked untradeable."""
     signal = payload.get("signal", "NO_TRADE")
     confidence = int(payload.get("confidence_score") or 0)
     alignment = (payload.get("higher_timeframe_bias") or {}).get("alignment", "counter")
@@ -48,18 +60,18 @@ def opportunity_score(payload: dict) -> int:
     score = confidence
     if signal != "NO_TRADE":
         score += 20
-    if alignment == "aligned":
-        score += 15
-    if regime == "EXPANSION":
-        score += 15
-    elif regime == "TRENDING":
-        score += 10
-    elif regime == "PULLBACK":
-        score += 5
-    elif regime == "HIGH_VOLATILITY":
-        score -= 10
-    elif regime == "CHOPPY":
-        score -= 15
+        if alignment == "aligned":
+            score += 15
+        if regime == "EXPANSION":
+            score += 15
+        elif regime == "TRENDING":
+            score += 10
+        elif regime == "PULLBACK":
+            score += 5
+        elif regime == "HIGH_VOLATILITY":
+            score -= 10
+        elif regime == "CHOPPY":
+            score -= 15
     return max(0, min(score, 160))
 
 
