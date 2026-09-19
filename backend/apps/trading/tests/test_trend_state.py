@@ -69,6 +69,43 @@ def test_detects_confirmed_uptrend():
     assert detect_trend_state(result, 20, [1000, 1050]) == TrendState.CONFIRMED_UPTREND
 
 
+def test_confirmed_uptrend_survives_a_single_noisy_oi_dip():
+    """
+    Reproduces the reported "blinking" bug: open interest is sampled every
+    ~30s bot cycle (run_active_bots), far faster than a 15m structure
+    actually changes, so it wobbles from ordinary noise between cycles. A
+    fully-aligned MA stack must not get knocked down to SIDEWAY just because
+    OI ticked down slightly (here -5%, from 1000 to 950) between two
+    consecutive samples — only a meaningful decline (>=15%, matching
+    is_oi_meaningfully_decreasing) should withhold CONFIRMED_UPTREND.
+    """
+    base = calculate_indicators(make_candles())
+    result = with_ma_series(
+        base,
+        ma7_values=[110, 111, 112, 113, 114, 115, 116, 117, 118, 119],
+        ma25_values=[105, 106, 107, 108, 109, 110, 111, 112, 113, 114],
+        ma99_values=[100, 100.2, 100.4, 100.6, 100.8, 101, 101.2, 101.4, 101.6, 101.8],
+        deltas=[10] * 10,
+    )
+    assert detect_trend_state(result, 20, [1000, 950]) == TrendState.CONFIRMED_UPTREND
+
+
+def test_confirmed_uptrend_falls_back_to_sideway_on_a_real_oi_unwind():
+    """A genuine, meaningful OI decline (>=15%) still means the rally is
+    unwinding (short covering / position closing, not new conviction) and
+    must withhold CONFIRMED_UPTREND — this is the real signal
+    is_oi_meaningfully_decreasing exists to catch, as distinct from noise."""
+    base = calculate_indicators(make_candles())
+    result = with_ma_series(
+        base,
+        ma7_values=[110, 111, 112, 113, 114, 115, 116, 117, 118, 119],
+        ma25_values=[105, 106, 107, 108, 109, 110, 111, 112, 113, 114],
+        ma99_values=[100, 100.2, 100.4, 100.6, 100.8, 101, 101.2, 101.4, 101.6, 101.8],
+        deltas=[10] * 10,
+    )
+    assert detect_trend_state(result, 20, [1000, 800]) == TrendState.SIDEWAY
+
+
 def test_detects_early_downtrend():
     base = calculate_indicators(make_candles(direction=-1))
     result = with_ma_series(

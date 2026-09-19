@@ -22,11 +22,6 @@ def calculate_slope(series: Sequence[float], lookback: int = 5) -> float:
     return (window[-1] - window[0]) / max(len(window) - 1, 1)
 
 
-def is_oi_increasing(oi_series: Sequence[float], lookback: int = 3) -> bool:
-    values = [float(value) for value in oi_series if value is not None][-lookback:]
-    return len(values) >= 2 and values[-1] > values[0]
-
-
 def is_oi_meaningfully_decreasing(
     oi_series: Sequence[float],
     threshold_percent: float = 15.0,
@@ -192,7 +187,6 @@ def detect_trend_state(
     ma7_slope = calculate_slope(ma7_series)
     ma25_slope = calculate_slope(ma25_series)
     ma99_slope = calculate_slope(ma99_series)
-    oi_increasing = is_oi_increasing(oi_series)
     oi_decreasing = is_oi_meaningfully_decreasing(oi_series)
     oi_flat = is_oi_flat(oi_series)
     delta_positive = is_delta_positive(delta_series)
@@ -235,12 +229,23 @@ def detect_trend_state(
         if weak_signals >= 2:
             return TrendState.WEAK_DOWNTREND
 
+    # OI's role here is "the rally/selloff isn't just unwinding" (short
+    # covering, position closing), not "OI must tick up this instant" — the
+    # OI series is sampled every bot cycle (~30s, run_active_bots), far
+    # faster than this 15m structure changes, so open interest genuinely
+    # wobbles tick to tick from ordinary noise. Gating CONFIRMED/EARLY on a
+    # strict "OI ticked up since ~2 minutes ago" used to let that noise flip
+    # an otherwise fully-aligned MA stack down to SIDEWAY and back within a
+    # cycle or two. Requiring only "not meaningfully decreasing" (the same
+    # 15%-threshold check the WEAK_* signals below use) keeps the same
+    # protection against a trend that's genuinely losing conviction without
+    # reacting to routine noise.
     if (
         result.ma7 > result.ma25 > result.ma99
         and ma25_slope > 0
         and ma99_slope >= 0
         and result.price > result.ma25
-        and oi_increasing
+        and not oi_decreasing
     ):
         return TrendState.CONFIRMED_UPTREND
 
@@ -249,7 +254,7 @@ def detect_trend_state(
         and ma25_slope < 0
         and ma99_slope <= 0
         and result.price < result.ma25
-        and oi_increasing
+        and not oi_decreasing
     ):
         return TrendState.CONFIRMED_DOWNTREND
 
@@ -259,7 +264,7 @@ def detect_trend_state(
         and ma25_slope > 0
         and result.price > result.ma25
         and delta_positive
-        and oi_increasing
+        and not oi_decreasing
     ):
         return TrendState.EARLY_UPTREND
 
@@ -269,7 +274,7 @@ def detect_trend_state(
         and ma25_slope < 0
         and result.price < result.ma25
         and delta_negative
-        and oi_increasing
+        and not oi_decreasing
     ):
         return TrendState.EARLY_DOWNTREND
 
