@@ -24,10 +24,11 @@ const RECONNECT_DELAY_MS = 3000;
  *
  * Only open/high/low/close/volume are ever touched here. ma7/ma25/ma99/delta/
  * cvd are authoritative, indicator-derived values computed server-side — they
- * are deliberately never recomputed client-side, and are simply carried over
- * from the last known candle (or overwritten wholesale) whenever a fresh
- * `seedCandles` array arrives from the next backend poll, which self-corrects
- * any placeholder values applied to a newly-opened live candle below.
+ * are deliberately never recomputed client-side. Every closed candle is
+ * taken wholesale from each fresh `seedCandles` poll (refreshing those
+ * indicator fields); the in-progress last candle keeps its live-ticked
+ * OHLCV and only takes the seed's indicator fields, so a slower poll never
+ * regresses a price the faster WS stream had already advanced.
  */
 export function useLiveKlines(
   symbol: string | null,
@@ -37,7 +38,27 @@ export function useLiveKlines(
   const [candles, setCandles] = useState<Candle[]>(seedCandles);
 
   useEffect(() => {
-    setCandles(seedCandles);
+    // A fresh seed lands every ~10s backend poll (or WS "snapshot" push),
+    // far slower than the Binance kline WS ticks below (sub-second, on
+    // every trade). Replacing the still-forming last candle wholesale with
+    // the seed would snap its close backward to that poll-time value —
+    // visibly *older* than what the live WS had already advanced it to —
+    // until the next WS tick ticks it forward again a moment later. That
+    // regress-then-advance on every poll is the reported chart price
+    // "blink". Only the closed candles before it are safe to take wholesale
+    // from the seed (their OHLCV is final); the in-progress last candle
+    // keeps its live-ticked OHLCV and only takes the seed's indicator
+    // fields (ma7/ma25/etc., which the WS never touches).
+    setCandles((current) => {
+      if (seedCandles.length === 0) return seedCandles;
+      const currentLast = current[current.length - 1];
+      const seedLast = seedCandles[seedCandles.length - 1];
+      if (currentLast && currentLast.timestamp === seedLast.timestamp) {
+        const { open, high, low, close, volume } = currentLast;
+        return [...seedCandles.slice(0, -1), { ...seedLast, open, high, low, close, volume }];
+      }
+      return seedCandles;
+    });
   }, [seedCandles]);
 
   useEffect(() => {
