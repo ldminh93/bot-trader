@@ -273,22 +273,16 @@ def detect_short_entry_quality(
 
     Pullback (hard-gate precondition)
     ----------------------------------
-    Price must be sitting within ``pullback_zone_atr`` ATR below MA25, OR
-    satisfy the MA7 cross-recovery: previous candle green and closed on/above
-    MA7 (the bounce), current candle closed back below MA7 (the rejection),
-    with MA7 and MA25 separated by at least ``MIN_MA_GAP_PCT`` to rule
-    out a sideways/choppy market (see ``_ma7_cross_recovery``) — a shallower
-    retrace that never reaches MA25 in a strong trend.  This prevents chasing
-    price after it has already fallen far from resistance while still
-    allowing fast continuation entries.
+    Price must be sitting within ``pullback_zone_atr`` ATR below MA25 (the
+    middle MA). A bare MA7 (bottom MA) reclaim is no longer sufficient on
+    its own — chasing off MA7 entered too early, before price actually
+    retraced into the MA25 resistance zone.
 
     Rejection candle (primary entry trigger)
     ----------------------------------------
     The current candle must show a bearish upper-wick rejection (upper wick
     ≥ ``min_rejection_wick`` of the total range) *and* a bearish close
-    (close < open), OR satisfy the MA7 cross-recovery above (the reclaim
-    itself stands in as the rejection signal). This confirms that sellers
-    are defending the zone.
+    (close < open). This confirms that sellers are defending the zone.
 
     Volume profile (quality filter)
     --------------------------------
@@ -332,18 +326,13 @@ def detect_short_entry_quality(
     last_close = float(candles[-1]["close"])
     # Pullback zone: price must be near MA25 from below (within pullback_zone_atr)
     distance_to_ma = ma25 - last_close
-    has_pullback_ma25 = 0 <= distance_to_ma <= atr * pullback_zone_atr
+    has_pullback = 0 <= distance_to_ma <= atr * pullback_zone_atr
 
     # Rejection candle: upper wick dominance + bearish close
     last_candle = candles[-1]
     wick_ratio = _upper_wick_ratio(last_candle)
     is_bearish_close = float(last_candle["close"]) < float(last_candle["open"])
-    has_rejection_wick = wick_ratio >= min_rejection_wick and is_bearish_close
-
-    # Alternate path: shallow MA7 reclaim that never reached the MA25 zone.
-    cross_recovery = _ma7_cross_recovery(candles, "SHORT", ma25)
-    has_pullback = has_pullback_ma25 or cross_recovery
-    has_rejection = has_rejection_wick or cross_recovery
+    has_rejection = wick_ratio >= min_rejection_wick and is_bearish_close
 
     # Volume ratios — compare pullback-bar avg volume to vol_ma20
     if pullback_candles > 0:

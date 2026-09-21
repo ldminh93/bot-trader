@@ -340,16 +340,17 @@ def test_ma_stack_reversal_short_fires_on_top_ma_rejection():
     assert result.top_ma == 110.0
 
 
-def test_short_entry_quality_recovers_on_ma7_reclaim_even_far_from_ma25():
-    """Mirror of the LONG case: price poked above MA7, then was rejected back below it."""
+def test_short_entry_quality_ma7_reclaim_alone_is_not_enough_far_from_ma25():
+    """A bare MA7 (bottom MA) reclaim no longer qualifies as a SHORT pullback —
+    price must actually retrace into the MA25 (middle MA) zone."""
     candles = [
         {"open": 99.0, "high": 99.2, "low": 98.8, "close": 99.0, "volume": 900, "ma7": 100.0},
         {"open": 99.0, "high": 99.2, "low": 98.8, "close": 99.0, "volume": 900, "ma7": 100.0},
         {"open": 99.0, "high": 99.2, "low": 98.8, "close": 99.0, "volume": 900, "ma7": 100.0},
         {"open": 99.5, "high": 101.0, "low": 99.4, "close": 100.8, "volume": 900, "ma7": 100.0},
-        # Rejected back below MA7 (100.0) with a plain bearish close
+        # Rejected back below MA7 (100.0) with a plain bearish close, but still far from MA25 (110.0)
         {"open": 100.8, "high": 101.0, "low": 99.4, "close": 99.5, "volume": 1000, "ma7": 100.0},
     ]
     eq = detect_short_entry_quality(candles, atr=1.0, ma25=110.0, vol_ma20=1000.0)
-    assert eq.has_pullback is True
-    assert eq.has_rejection_candle is True
+    assert eq.has_pullback is False
+    assert eq.has_rejection_candle is False

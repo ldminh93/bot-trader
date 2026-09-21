@@ -124,10 +124,11 @@ CELERY_BEAT_SCHEDULE = {
         # 66+ scanner coins x ~7-8 Binance API calls each, every cycle, adds up
         # fast — 10s was enough to trip Binance's per-IP request-weight ban
         # (-1003 / HTTP 418) once bot cycles ran at their intended concurrency
-        # instead of being backed up behind a Celery queue. 30s keeps total
-        # request volume within budget; still far faster than the 15m/1h
-        # candle timeframes most strategies actually key off.
-        "schedule": 30.0,
+        # instead of being backed up behind a Celery queue, at that coin count.
+        # Reduced to 40 scanner coins (2026-09-21), so back to 10s — still
+        # lower total request volume than the 66-coin/10s config that caused
+        # the ban, but watch for -1003/418 if scanner coin count grows again.
+        "schedule": 10.0,
     },
     "auto-register-top-movers": {
         "task": "apps.trading.tasks.auto_register_top_movers",
