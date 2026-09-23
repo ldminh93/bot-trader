@@ -397,6 +397,20 @@ def process_config(config: TradingBotConfig) -> None:
             )
             return
 
+    # MA-stack reversal is a counter-trend catch-the-knife pattern with its own
+    # wide forced stop loss (see score_signal); it skips the choppy/pullback
+    # filter above by design, but a HIGH_VOLATILITY regime (ATR spiking) means
+    # the reversal is being caught inside a blow-off move rather than a normal
+    # rollover, stacking two independent risks on top of each other.
+    if is_ma_stack_reversal and snapshot.payload.get("regime", "") == "HIGH_VOLATILITY":
+        create_log(
+            config,
+            BotLog.Level.INFO,
+            "Entry skipped: MA-stack reversal signal during HIGH_VOLATILITY regime — "
+            "catching a reversal in a volatility spike is too risky for this pattern.",
+        )
+        return
+
     # Auto-suppress setup tags with poor historical win rate
     if config.auto_suppress_losing_tags:
         snapshot_tags = snapshot.payload.get("setup_tags", [])

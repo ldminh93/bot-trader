@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -160,6 +161,62 @@ def test_regular_user_never_opens_its_own_position(mock_snapshot, mock_broadcast
     process_config(config)
 
     assert not Trade.objects.filter(user=regular, symbol=config.symbol).exists()
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.broadcast_user_update")
+@patch("apps.trading.tasks.collect_market_snapshot")
+def test_ma_stack_reversal_skipped_in_high_volatility_regime(mock_snapshot, mock_broadcast):
+    """MA-stack reversal is a counter-trend catch-the-knife pattern that
+    otherwise skips the trend-confirmation filters (see tasks.py's
+    is_ma_stack_reversal exemptions). It must still be blocked when the
+    regime is HIGH_VOLATILITY, since catching a reversal inside a volatility
+    spike stacks two independent risks (see the SHORT loss this regressed
+    against: confidence 4, regime High volatility, stopped out)."""
+    admin = User.objects.create_user("admin-ma-stack@example.com", password="secure-pass", is_staff=True)
+    config = _make_config(admin)
+    evaluation = _favorable_evaluation(config, signal="SHORT")
+    evaluation.snapshot.payload["regime"] = "HIGH_VOLATILITY"
+    ma_stack_signal = SignalResult(
+        signal="SHORT",
+        long_score=0,
+        short_score=0,
+        reasons=["MA stack reversal"],
+        trend_state="CONFIRMED_DOWNTREND",
+        risk_multiplier=0.5,
+        forced_stop_loss_percent=10.0,
+    )
+    mock_snapshot.return_value = replace(evaluation, signal=ma_stack_signal)
+
+    process_config(config)
+
+    assert not Trade.objects.filter(user=admin, symbol=config.symbol).exists()
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.broadcast_user_update")
+@patch("apps.trading.tasks.collect_market_snapshot")
+def test_ma_stack_reversal_still_opens_outside_high_volatility_regime(mock_snapshot, mock_broadcast):
+    """Sanity check that the HIGH_VOLATILITY block above is regime-specific
+    and doesn't disable the MA-stack reversal pattern entirely."""
+    admin = User.objects.create_user("admin-ma-stack-ok@example.com", password="secure-pass", is_staff=True)
+    config = _make_config(admin)
+    evaluation = _favorable_evaluation(config, signal="SHORT")
+    ma_stack_signal = SignalResult(
+        signal="SHORT",
+        long_score=0,
+        short_score=0,
+        reasons=["MA stack reversal"],
+        trend_state="CONFIRMED_DOWNTREND",
+        risk_multiplier=0.5,
+        forced_stop_loss_percent=10.0,
+    )
+    mock_snapshot.return_value = replace(evaluation, signal=ma_stack_signal)
+
+    process_config(config)
+
+    trade = Trade.objects.get(user=admin, symbol=config.symbol)
+    assert trade.side == Trade.Side.SHORT
 
 
 @pytest.mark.django_db
