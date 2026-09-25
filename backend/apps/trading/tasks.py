@@ -200,7 +200,7 @@ def process_config(config: TradingBotConfig) -> None:
                         open_trade.remaining_quantity += remaining_qty
                         open_trade.partial_entry_filled = True
                         open_trade.save()
-                        live_svc._update_exchange_sl(
+                        live_svc._resize_protective_orders(
                             open_trade, float(config.tp3_trailing_percent)
                         )
                     except Exception as exc:
@@ -249,7 +249,6 @@ def process_config(config: TradingBotConfig) -> None:
                 metrics["price"],
                 signal_indicators.atr,
                 float(config.trailing_atr_multiplier) if config.use_trailing_stop else 0,
-                tp3_trailing_percent=tp3_trail,
             )
         # Log SL step events
         if open_trade.status == Trade.Status.OPEN and not passive_follower:

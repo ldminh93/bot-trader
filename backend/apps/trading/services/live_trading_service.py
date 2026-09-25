@@ -207,7 +207,7 @@ class LiveTradingService:
             reduce_only=True,
         )
 
-    def update_trade(self, trade: Trade, current_price: float, atr: float, trailing_multiplier: float, tp3_trailing_percent: float = 0) -> Trade:
+    def update_trade(self, trade: Trade, current_price: float, atr: float, trailing_multiplier: float) -> Trade:
         price = Decimal(str(current_price))
         exchange_quantity = self.client.position_amount(self.config.symbol)
         if exchange_quantity <= 0:
@@ -260,16 +260,16 @@ class LiveTradingService:
                 trade.fees += fee
 
         # TP3 trailing is now a real TRAILING_STOP_MARKET order resting on
-        # Binance (see place_protective_orders/_update_exchange_sl) rather
-        # than software-polled — its fill is picked up generically by the
-        # exchange_quantity <= 0 branch above, so no local tracking here.
+        # Binance (see place_protective_orders/_resize_protective_orders)
+        # rather than software-polled — its fill is picked up generically by
+        # the exchange_quantity <= 0 branch above, so no local tracking here.
 
         # Stepped profit-protection SL — update exchange SL if it moved
         early_be = float(getattr(self.config, "early_breakeven_r", 0) or 0)
         lock_pr = float(getattr(self.config, "lock_profit_r", 0) or 0)
         sl_changed = _apply_profit_steps(trade, price, atr, trailing_multiplier, early_be, lock_pr)
         if sl_changed:
-            self._update_exchange_sl(trade, tp3_trailing_percent)
+            self._move_stop_loss(trade)
 
         try:
             trade.unrealized_pnl = self.client.position_unrealized_pnl(self.config.symbol)
@@ -285,8 +285,54 @@ class LiveTradingService:
         trade.save()
         return trade
 
-    def _update_exchange_sl(self, trade: Trade, tp3_trailing_percent: float = 0) -> None:
-        """Cancel all protective orders and re-place with the updated stop loss."""
+    def _move_stop_loss(self, trade: Trade) -> None:
+        """Cancel and re-place only the resting stop-loss order.
+
+        _apply_profit_steps only ever tightens trade.stop_loss — it never
+        touches take_profit_1/2/3 — so this must not touch the TP1/TP2/TP3
+        legs either. It used to go through _resize_protective_orders, which
+        cancels *every* resting order (cancel_all_algo_orders) and re-derives
+        which TP legs to re-place from trade.tp1_hit/tp2_hit. Those flags are
+        only synced from the exchange fill earlier in the same update_trade()
+        poll; when a TP fill landed in a poll cycle adjacent to an SL step
+        before that sync had run, the stale False flag caused that TP leg to
+        be re-placed at its full original quantity a second time, double-
+        selling it (reported: QNTUSDT TP1 filled twice, eating the TP3
+        runner's margin down from ~30% of the position to ~2%).
+        """
+        rules = self.client.symbol_rules(self.config.symbol)
+        tick = rules.tick_size
+        close_side = "SELL" if trade.side == Trade.Side.LONG else "BUY"
+        nonce = int(time.time() * 1000)
+        mark_price = self.client.mark_price(self.config.symbol)
+        normalized_sl = (trade.stop_loss / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+        normalized_sl = (
+            _safe_stop_price(trade.side, normalized_sl, mark_price, tick) / tick
+        ).to_integral_value(rounding=ROUND_DOWN) * tick
+
+        for order in self.client.get_open_algo_orders(self.config.symbol):
+            if order.get("type") == "STOP_MARKET":
+                self.client.cancel_algo_order(self.config.symbol, order["algoId"])
+
+        self.client.place_close_algo_order(
+            self.config.symbol,
+            close_side,
+            "STOP_MARKET",
+            normalized_sl,
+            f"bot-sl-{nonce}",
+            close_position=True,
+        )
+
+    def _resize_protective_orders(self, trade: Trade, tp3_trailing_percent: float = 0) -> None:
+        """Cancel all protective orders and re-place them sized for trade.quantity.
+
+        Only safe to call right after trade.quantity itself changed (the
+        scale-in path in tasks.py, immediately after adding to a partial
+        entry) — at that point no TP leg has had a chance to fire yet, so
+        trade.tp1_hit/tp2_hit are reliably still False. For an ordinary SL
+        step on an already-fully-entered trade, use _move_stop_loss instead;
+        it never touches the resting TP legs.
+        """
         rules = self.client.symbol_rules(self.config.symbol)
         tick = rules.tick_size
         step = rules.step_size

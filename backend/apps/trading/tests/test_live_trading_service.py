@@ -192,10 +192,10 @@ def _live_service(trade: Trade) -> LiveTradingService:
 
 
 @pytest.mark.django_db
-def test_update_exchange_sl_replaces_trailing_stop_for_unfired_tp3():
+def test_resize_protective_orders_replaces_trailing_stop_for_unfired_tp3():
     """
     Reproduces the reported bug: TP3's trailing stop never appeared on
-    Binance. Every SL-step update cancels and re-places protective orders;
+    Binance. A post-scale-in resize cancels and re-places protective orders;
     the still-open TP3 leg must be re-placed as a TRAILING_STOP_MARKET, not
     silently dropped.
     """
@@ -208,7 +208,7 @@ def test_update_exchange_sl_replaces_trailing_stop_for_unfired_tp3():
     )
     service.client.mark_price.return_value = Decimal("100.00")
 
-    service._update_exchange_sl(trade, tp3_trailing_percent=3.0)
+    service._resize_protective_orders(trade, tp3_trailing_percent=3.0)
 
     calls = service.client.place_close_algo_order.call_args_list
     assert len(calls) == 2
@@ -219,6 +219,42 @@ def test_update_exchange_sl_replaces_trailing_stop_for_unfired_tp3():
         "quantity": Decimal("0.300"),
         "callback_rate": Decimal("3.0"),
     }
+
+
+@pytest.mark.django_db
+def test_move_stop_loss_does_not_touch_take_profit_orders():
+    """
+    Reproduces the reported bug: an SL step (early breakeven/breakeven/
+    profit-lock) re-placed TP1 at its full original quantity even though it
+    had already partially filled on the exchange, because the re-place
+    decided what to re-submit from trade.tp1_hit — a DB flag that can lag
+    the exchange fill by a poll cycle. That double-sold the position,
+    starving the TP3 trailing runner of the margin it was supposed to have.
+    _move_stop_loss must only touch the STOP_MARKET leg, leaving whatever
+    TP1/TP2/TP3 orders are already resting on Binance completely alone.
+    """
+    trade = _open_trade(tp1_hit=False, tp2_hit=False)
+    service = _live_service(trade)
+    service.client.symbol_rules.return_value = SymbolRules(
+        tick_size=Decimal("0.10"),
+        step_size=Decimal("0.001"),
+        min_notional=Decimal("5"),
+    )
+    service.client.mark_price.return_value = Decimal("100.00")
+    service.client.get_open_algo_orders.return_value = [
+        {"algoId": "1", "type": "STOP_MARKET"},
+        {"algoId": "2", "type": "TAKE_PROFIT_MARKET"},
+        {"algoId": "3", "type": "TAKE_PROFIT_MARKET"},
+        {"algoId": "4", "type": "TRAILING_STOP_MARKET"},
+    ]
+
+    service._move_stop_loss(trade)
+
+    service.client.cancel_algo_order.assert_called_once_with("BTCUSDT", "1")
+    service.client.cancel_all_algo_orders.assert_not_called()
+    calls = service.client.place_close_algo_order.call_args_list
+    assert len(calls) == 1
+    assert calls[0].args[2] == "STOP_MARKET"
 
 
 @pytest.mark.django_db

@@ -613,6 +613,20 @@ class BinanceService:
             {"symbol": symbol.upper()},
         )
 
+    def get_open_algo_orders(self, symbol: str) -> list[dict]:
+        return self._signed_request(
+            "GET",
+            "/fapi/v1/algoOpenOrders",
+            {"symbol": symbol.upper()},
+        )
+
+    def cancel_algo_order(self, symbol: str, algo_id) -> dict:
+        return self._signed_request(
+            "DELETE",
+            "/fapi/v1/algoOrder",
+            {"symbol": symbol.upper(), "algoId": algo_id},
+        )
+
     def position_amount(self, symbol: str) -> Decimal:
         rows = self._signed_request(
             "GET",
