@@ -22,7 +22,9 @@ def log_scanner_event(
 ) -> None:
     from ..serializers import BotLogSerializer
 
-    log = BotLog.objects.create(user=user, symbol=symbol, level=level, message=message)
+    log = BotLog.objects.create(
+        user=user, symbol=symbol, level=level, category=BotLog.Category.SCANNER, message=message
+    )
     broadcast_user_update(user.id, "log", BotLogSerializer(log).data)
     send_discord_alert(user, symbol, level, message, category=category)
 

@@ -367,6 +367,7 @@ export interface BotLog {
   id: number;
   symbol: string;
   level: "INFO" | "WARNING" | "ERROR";
+  category: "TRADE" | "SCANNER" | "SYSTEM";
   message: string;
   created_at: string;
 }

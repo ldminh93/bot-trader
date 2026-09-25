@@ -150,8 +150,8 @@ class TradeAdmin(admin.ModelAdmin):
 
 @admin.register(BotLog)
 class BotLogAdmin(admin.ModelAdmin):
-    list_display = ("user", "symbol", "level", "message", "created_at")
-    list_filter = ("level", "symbol")
+    list_display = ("user", "symbol", "level", "category", "message", "created_at")
+    list_filter = ("level", "category", "symbol")
     search_fields = ("user__username", "user__email", "symbol", "message")
     readonly_fields = ("created_at",)
     date_hierarchy = "created_at"

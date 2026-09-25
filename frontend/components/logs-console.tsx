@@ -10,6 +10,7 @@ import type { BotLog } from "@/lib/types";
 export function LogsConsole() {
   const [logs, setLogs] = useState<BotLog[]>([]);
   const [filter, setFilter] = useState<"ALL" | BotLog["level"]>("ALL");
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | BotLog["category"]>("ALL");
 
   useEffect(() => {
     if (!getToken()) {
@@ -19,16 +20,26 @@ export function LogsConsole() {
     api.logs().then(setLogs);
   }, []);
 
-  const visible = filter === "ALL" ? logs : logs.filter((log) => log.level === filter);
+  const visible = logs
+    .filter((log) => filter === "ALL" || log.level === filter)
+    .filter((log) => categoryFilter === "ALL" || log.category === categoryFilter);
   return (
     <PageFrame title="Bot logs" description="Market decisions, safety blocks, execution events, and errors.">
       <Panel className="min-w-0">
         <PanelHeader
           title="Event history"
           action={
-            <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="h-8 rounded-md border border-[var(--line-strong)] bg-[var(--background)] px-2 text-xs outline-none">
-              <option>ALL</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
-            </select>
+            <div className="flex gap-2">
+              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as typeof categoryFilter)} className="h-8 rounded-md border border-[var(--line-strong)] bg-[var(--background)] px-2 text-xs outline-none">
+                <option value="ALL">All events</option>
+                <option value="TRADE">Trade only</option>
+                <option value="SCANNER">Scanner only</option>
+                <option value="SYSTEM">System only</option>
+              </select>
+              <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="h-8 rounded-md border border-[var(--line-strong)] bg-[var(--background)] px-2 text-xs outline-none">
+                <option>ALL</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
+              </select>
+            </div>
           }
         />
         {visible.length ? (

@@ -10,7 +10,9 @@ User = get_user_model()
 def _log_mirror_event(user, symbol: str, message: str, level: str = BotLog.Level.INFO) -> None:
     from ..serializers import BotLogSerializer
 
-    log = BotLog.objects.create(user=user, symbol=symbol, level=level, message=message)
+    log = BotLog.objects.create(
+        user=user, symbol=symbol, level=level, category=BotLog.Category.SCANNER, message=message
+    )
     broadcast_user_update(user.id, "log", BotLogSerializer(log).data)
     send_discord_alert(user, symbol, level, message, category="scanner_membership")
 

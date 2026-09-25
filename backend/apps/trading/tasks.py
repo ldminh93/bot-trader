@@ -40,11 +40,17 @@ redis_client = Redis.from_url(settings.REDIS_URL)
 # and backs up Celery's queue indefinitely (every other task included).
 MAX_CONCURRENT_BOT_CYCLES = 10
 
-def create_log(config: TradingBotConfig, level: str, message: str) -> BotLog:
+def create_log(
+    config: TradingBotConfig,
+    level: str,
+    message: str,
+    category: str = BotLog.Category.SYSTEM,
+) -> BotLog:
     log = BotLog.objects.create(
         user=config.user,
         symbol=config.symbol,
         level=level,
+        category=category,
         message=message,
     )
     broadcast_user_update(config.user_id, "log", BotLogSerializer(log).data)
@@ -205,11 +211,13 @@ def process_config(config: TradingBotConfig) -> None:
                         )
                     except Exception as exc:
                         create_log(config, BotLog.Level.ERROR,
-                            f"Scale-in failed: {exc}. Continuing with partial position.")
+                            f"Scale-in failed: {exc}. Continuing with partial position.",
+                            category=BotLog.Category.TRADE)
                 if open_trade.partial_entry_filled:
                     create_log(config, BotLog.Level.INFO,
                         f"Scale-in: added {float(remaining_qty):.5f} at {price_f:.6f} "
-                        f"(price confirmed {'above' if open_trade.side == Trade.Side.LONG else 'below'} MA7).")
+                        f"(price confirmed {'above' if open_trade.side == Trade.Side.LONG else 'below'} MA7).",
+                        category=BotLog.Category.TRADE)
 
         tp3_trail = float(config.tp3_trailing_percent)
         early_be = float(config.early_breakeven_r)
@@ -257,16 +265,19 @@ def process_config(config: TradingBotConfig) -> None:
             if not _was_early_be and open_trade.early_breakeven_moved:
                 create_log(config, BotLog.Level.INFO,
                     f"SL moved to {new_sl:.6f} (early risk reduction at {early_be}R). "
-                    f"Price {price_now:.6f}.")
+                    f"Price {price_now:.6f}.",
+                    category=BotLog.Category.TRADE)
             elif not _was_be and open_trade.breakeven_moved:
                 create_log(config, BotLog.Level.INFO,
                     f"SL moved to breakeven {new_sl:.6f} (1R reached). "
-                    f"Price {price_now:.6f}.")
+                    f"Price {price_now:.6f}.",
+                    category=BotLog.Category.TRADE)
             elif not _was_lock and open_trade.profit_lock_moved:
                 locked_r = lock_pr - 1
                 create_log(config, BotLog.Level.INFO,
                     f"SL moved to {new_sl:.6f} ({locked_r:.2f}R locked in at {lock_pr}R). "
-                    f"Price {price_now:.6f}.")
+                    f"Price {price_now:.6f}.",
+                    category=BotLog.Category.TRADE)
         if open_trade.status == Trade.Status.CLOSED:
             mode = "Paper" if open_trade.is_paper else "Live"
             pnl = float(open_trade.realized_pnl)
@@ -277,6 +288,7 @@ def process_config(config: TradingBotConfig) -> None:
                 f"{mode} {open_trade.side} closed at {float(open_trade.exit_price):.6f} — "
                 f"PnL {pnl:+.4f} USDT ({roi:+.2f}%). "
                 f"Reason: {open_trade.close_reason}",
+                category=BotLog.Category.TRADE,
             )
             if config.user.is_staff:
                 sync_master_close_to_followers(config, open_trade)
@@ -323,6 +335,7 @@ def process_config(config: TradingBotConfig) -> None:
                     config,
                     BotLog.Level.WARNING,
                     early_exit.reason,
+                    category=BotLog.Category.TRADE,
                 )
                 if config.user.is_staff:
                     sync_master_close_to_followers(config, open_trade)
@@ -744,6 +757,7 @@ def process_config(config: TradingBotConfig) -> None:
         f"with {sizing_message}, x{effective_leverage}, {snapshot.payload.get('regime_label', 'Manual')} regime, "
         f"TP {tp_r_multiple:.2f}R, grade {snapshot.payload.get('trade_grade', 'D')}, "
         f"confidence {snapshot.payload.get('confidence_score', 0)}{partial_note}.",
+        category=BotLog.Category.TRADE,
     )
     broadcast_user_update(config.user_id, "position", TradeSerializer(trade).data)
 

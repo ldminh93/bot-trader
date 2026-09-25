@@ -53,8 +53,14 @@ from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
 logger = logging.getLogger(__name__)
 
 
-def create_bot_log(user, symbol: str, level: str, message: str) -> BotLog:
-    log = BotLog.objects.create(user=user, symbol=symbol, level=level, message=message)
+def create_bot_log(
+    user,
+    symbol: str,
+    level: str,
+    message: str,
+    category: str = BotLog.Category.SYSTEM,
+) -> BotLog:
+    log = BotLog.objects.create(user=user, symbol=symbol, level=level, category=category, message=message)
     send_discord_alert(user, symbol, level, message)
     return log
 
@@ -210,6 +216,7 @@ class BotConfigView(APIView):
             user=request.user,
             symbol=symbol,
             level=BotLog.Level.INFO,
+            category=BotLog.Category.SCANNER,
             message="Coin added to scanner." if config.is_running else "Coin configuration added.",
         )
         if request.user.is_staff:
@@ -271,6 +278,7 @@ class BotConfigView(APIView):
             user=request.user,
             symbol=symbol,
             level=BotLog.Level.INFO,
+            category=BotLog.Category.SCANNER,
             message="Coin removed from scanner.",
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -282,7 +290,10 @@ class BotConfigPauseAllView(APIView):
             TradingBotConfig.objects.filter(user=request.user, is_running=True).values_list("symbol", flat=True)
         )
         TradingBotConfig.objects.filter(user=request.user, is_running=True).update(is_running=False)
-        create_bot_log(request.user, "ALL", BotLog.Level.INFO, f"Paused all scanner coins ({len(symbols)}).")
+        create_bot_log(
+            request.user, "ALL", BotLog.Level.INFO, f"Paused all scanner coins ({len(symbols)}).",
+            category=BotLog.Category.SCANNER,
+        )
         return Response({"paused": symbols})
 
 
@@ -292,7 +303,10 @@ class BotConfigScanAllView(APIView):
             TradingBotConfig.objects.filter(user=request.user, is_running=False).values_list("symbol", flat=True)
         )
         TradingBotConfig.objects.filter(user=request.user, is_running=False).update(is_running=True)
-        create_bot_log(request.user, "ALL", BotLog.Level.INFO, f"Started scanning all coins ({len(symbols)}).")
+        create_bot_log(
+            request.user, "ALL", BotLog.Level.INFO, f"Started scanning all coins ({len(symbols)}).",
+            category=BotLog.Category.SCANNER,
+        )
         return Response({"started": symbols})
 
 
@@ -317,6 +331,7 @@ class BotConfigRemoveAllView(APIView):
             "ALL",
             BotLog.Level.WARNING,
             f"Removed all scanner coins ({len(removed)}). Kept {len(skipped)} with open positions.",
+            category=BotLog.Category.SCANNER,
         )
         return Response({"removed": removed, "skipped": skipped})
 
@@ -388,6 +403,7 @@ class BotClosePositionView(APIView):
             user=request.user,
             symbol=config.symbol,
             level=BotLog.Level.WARNING,
+            category=BotLog.Category.TRADE,
             message="Position close requested from dashboard.",
         )
         return Response(TradeSerializer(trade).data)
@@ -537,6 +553,7 @@ class BotManualOpenView(APIView):
             config.symbol,
             BotLog.Level.INFO,
             f"{'Live' if use_live else 'Paper'} {side} opened manually from dashboard at {price:.6f}.",
+            category=BotLog.Category.TRADE,
         )
         return Response(TradeSerializer(trade).data, status=status.HTTP_201_CREATED)
 
@@ -571,12 +588,16 @@ class BotKillSwitchView(APIView):
                 closed.append(trade.symbol)
             except Exception as exc:
                 errors.append({"symbol": trade.symbol, "detail": str(exc)})
-                create_bot_log(request.user, trade.symbol, BotLog.Level.ERROR, f"Kill switch failed to close position: {exc}")
+                create_bot_log(
+                    request.user, trade.symbol, BotLog.Level.ERROR, f"Kill switch failed to close position: {exc}",
+                    category=BotLog.Category.TRADE,
+                )
         create_bot_log(
             request.user,
             "ALL",
             BotLog.Level.WARNING,
             f"Kill switch executed. Stopped {len(configs)} bots and closed {len(closed)} open positions.",
+            category=BotLog.Category.TRADE,
         )
         return Response({"stopped": len(configs), "closed": closed, "errors": errors})
 

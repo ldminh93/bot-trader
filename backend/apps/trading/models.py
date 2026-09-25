@@ -456,9 +456,15 @@ class BotLog(models.Model):
         WARNING = "WARNING", "Warning"
         ERROR = "ERROR", "Error"
 
+    class Category(models.TextChoices):
+        TRADE = "TRADE", "Trade"
+        SCANNER = "SCANNER", "Scanner"
+        SYSTEM = "SYSTEM", "System"
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="bot_logs")
     symbol = models.CharField(max_length=24)
     level = models.CharField(max_length=12, choices=Level.choices, default=Level.INFO)
+    category = models.CharField(max_length=12, choices=Category.choices, default=Category.SYSTEM)
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 

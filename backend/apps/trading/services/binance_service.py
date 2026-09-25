@@ -614,9 +614,14 @@ class BinanceService:
         )
 
     def get_open_algo_orders(self, symbol: str) -> list[dict]:
+        # Not a typo: querying open algo orders and cancelling all open algo
+        # orders are two different endpoints with their words swapped —
+        # GET uses openAlgoOrders, DELETE (see cancel_all_algo_orders above)
+        # uses algoOpenOrders. Mixing them up gets a bare 404 "Not Found"
+        # (no Binance error body) instead of the expected order list.
         return self._signed_request(
             "GET",
-            "/fapi/v1/algoOpenOrders",
+            "/fapi/v1/openAlgoOrders",
             {"symbol": symbol.upper()},
         )
 

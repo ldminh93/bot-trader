@@ -9,10 +9,17 @@ from .paper_trading_service import PaperTradingService
 from .websocket_service import broadcast_user_update
 
 
-def _log(config: TradingBotConfig, level: str, message: str) -> None:
+def _log(
+    config: TradingBotConfig,
+    level: str,
+    message: str,
+    category: str = BotLog.Category.SYSTEM,
+) -> None:
     from ..serializers import BotLogSerializer
 
-    log = BotLog.objects.create(user=config.user, symbol=config.symbol, level=level, message=message)
+    log = BotLog.objects.create(
+        user=config.user, symbol=config.symbol, level=level, category=category, message=message
+    )
     broadcast_user_update(config.user_id, "log", BotLogSerializer(log).data)
     send_discord_alert(config.user, config.symbol, level, message)
 
@@ -38,7 +45,10 @@ def sync_master_close_to_followers(master_config: TradingBotConfig, master_trade
         try:
             _close_follower_trade(follower_config, follower_trade, master_trade)
         except Exception as exc:
-            _log(follower_config, BotLog.Level.ERROR, f"Position close sync from admin failed: {exc}")
+            _log(
+                follower_config, BotLog.Level.ERROR, f"Position close sync from admin failed: {exc}",
+                category=BotLog.Category.TRADE,
+            )
 
 
 def _close_follower_trade(
@@ -72,6 +82,7 @@ def _close_follower_trade(
         f"{mode} {follower_trade.side} closed at {float(follower_trade.exit_price):.6f} "
         f"(synced from admin) — PnL {pnl:+.4f} USDT ({roi:+.2f}%). "
         f"Reason: {follower_trade.close_reason}",
+        category=BotLog.Category.TRADE,
     )
     broadcast_user_update(follower_trade.user_id, "position", TradeSerializer(follower_trade).data)
 
@@ -162,7 +173,10 @@ def sync_master_trade_to_followers(
                 replay_payload,
             )
         except Exception as exc:
-            _log(follower_config, BotLog.Level.ERROR, f"Position sync from admin failed: {exc}")
+            _log(
+                follower_config, BotLog.Level.ERROR, f"Position sync from admin failed: {exc}",
+                category=BotLog.Category.TRADE,
+            )
 
 
 def _open_follower_trade(
@@ -286,5 +300,6 @@ def _open_follower_trade(
         BotLog.Level.INFO,
         f"{'Live' if live_service else 'Paper'} {side} opened at {entry_price:.6f} "
         f"(synced from admin), x{effective_leverage}.",
+        category=BotLog.Category.TRADE,
     )
     broadcast_user_update(follower_config.user_id, "position", TradeSerializer(trade).data)
