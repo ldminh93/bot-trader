@@ -22,6 +22,7 @@ from .services.early_exit_service import (
 from .services.market_snapshot_service import collect_market_snapshot
 from .services.position_sync_service import (
     sync_master_close_to_followers,
+    sync_master_sl_update_to_followers,
     sync_master_trade_to_followers,
 )
 from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
@@ -227,17 +228,19 @@ def process_config(config: TradingBotConfig) -> None:
         _was_be = open_trade.breakeven_moved
         _was_lock = open_trade.profit_lock_moved
         _old_sl = open_trade.stop_loss
-        # A follower's paper trade doesn't run its own trailing-stop/TP
-        # decisions — each config has its own trailing_atr_multiplier/
+        # Neither a follower's paper nor live trade runs its own trailing-
+        # stop/TP decisions — each config has its own trailing_atr_multiplier/
         # early_breakeven_r/lock_profit_r, and letting that run would drift
-        # the follower's close away from the admin's over time, which is the
-        # exact per-user divergence position syncing exists to remove. Its
-        # close instead arrives via sync_master_close_to_followers below,
-        # fired from the admin's own trade closing. A follower's live trade
-        # still carries real exchange-side protective orders (placed
-        # identical to the admin's at entry) and is reconciled against the
-        # exchange as before.
-        passive_follower = open_trade.is_paper and not config.user.is_staff
+        # the follower's SL/close away from the admin's over time, which is
+        # the exact per-user divergence position syncing exists to remove.
+        # A paper follower's SL/close instead arrives via
+        # sync_master_sl_update_to_followers/sync_master_close_to_followers
+        # below, fired from the admin's own trade. A live follower's real
+        # exchange-side protective orders are moved by that same SL sync
+        # (LiveTradingService.update_trade(follow_master=True) below only
+        # reconciles exchange fills for it, it doesn't decide a new SL step).
+        is_follower = not config.user.is_staff
+        passive_follower = open_trade.is_paper and is_follower
         if passive_follower:
             PaperTradingService.refresh_unrealized_pnl(open_trade, metrics["price"])
         elif open_trade.is_paper:
@@ -257,6 +260,7 @@ def process_config(config: TradingBotConfig) -> None:
                 metrics["price"],
                 signal_indicators.atr,
                 float(config.trailing_atr_multiplier) if config.use_trailing_stop else 0,
+                follow_master=is_follower,
             )
         # Log SL step events
         if open_trade.status == Trade.Status.OPEN and not passive_follower:
@@ -278,6 +282,8 @@ def process_config(config: TradingBotConfig) -> None:
                     f"SL moved to {new_sl:.6f} ({locked_r:.2f}R locked in at {lock_pr}R). "
                     f"Price {price_now:.6f}.",
                     category=BotLog.Category.TRADE)
+            if config.user.is_staff and open_trade.stop_loss != _old_sl:
+                sync_master_sl_update_to_followers(config, open_trade)
         if open_trade.status == Trade.Status.CLOSED:
             mode = "Paper" if open_trade.is_paper else "Live"
             pnl = float(open_trade.realized_pnl)

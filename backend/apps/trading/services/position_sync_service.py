@@ -87,6 +87,70 @@ def _close_follower_trade(
     broadcast_user_update(follower_trade.user_id, "position", TradeSerializer(follower_trade).data)
 
 
+def sync_master_sl_update_to_followers(master_config: TradingBotConfig, master_trade: Trade) -> None:
+    """Mirror the admin's moved stop-loss (early-breakeven/breakeven/profit-lock
+    step) onto every regular user's matching open trade — paper or live — so a
+    follower's SL reflects the same protection level as the admin's instead of
+    staying frozen at whatever it was at entry, or drifting off the follower's
+    own independent trailing thresholds.
+    """
+    follower_trades = Trade.objects.filter(
+        user__is_staff=False,
+        symbol=master_config.symbol,
+        status=Trade.Status.OPEN,
+    ).select_related("user")
+
+    for follower_trade in follower_trades:
+        follower_config = TradingBotConfig.objects.filter(
+            user=follower_trade.user, symbol=follower_trade.symbol
+        ).first()
+        if not follower_config:
+            continue
+        try:
+            _sync_follower_sl(follower_config, follower_trade, master_trade)
+        except Exception as exc:
+            _log(
+                follower_config, BotLog.Level.ERROR, f"Stop-loss sync from admin failed: {exc}",
+                category=BotLog.Category.TRADE,
+            )
+
+
+def _sync_follower_sl(
+    follower_config: TradingBotConfig, follower_trade: Trade, master_trade: Trade
+) -> None:
+    follower_trade.stop_loss = master_trade.stop_loss
+    follower_trade.early_breakeven_moved = master_trade.early_breakeven_moved
+    follower_trade.breakeven_moved = master_trade.breakeven_moved
+    follower_trade.profit_lock_moved = master_trade.profit_lock_moved
+
+    if not follower_trade.is_paper:
+        credential = getattr(follower_trade.user, "binance_credential", None)
+        try:
+            live_service = LiveTradingService(credential, follower_config)
+        except LiveTradingDisabled as exc:
+            _log(follower_config, BotLog.Level.WARNING, f"Stop-loss sync skipped: {exc}")
+            return
+        if live_service.client.position_amount(follower_trade.symbol) > 0:
+            # Moves only the resting STOP_MARKET leg — never touches the TP
+            # legs, unlike _resize_protective_orders (see its docstring for
+            # the double-sell bug that caused).
+            live_service._move_stop_loss(follower_trade)
+        # else: already flat on the exchange — its own protective order
+        # fired first; sync_master_close_to_followers reconciles that.
+
+    follower_trade.save(
+        update_fields=[
+            "stop_loss",
+            "early_breakeven_moved",
+            "breakeven_moved",
+            "profit_lock_moved",
+        ]
+    )
+    from ..serializers import TradeSerializer
+
+    broadcast_user_update(follower_trade.user_id, "position", TradeSerializer(follower_trade).data)
+
+
 class _FollowerPlan:
     """Minimal stand-in for risk_service.RiskPlan — PaperTradingService.open_trade
     and LiveTradingService.place_entry only read these five attributes."""

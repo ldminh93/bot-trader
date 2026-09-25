@@ -48,6 +48,7 @@ from .services.market_snapshot_service import collect_market_snapshot
 from .services.indicator_service import calculate_indicators
 from .services.opportunity_service import build_opportunity_scoreboard
 from .services.paper_trading_service import PaperTradingService
+from .services.position_sync_service import sync_master_close_to_followers
 from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
 
 logger = logging.getLogger(__name__)
@@ -399,6 +400,8 @@ class BotClosePositionView(APIView):
                     Decimal(str(price)),
                     "Position synced closed from dashboard",
                 )
+        if request.user.is_staff:
+            sync_master_close_to_followers(config, trade)
         create_bot_log(
             user=request.user,
             symbol=config.symbol,
@@ -585,6 +588,8 @@ class BotKillSwitchView(APIView):
                     else:
                         service.client.cancel_all_algo_orders(trade.symbol)
                         PaperTradingService.close_trade(trade, price, "Kill switch synced already-closed live position")
+                if request.user.is_staff:
+                    sync_master_close_to_followers(config, trade)
                 closed.append(trade.symbol)
             except Exception as exc:
                 errors.append({"symbol": trade.symbol, "detail": str(exc)})

@@ -207,7 +207,14 @@ class LiveTradingService:
             reduce_only=True,
         )
 
-    def update_trade(self, trade: Trade, current_price: float, atr: float, trailing_multiplier: float) -> Trade:
+    def update_trade(
+        self,
+        trade: Trade,
+        current_price: float,
+        atr: float,
+        trailing_multiplier: float,
+        follow_master: bool = False,
+    ) -> Trade:
         price = Decimal(str(current_price))
         exchange_quantity = self.client.position_amount(self.config.symbol)
         if exchange_quantity <= 0:
@@ -264,12 +271,18 @@ class LiveTradingService:
         # rather than software-polled — its fill is picked up generically by
         # the exchange_quantity <= 0 branch above, so no local tracking here.
 
-        # Stepped profit-protection SL — update exchange SL if it moved
-        early_be = float(getattr(self.config, "early_breakeven_r", 0) or 0)
-        lock_pr = float(getattr(self.config, "lock_profit_r", 0) or 0)
-        sl_changed = _apply_profit_steps(trade, price, atr, trailing_multiplier, early_be, lock_pr)
-        if sl_changed:
-            self._move_stop_loss(trade)
+        # Stepped profit-protection SL — update exchange SL if it moved.
+        # A regular user's live trade (follow_master=True) doesn't decide its
+        # own SL step here — that would fight sync_master_sl_update_to_followers,
+        # which moves this trade's stop_loss (and the real exchange order)
+        # straight from the admin's own step instead. This poll still runs for
+        # it, but only to reconcile exchange fills (above).
+        if not follow_master:
+            early_be = float(getattr(self.config, "early_breakeven_r", 0) or 0)
+            lock_pr = float(getattr(self.config, "lock_profit_r", 0) or 0)
+            sl_changed = _apply_profit_steps(trade, price, atr, trailing_multiplier, early_be, lock_pr)
+            if sl_changed:
+                self._move_stop_loss(trade)
 
         try:
             trade.unrealized_pnl = self.client.position_unrealized_pnl(self.config.symbol)
