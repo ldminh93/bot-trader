@@ -54,9 +54,18 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: celery -A config beat -l info
+    # celery beat's default PersistentScheduler tracks each periodic task's
+    # last-run time in a local file. Without a volume, that file lives on the
+    # container's writable layer and is wiped on every recreate (redeploy),
+    # which resets every task's countdown from zero — a task on a 24h
+    # interval (cleanup-old-snapshots) then needs 24h of uninterrupted
+    # uptime to ever fire once, and never does if redeploys happen more
+    # often than that.
+    command: celery -A config beat -l info --schedule=/app/celerybeat-data/celerybeat-schedule
     env_file: .env
     restart: unless-stopped
+    volumes:
+      - celerybeat_data:/app/celerybeat-data
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,3 +91,4 @@ services:
 
 volumes:
   postgres_data:
+  celerybeat_data:

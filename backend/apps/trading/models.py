@@ -356,6 +356,19 @@ class MarketSnapshot(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            # build_opportunity_scoreboard/collect_market_snapshot's "latest
+            # snapshot for this symbol+timeframe" lookup only had the
+            # standalone symbol/created_at indexes to work with, forcing a
+            # slow scan+sort once this table grew into the millions of rows
+            # (measured: single-digit-minute query times under production
+            # load). A single composite index covering the exact filter+sort
+            # this query runs lets Postgres satisfy it directly.
+            models.Index(
+                fields=["symbol", "timeframe", "-created_at"],
+                name="trading_snap_sym_tf_idx",
+            ),
+        ]
 
 
 class Trade(models.Model):
