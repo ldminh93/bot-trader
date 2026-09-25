@@ -10,7 +10,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from redis import Redis
 
-from .models import AutoScannerSettings, BotLog, MarketSnapshot, Trade, TradingBotConfig
+from .models import AutoScannerSettings, BotLog, MarketSnapshot, Trade, TradeSnapshot, TradingBotConfig
 from .serializers import BotLogSerializer, MarketSnapshotSerializer, TradeSerializer
 from .services.auto_scanner_service import log_scanner_event, sync_top_movers_to_scanner
 from .services.paper_trading_service import PaperTradingService
@@ -153,6 +153,24 @@ def process_config(config: TradingBotConfig) -> None:
         status=Trade.Status.OPEN,
     ).first()
     if open_trade:
+        # One order-flow/positioning reading per bot cycle for the life of this
+        # trade, so Trade History can chart how delta/CVD/open interest/L-S
+        # ratios evolved — this cycle's snapshot was built for config.symbol,
+        # which open_trade is guaranteed to match via the filter above.
+        TradeSnapshot.objects.create(
+            trade=open_trade,
+            price=snapshot.price,
+            delta=snapshot.delta,
+            cvd=snapshot.cvd,
+            open_interest=snapshot.open_interest,
+            open_interest_change_percent=snapshot.open_interest_change_percent,
+            funding_rate=snapshot.funding_rate,
+            top_trader_account_ratio=snapshot.top_trader_account_ratio,
+            top_trader_position_ratio=snapshot.top_trader_position_ratio,
+            volume=snapshot.volume,
+            volume_ma20=snapshot.volume_ma20,
+        )
+
         # Partial entry scale-in: add remaining quantity when price confirms above/below MA7
         if config.partial_entry_enabled and not open_trade.partial_entry_filled:
             price_f = float(metrics["price"])

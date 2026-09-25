@@ -17,6 +17,7 @@ import type {
   ScannedTokensResult,
   TopMoversResult,
   Trade,
+  TradeSnapshot,
   TradeStats,
   UserPerformanceResult,
 } from "./types";
@@ -188,6 +189,8 @@ export const api = {
   },
   exportReplay: (tradeId: number) =>
     request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),
+  tradeSnapshots: (tradeId: number) =>
+    request<TradeSnapshot[]>(`/trades/snapshots?trade_id=${tradeId}`),
   stats: (userId?: number) =>
     request<TradeStats>(`/trades/stats${userId ? `?user_id=${userId}` : ""}`),
   logs: () => request<BotLog[]>("/logs"),

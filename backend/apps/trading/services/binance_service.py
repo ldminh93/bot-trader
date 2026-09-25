@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import math
 import random
 import re
@@ -14,7 +15,9 @@ from decimal import Decimal, ROUND_DOWN
 import httpx
 from django.conf import settings
 from redis import Redis
-from redis.exceptions import LockError
+from redis.exceptions import LockError, RedisError
+
+logger = logging.getLogger(__name__)
 
 # Exchange-wide trading rules (tick/step size, min notional) change on the
 # order of days-to-weeks, not per-request — fetching the full /fapi/v1/exchangeInfo
@@ -57,17 +60,42 @@ _METRICS_CACHE_TTL_SECONDS = 20
 
 # Once Binance returns 418/429, every further request from this IP during the
 # ban window still counts against it and can push a short ban into a much
-# longer repeat-offender one. Track the ban process-wide (shared by every
-# BinanceService instance/thread) and refuse to make any more HTTP calls
-# until it lifts, instead of finding out via another 418 per bot cycle.
-_ban_lock = threading.Lock()
-_banned_until = 0.0
+# longer repeat-offender one. Track the ban in Redis (not a process-local
+# global) so it's shared by every Gunicorn/Daphne worker process and Celery
+# worker sharing this IP, and refuse to make any more HTTP calls until it
+# lifts, instead of finding out via another 418 per bot cycle. A per-process
+# global would let each worker process independently rediscover the ban via
+# its own 418, multiplying exactly the repeat-offender risk this is meant to
+# prevent.
+_BAN_KEY = "binance:banned_until"
 _BAN_FALLBACK_SECONDS = 120.0
 _BANNED_UNTIL_RE = re.compile(r"banned until (\d+)")
+_SET_BAN_IF_LATER_SCRIPT = _redis_client.register_script(
+    """
+    local current = redis.call('GET', KEYS[1])
+    local candidate = tonumber(ARGV[1])
+    if (not current) or (candidate > tonumber(current)) then
+        redis.call('SET', KEYS[1], candidate)
+        redis.call('PEXPIREAT', KEYS[1], math.floor(candidate * 1000))
+    end
+    """
+)
+
+
+def _get_banned_until() -> float:
+    try:
+        value = _redis_client.get(_BAN_KEY)
+    except RedisError:
+        # Fail open: a Redis outage should degrade to "ban tracking is
+        # unavailable", not "every Binance call raises" — the ban check is
+        # an optimization to avoid tripping -1003, not something correctness
+        # depends on.
+        logger.warning("Could not read Binance ban state from Redis; assuming not banned", exc_info=True)
+        return 0.0
+    return float(value) if value is not None else 0.0
 
 
 def _record_ban(response: "httpx.Response") -> None:
-    global _banned_until
     cooldown = None
     retry_after = response.headers.get("Retry-After")
     if retry_after:
@@ -84,24 +112,26 @@ def _record_ban(response: "httpx.Response") -> None:
             match = None
         if match:
             banned_until_ms = int(match.group(1))
-    with _ban_lock:
-        if banned_until_ms is not None:
-            candidate = banned_until_ms / 1000.0
-        else:
-            # No ban-until timestamp available (e.g. a plain 429): back off,
-            # doubling if we get hit again before the previous ban lifted —
-            # Binance escalates repeat-offender bans, so blindly retrying at a
-            # fixed interval risks turning a 2-minute ban into a multi-hour one.
-            base = cooldown if cooldown is not None else _BAN_FALLBACK_SECONDS
-            if time.time() < _banned_until:
-                base = max(base, (_banned_until - time.time()) * 2)
-            candidate = time.time() + base
-        _banned_until = max(_banned_until, candidate)
+    if banned_until_ms is not None:
+        candidate = banned_until_ms / 1000.0
+    else:
+        # No ban-until timestamp available (e.g. a plain 429): back off,
+        # doubling if we get hit again before the previous ban lifted —
+        # Binance escalates repeat-offender bans, so blindly retrying at a
+        # fixed interval risks turning a 2-minute ban into a multi-hour one.
+        current = _get_banned_until()
+        base = cooldown if cooldown is not None else _BAN_FALLBACK_SECONDS
+        if time.time() < current:
+            base = max(base, (current - time.time()) * 2)
+        candidate = time.time() + base
+    try:
+        _SET_BAN_IF_LATER_SCRIPT(keys=[_BAN_KEY], args=[candidate])
+    except RedisError:
+        logger.warning("Could not persist Binance ban state to Redis", exc_info=True)
 
 
 def _check_not_banned() -> None:
-    with _ban_lock:
-        remaining = _banned_until - time.time()
+    remaining = _get_banned_until() - time.time()
     if remaining > 0:
         raise BinanceAPIError(
             418,

@@ -18,6 +18,7 @@ from .models import (
     CoinCatalog,
     MarketSnapshot,
     Trade,
+    TradeSnapshot,
     TradingBotConfig,
     UserBinanceCredential,
     UserDiscordAlertConfig,
@@ -30,6 +31,7 @@ from .serializers import (
     DiscordAlertConfigSerializer,
     MarketSnapshotSerializer,
     TradeSerializer,
+    TradeSnapshotSerializer,
     TradingBotConfigSerializer,
 )
 from .services.analytics_service import build_trade_analytics
@@ -757,6 +759,18 @@ class TradesView(APIView):
             )
             return Response(TradeSerializer(trades, many=True).data)
         return Response(TradeSerializer(trades[:200], many=True).data)
+
+
+class TradeSnapshotsView(APIView):
+    def get(self, request):
+        trade_id = request.query_params.get("trade_id")
+        trade = Trade.objects.filter(id=trade_id).first()
+        if not trade:
+            return Response({"detail": "Trade not found."}, status=status.HTTP_404_NOT_FOUND)
+        if trade.user_id != request.user.id and not request.user.is_staff:
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+        snapshots = trade.snapshots.order_by("created_at")
+        return Response(TradeSnapshotSerializer(snapshots, many=True).data)
 
 
 class TradeReplayExportView(APIView):

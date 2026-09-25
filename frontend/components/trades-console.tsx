@@ -4,14 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { DailyPnlChart, PriceChart, ProfitChart } from "@/components/dashboard/market-charts";
+import { DailyPnlChart, PositioningChart, PriceChart, ProfitChart, TradeFlowChart } from "@/components/dashboard/market-charts";
+import { EmptyChart, Metric } from "@/components/dashboard/metric";
 import { TradeTable } from "@/components/dashboard/trade-table";
 import { PageFrame } from "@/components/page-frame";
 import { Panel, PanelHeader } from "@/components/ui/panel";
 import { api, getToken } from "@/lib/api";
 import { useCurrentUser } from "@/lib/current-user-context";
-import type { Trade, TradeStats } from "@/lib/types";
-import { formatNumber, pnlColor } from "@/lib/utils";
+import type { Trade, TradeSnapshot, TradeStats } from "@/lib/types";
+import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
 const FILTER_KEYS = ["symbol", "side", "close_reason", "grade", "tag", "hour"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
@@ -151,6 +152,16 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
   }
 
   const selectedTrade = filteredTrades.find((trade) => trade.id === selectedTradeId) ?? filteredTrades[0] ?? null;
+
+  const [snapshots, setSnapshots] = useState<TradeSnapshot[]>([]);
+  useEffect(() => {
+    if (!selectedTrade) {
+      setSnapshots([]);
+      return;
+    }
+    api.tradeSnapshots(selectedTrade.id).then(setSnapshots);
+  }, [selectedTrade?.id]);
+  const latestSnapshot = snapshots[snapshots.length - 1] ?? null;
 
   async function exportReplay() {
     if (!selectedTrade) return;
@@ -305,6 +316,47 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
             <div className="p-4"><Empty /></div>
           )}
         </Panel>
+        {selectedTrade && (
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <Panel className="min-w-0">
+              <PanelHeader title="Order flow" />
+              <div className="grid grid-cols-2 border-b border-[var(--line)]">
+                <Metric label="Delta" value={latestSnapshot ? formatCompact(latestSnapshot.delta) : "-"} tone={pnlColor(latestSnapshot?.delta ?? 0)} />
+                <Metric label="CVD" value={latestSnapshot ? formatCompact(latestSnapshot.cvd) : "-"} tone={pnlColor(latestSnapshot?.cvd ?? 0)} />
+              </div>
+              <div className="h-40 overflow-hidden p-2 sm:h-48">
+                {snapshots.length ? (
+                  <TradeFlowChart points={snapshots.map((s) => ({ created_at: s.created_at, delta: Number(s.delta), cvd: Number(s.cvd) }))} />
+                ) : (
+                  <EmptyChart label="No order-flow readings were captured for this trade yet." />
+                )}
+              </div>
+            </Panel>
+
+            <Panel className="min-w-0">
+              <PanelHeader title="Positioning and participation" />
+              <div className="grid grid-cols-2">
+                <Metric label="Open interest" value={latestSnapshot ? formatCompact(latestSnapshot.open_interest) : "-"} detail={`${formatNumber(latestSnapshot?.open_interest_change_percent ?? 0)}% change`} tone={pnlColor(latestSnapshot?.open_interest_change_percent ?? 0)} />
+                <Metric label="Volume" value={latestSnapshot ? formatCompact(latestSnapshot.volume) : "-"} detail={`MA20 ${formatCompact(latestSnapshot?.volume_ma20 ?? 0)}`} />
+                <Metric label="Top accounts L/S" value={latestSnapshot ? formatNumber(latestSnapshot.top_trader_account_ratio, 3) : "-"} />
+                <Metric label="Top positions L/S" value={latestSnapshot ? formatNumber(latestSnapshot.top_trader_position_ratio, 3) : "-"} />
+              </div>
+              <div className="h-36 overflow-hidden border-t border-[var(--line)] p-2 sm:h-40">
+                {snapshots.length ? (
+                  <PositioningChart
+                    history={snapshots.map((s) => ({
+                      created_at: s.created_at,
+                      open_interest: Number(s.open_interest),
+                      funding_rate: Number(s.funding_rate),
+                    }))}
+                  />
+                ) : (
+                  <EmptyChart label="No positioning readings were captured for this trade yet." />
+                )}
+              </div>
+            </Panel>
+          </div>
+        )}
       </div>
     </PageFrame>
   );

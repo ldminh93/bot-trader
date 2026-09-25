@@ -27,7 +27,7 @@ services:
       dockerfile: Dockerfile
     command: >
       sh -c "python manage.py migrate &&
-             daphne -b 0.0.0.0 -p 8080 config.asgi:application"
+             gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:8080"
     env_file: .env
     ports:
       - "8080:8080"

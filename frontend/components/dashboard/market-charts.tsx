@@ -374,6 +374,29 @@ export function FlowChart({ candles }: { candles: Candle[] }) {
   );
 }
 
+export function TradeFlowChart({
+  points,
+}: {
+  points: { created_at: string; delta: number; cvd: number }[];
+}) {
+  const data = points.slice(-300).map((item) => ({
+    ...item,
+    time: new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  }));
+  return (
+    <ResponsiveContainer width="100%" height="100%" debounce={150}>
+      <ComposedChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -12 }}>
+        <CartesianGrid stroke="#282e35" vertical={false} />
+        <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={38} fontSize={10} />
+        <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} tickFormatter={(value) => formatNumber(value, 0)} />
+        <Tooltip contentStyle={tooltipStyle} />
+        <Bar dataKey="delta" name="Delta" fill="#f0b90b" opacity={0.65} />
+        <Line type="monotone" dataKey="cvd" name="CVD" stroke="#43c987" dot={false} strokeWidth={1.4} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
 export function ProfitChart({ stats }: { stats: TradeStats }) {
   let cumulative = 0;
   const data = stats.daily.map((point) => {

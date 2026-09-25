@@ -27,6 +27,7 @@ from .views import (
     SystemStatusView,
     TradeReplayExportView,
     TradesView,
+    TradeSnapshotsView,
     TradeStatsView,
     UserPerformanceListView,
 )
@@ -52,6 +53,7 @@ urlpatterns = [
     path("market/scanned", MarketScannedTokensView.as_view()),
     path("trades", TradesView.as_view()),
     path("trades/export-replay", TradeReplayExportView.as_view()),
+    path("trades/snapshots", TradeSnapshotsView.as_view()),
     path("trades/stats", TradeStatsView.as_view()),
     path("users/performance", UserPerformanceListView.as_view()),
     path("logs", LogsView.as_view()),

@@ -189,6 +189,22 @@ export interface Trade {
   closed_at: string | null;
 }
 
+export interface TradeSnapshot {
+  id: number;
+  trade: number;
+  price: string;
+  delta: string;
+  cvd: string;
+  open_interest: string;
+  open_interest_change_percent: string;
+  funding_rate: string;
+  top_trader_account_ratio: string;
+  top_trader_position_ratio: string;
+  volume: string;
+  volume_ma20: string | null;
+  created_at: string;
+}
+
 export interface AnalyticsBucket {
   label: string;
   trades: number;

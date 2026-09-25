@@ -8,6 +8,7 @@ from .models import (
     CoinCatalog,
     MarketSnapshot,
     Trade,
+    TradeSnapshot,
     TradingBotConfig,
     UserDiscordAlertConfig,
 )
@@ -163,6 +164,12 @@ class TradeSerializer(serializers.ModelSerializer):
         model = Trade
         fields = "__all__"
         read_only_fields = ("user",)
+
+
+class TradeSnapshotSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TradeSnapshot
+        fields = "__all__"
 
 
 class BotLogSerializer(serializers.ModelSerializer):

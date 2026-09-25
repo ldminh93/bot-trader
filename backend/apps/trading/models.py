@@ -414,6 +414,29 @@ class Trade(models.Model):
         ordering = ["-opened_at"]
 
 
+class TradeSnapshot(models.Model):
+    """Order-flow/positioning readings captured once per bot cycle while a
+    trade is OPEN, so the Trade History view can chart how delta/CVD/open
+    interest/L-S ratios evolved over that specific trade's lifetime — the
+    trade-agnostic MarketSnapshot rows don't retain that per-trade history."""
+
+    trade = models.ForeignKey(Trade, on_delete=models.CASCADE, related_name="snapshots")
+    price = models.DecimalField(max_digits=24, decimal_places=10)
+    delta = models.DecimalField(max_digits=28, decimal_places=10, default=0)
+    cvd = models.DecimalField(max_digits=28, decimal_places=10, default=0)
+    open_interest = models.DecimalField(max_digits=28, decimal_places=10, default=0)
+    open_interest_change_percent = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    funding_rate = models.DecimalField(max_digits=14, decimal_places=10, default=0)
+    top_trader_account_ratio = models.DecimalField(max_digits=14, decimal_places=8, default=0)
+    top_trader_position_ratio = models.DecimalField(max_digits=14, decimal_places=8, default=0)
+    volume = models.DecimalField(max_digits=28, decimal_places=10, default=0)
+    volume_ma20 = models.DecimalField(max_digits=28, decimal_places=10, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
 class BotLog(models.Model):
     class Level(models.TextChoices):
         INFO = "INFO", "Info"

@@ -17,6 +17,12 @@ const CurrentUserContext = createContext<CurrentUserState>({
   loading: true,
 });
 
+// A transient failure (network blip, a momentarily cold backend) must not
+// permanently hide admin-only nav (e.g. the Users tab) for the rest of the
+// tab session — retry a few times with backoff before giving up, and try
+// again on refocus in case the backend has recovered since.
+const RETRY_DELAYS_MS = [1000, 3000, 8000];
+
 let cachedUser: CurrentUser | null = null;
 let cachedFetchFailed = false;
 
@@ -26,21 +32,35 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
     isStaff: cachedUser?.is_staff ?? false,
     loading: cachedUser === null && !cachedFetchFailed,
   });
-  const requested = useRef(cachedUser !== null || cachedFetchFailed);
+  const requested = useRef(cachedUser !== null);
+  const fetchInFlight = useRef(false);
 
   useEffect(() => {
-    function fetchUser() {
+    let cancelled = false;
+
+    function fetchUser(attempt = 0) {
       requested.current = true;
+      fetchInFlight.current = true;
       setState((s) => ({ ...s, loading: true }));
       api
         .me()
         .then((currentUser) => {
+          if (cancelled) return;
           cachedUser = currentUser;
+          cachedFetchFailed = false;
           setState({ user: currentUser, isStaff: currentUser.is_staff, loading: false });
         })
         .catch(() => {
+          if (cancelled) return;
+          if (attempt < RETRY_DELAYS_MS.length) {
+            window.setTimeout(() => fetchUser(attempt + 1), RETRY_DELAYS_MS[attempt]);
+            return;
+          }
           cachedFetchFailed = true;
           setState({ user: null, isStaff: false, loading: false });
+        })
+        .finally(() => {
+          fetchInFlight.current = false;
         });
     }
 
@@ -60,7 +80,19 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
       }
     }
     window.addEventListener("auth-changed", handleAuthChanged);
-    return () => window.removeEventListener("auth-changed", handleAuthChanged);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && cachedFetchFailed && !fetchInFlight.current) {
+        fetchUser();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("auth-changed", handleAuthChanged);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   return <CurrentUserContext.Provider value={state}>{children}</CurrentUserContext.Provider>;
