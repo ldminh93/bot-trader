@@ -169,9 +169,10 @@ def test_regular_user_never_opens_its_own_position(mock_snapshot, mock_broadcast
 def test_ma_stack_reversal_skipped_in_high_volatility_regime(mock_snapshot, mock_broadcast):
     """MA-stack reversal is a counter-trend catch-the-knife pattern that
     otherwise skips the trend-confirmation filters (see tasks.py's
-    is_ma_stack_reversal exemptions). It must still be blocked when the
-    regime is HIGH_VOLATILITY, since catching a reversal inside a volatility
-    spike stacks two independent risks (see the SHORT loss this regressed
+    is_ma_stack_reversal exemptions — choppy/pullback regime, min TF
+    alignment, MA7 slope). It must still be blocked when the regime is
+    HIGH_VOLATILITY, since catching a reversal inside a volatility spike
+    stacks two independent risks (see the SHORT loss this regressed
     against: confidence 4, regime High volatility, stopped out)."""
     admin = User.objects.create_user("admin-ma-stack@example.com", password="secure-pass", is_staff=True)
     config = _make_config(admin)
@@ -217,6 +218,36 @@ def test_ma_stack_reversal_still_opens_outside_high_volatility_regime(mock_snaps
 
     trade = Trade.objects.get(user=admin, symbol=config.symbol)
     assert trade.side == Trade.Side.SHORT
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.broadcast_user_update")
+@patch("apps.trading.tasks.collect_market_snapshot")
+def test_ma_stack_reversal_still_blocked_by_min_confidence_to_trade(mock_snapshot, mock_broadcast):
+    """min_confidence_to_trade is the user's explicit floor on entry
+    confidence and must apply to every signal, including MA-stack reversal.
+    That pattern scores 0 by design (see signal_service.py) and only picks
+    up incidental bonuses on top, so a low confidence_score here (4, matching
+    the dashboard example that prompted this) must still be blocked once the
+    user sets a minimum above it — it is no longer exempt."""
+    admin = User.objects.create_user("admin-ma-stack-conf@example.com", password="secure-pass", is_staff=True)
+    config = _make_config(admin, min_confidence_to_trade=10)
+    evaluation = _favorable_evaluation(config, signal="SHORT")
+    evaluation.snapshot.payload["confidence_score"] = 4
+    ma_stack_signal = SignalResult(
+        signal="SHORT",
+        long_score=0,
+        short_score=0,
+        reasons=["MA stack reversal"],
+        trend_state="CONFIRMED_DOWNTREND",
+        risk_multiplier=0.5,
+        forced_stop_loss_percent=10.0,
+    )
+    mock_snapshot.return_value = replace(evaluation, signal=ma_stack_signal)
+
+    process_config(config)
+
+    assert not Trade.objects.filter(user=admin, symbol=config.symbol).exists()
 
 
 @pytest.mark.django_db

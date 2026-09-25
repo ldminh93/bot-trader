@@ -434,10 +434,14 @@ def process_config(config: TradingBotConfig) -> None:
         return
 
     # Minimum confidence filter — confidence_score is built from long/short_score
-    # plus trend-alignment/confirmation bonuses (see build_execution_profile),
-    # none of which the MA-stack reversal pattern has by design (it scores 0
-    # and fires before confirmation), so it would always read as low-confidence.
-    if config.min_confidence_to_trade > 0 and not is_ma_stack_reversal:
+    # plus trend-alignment/confirmation bonuses (see build_execution_profile).
+    # The MA-stack reversal pattern scores 0 by design (it fires before
+    # confirmation) and only ever picks up incidental bonuses on top, so it
+    # will almost always read as low-confidence — that's intentional: this
+    # filter is the user's explicit override to require a minimum confidence
+    # on every entry, MA-stack reversal included, even if that means the
+    # pattern effectively never fires while the setting is on.
+    if config.min_confidence_to_trade > 0:
         confidence_score = int(snapshot.payload.get("confidence_score", 0))
         if confidence_score < config.min_confidence_to_trade:
             create_log(
