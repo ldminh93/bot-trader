@@ -1,3 +1,9 @@
+from unittest.mock import patch
+
+import pytest
+from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
+
 from apps.trading.services.opportunity_service import grade_from_context, opportunity_score
 
 
@@ -67,3 +73,22 @@ def test_opportunity_score_applies_bonuses_only_to_real_signals():
 
     # 50 confidence + 20 signal + 15 aligned + 15 EXPANSION
     assert opportunity_score(aligned_expansion_long) == 100
+
+
+@pytest.mark.django_db
+@patch("apps.trading.views.build_opportunity_scoreboard")
+def test_opportunity_scoreboard_view_returns_503_on_unexpected_error(mock_build):
+    """
+    An unhandled exception used to become a bare 500 with no server-side log,
+    which the frontend's fetch handling treated identically to a genuine
+    empty board. The view must at least log the failure and return a
+    distinguishable error status rather than crashing unlogged.
+    """
+    mock_build.side_effect = RuntimeError("db hiccup")
+    user = get_user_model().objects.create_user("opportunity-error@example.com", password="secure-pass")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.get("/api/market/opportunities")
+
+    assert response.status_code == 503

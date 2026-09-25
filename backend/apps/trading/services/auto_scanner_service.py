@@ -62,25 +62,17 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
     skipped: list[str] = []
     ignored_new_listings: list[str] = []
 
-    stale_configs = TradingBotConfig.objects.filter(user=user, auto_registered=True).exclude(
-        symbol__in=desired.keys()
-    )
-    for config in stale_configs:
-        has_open_position = Trade.objects.filter(
-            user=user, symbol=config.symbol, status=Trade.Status.OPEN
-        ).exists()
-        if has_open_position:
-            skipped.append(config.symbol)
-            continue
-        symbol = config.symbol
-        config.delete()
-        removed.append(symbol)
-        log_scanner_event(
-            user,
-            symbol,
-            "Coin removed from scanner (no longer a top gainer/loser).",
-            category="scanner_membership",
+    # Stale configs (no longer a top gainer/loser) are only *computed* here and
+    # deleted at the very end, after the new top-mover configs below have
+    # already been created. Deleting them up front would leave the scanner's
+    # TradingBotConfig set — and therefore the opportunity board, which reads
+    # it live — visibly truncated for however long the add loop's Binance
+    # kline lookups take, even though nothing is actually wrong.
+    stale_configs = list(
+        TradingBotConfig.objects.filter(user=user, auto_registered=True).exclude(
+            symbol__in=desired.keys()
         )
+    )
 
     # Mirrors BotConfigView.post's manual-add behavior: a freshly auto-registered
     # coin should inherit the account's current live-trading state rather than
@@ -187,6 +179,23 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
             )
         if update_fields:
             config.save(update_fields=update_fields)
+
+    for config in stale_configs:
+        has_open_position = Trade.objects.filter(
+            user=user, symbol=config.symbol, status=Trade.Status.OPEN
+        ).exists()
+        if has_open_position:
+            skipped.append(config.symbol)
+            continue
+        symbol = config.symbol
+        config.delete()
+        removed.append(symbol)
+        log_scanner_event(
+            user,
+            symbol,
+            "Coin removed from scanner (no longer a top gainer/loser).",
+            category="scanner_membership",
+        )
 
     settings_obj.last_synced_at = timezone.now()
     settings_obj.save(update_fields=["last_synced_at"])

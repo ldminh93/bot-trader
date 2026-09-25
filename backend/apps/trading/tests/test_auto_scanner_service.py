@@ -274,6 +274,36 @@ def test_sync_ignores_new_listing_without_enough_candle_history(mock_binance_cls
 @pytest.mark.django_db
 @patch("apps.trading.services.auto_scanner_service.log_scanner_event")
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
+def test_sync_keeps_stale_config_until_new_coins_are_registered(mock_binance_cls, mock_log):
+    """
+    The opportunity board reads TradingBotConfig live. If a stale coin were
+    deleted before the new top-mover coins are added, a request landing mid-sync
+    would see a config set smaller than either the old or new steady state —
+    looking like the board has lost data even though nothing is actually wrong.
+    Stale coins must only be removed after the new ones are already in place.
+    """
+    user = get_user_model().objects.create_user("scanner-order@example.com", password="secure-pass")
+    TradingBotConfig.objects.create(user=user, symbol="ADAUSDT", auto_registered=True, is_running=True)
+    mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
+
+    seen_ada_present = []
+
+    def _fake_klines(symbol, interval, limit=100):
+        seen_ada_present.append(TradingBotConfig.objects.filter(user=user, symbol="ADAUSDT").exists())
+        return _candles(limit)
+
+    mock_binance_cls.return_value.fetch_klines.side_effect = _fake_klines
+
+    result = sync_top_movers_to_scanner(user, top_n=1, quote_asset="USDT")
+
+    assert seen_ada_present and all(seen_ada_present)
+    assert result["removed"] == ["ADAUSDT"]
+    assert _open_symbols(user) == {"BTCUSDT"}
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.auto_scanner_service.log_scanner_event")
+@patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_does_not_recheck_candle_history_for_already_tracked_coins(mock_binance_cls, mock_log):
     """The candle-history check only gates brand-new registrations — an
     already-tracked coin must not be re-validated (and can't be silently

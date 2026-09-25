@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import timedelta
 from decimal import Decimal
@@ -46,6 +47,8 @@ from .services.indicator_service import calculate_indicators
 from .services.opportunity_service import build_opportunity_scoreboard
 from .services.paper_trading_service import PaperTradingService
 from .services.risk_service import RiskLimitExceeded, calculate_risk_plan
+
+logger = logging.getLogger(__name__)
 
 
 def create_bot_log(user, symbol: str, level: str, message: str) -> BotLog:
@@ -656,7 +659,11 @@ class MarketSnapshotView(APIView):
 
 class OpportunityScoreboardView(APIView):
     def get(self, request):
-        return Response(build_opportunity_scoreboard(request.user))
+        try:
+            return Response(build_opportunity_scoreboard(request.user))
+        except Exception:
+            logger.exception("Failed to build opportunity scoreboard for user %s", request.user.pk)
+            return Response(status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 class MarketTopMoversView(APIView):

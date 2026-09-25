@@ -154,8 +154,10 @@ export function DashboardConsole() {
     opportunitiesInFlight.current = true;
     try {
       setOpportunities(await api.opportunities());
-    } catch {
-      setOpportunities([]);
+    } catch (error) {
+      // Keep the last-known opportunities on a transient fetch failure
+      // instead of blanking the board; it looked like "no data" otherwise.
+      console.error("Failed to refresh opportunities", error);
     } finally {
       opportunitiesInFlight.current = false;
     }
@@ -697,17 +699,18 @@ export function DashboardConsole() {
                   </Button>
                 )}
               />
-              <div className="grid grid-cols-2 border-b border-[var(--line)] sm:grid-cols-4">
+              <div className="grid grid-cols-2 border-b border-[var(--line)] sm:grid-cols-5">
                 <Metric label="Live checks" value={liveSync?.enabled ? "Enabled" : "Disabled"} />
                 <Metric label="Credential" value={liveSync?.credential_ready ? "Ready" : "Not ready"} />
                 <Metric label="Mismatches" value={String(liveSync?.mismatches ?? 0)} tone={(liveSync?.mismatches ?? 0) > 0 ? "text-[var(--negative)]" : "text-[var(--positive)]"} />
+                <Metric label="Auto-healed" value={String(liveSync?.healed ?? 0)} />
                 <Metric label="Symbols checked" value={String(liveSync?.rows.length ?? 0)} />
               </div>
               <div className="max-h-72 overflow-y-auto p-2 scrollbar-thin">
                 {(liveSync?.rows.length ? liveSync.rows : []).slice(0, 12).map((row) => (
                   <div key={row.symbol} className="grid gap-2 rounded-md px-2 py-2 text-xs hover:bg-[var(--surface-raised)] md:grid-cols-[90px_90px_90px_1fr]">
                     <span className="font-mono font-bold">{row.symbol}</span>
-                    <span className={row.status === "mismatch" ? "font-bold text-[var(--negative)]" : row.status === "synced" ? "font-bold text-[var(--positive)]" : "text-[var(--muted)]"}>
+                    <span className={row.status === "mismatch" ? "font-bold text-[var(--negative)]" : row.status === "synced" || row.status === "auto_closed" ? "font-bold text-[var(--positive)]" : "text-[var(--muted)]"}>
                       {row.status.replaceAll("_", " ")}
                     </span>
                     <span className="font-mono text-[var(--muted)]">ex {formatNumber(row.exchange_quantity, 5)}</span>

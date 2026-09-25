@@ -282,7 +282,7 @@ export interface LiveSyncRow {
   bot_is_paper: boolean | null;
   exchange_open: boolean;
   exchange_quantity: string;
-  status: "synced" | "mismatch" | "paper_open" | "unknown" | "not_checked";
+  status: "synced" | "mismatch" | "auto_closed" | "paper_open" | "unknown" | "not_checked";
   detail: string;
 }
 
@@ -290,6 +290,7 @@ export interface LiveSyncHealth {
   enabled: boolean;
   credential_ready: boolean;
   mismatches: number;
+  healed: number;
   rows: LiveSyncRow[];
 }
 
