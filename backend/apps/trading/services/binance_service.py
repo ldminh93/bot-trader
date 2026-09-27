@@ -619,14 +619,16 @@ class BinanceService:
         # GET uses openAlgoOrders, DELETE (see cancel_all_algo_orders above)
         # uses algoOpenOrders. Mixing them up gets a bare 404 "Not Found"
         # (no Binance error body) instead of the expected order list.
-        # Unlike /fapi/v1/openOrders, this endpoint doesn't return a bare
-        # array — it wraps the orders in {"total": N, "orders": [...]}.
-        response = self._signed_request(
+        # Confirmed against the live account (2026-09-27): unlike the
+        # TWAP/VP "Algo Order" execution service, which wraps its list
+        # endpoints in {"total", "orders"}, this CONDITIONAL-order endpoint
+        # (the STOP_MARKET/TAKE_PROFIT_MARKET migration target) returns a
+        # bare array, same as /fapi/v1/openOrders.
+        return self._signed_request(
             "GET",
             "/fapi/v1/openAlgoOrders",
             {"symbol": symbol.upper()},
         )
-        return response.get("orders", [])
 
     def cancel_algo_order(self, symbol: str, algo_id) -> dict:
         return self._signed_request(

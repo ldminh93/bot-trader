@@ -332,7 +332,7 @@ class LiveTradingService:
         ).to_integral_value(rounding=ROUND_DOWN) * tick
 
         for order in self.client.get_open_algo_orders(self.config.symbol):
-            if order.get("orderType") == "STOP_MARKET":
+            if order.get("type") == "STOP_MARKET":
                 self.client.cancel_algo_order(self.config.symbol, order["algoId"])
 
         self.client.place_close_algo_order(

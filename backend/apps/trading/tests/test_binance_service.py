@@ -101,28 +101,24 @@ def test_place_close_algo_order_rejects_trailing_stop_with_close_position(reques
 
 
 @patch("apps.trading.services.binance_service.httpx.request")
-def test_get_open_algo_orders_unwraps_orders_envelope(request):
+def test_get_open_algo_orders_returns_bare_list(request):
     """
-    Reproduces the reported bug: _move_stop_loss's SL cancel/re-place never
-    ran (silently, or via a crashing AttributeError) because
-    /fapi/v1/openAlgoOrders doesn't return a bare array like
-    /fapi/v1/openOrders does — it wraps the list in {"total": N, "orders":
-    [...]}. Iterating the unwrapped dict directly walks its string keys
-    instead of order objects.
+    Confirmed against the live account (2026-09-27): GET
+    /fapi/v1/openAlgoOrders returns a bare array, same as
+    /fapi/v1/openOrders — NOT the {"total", "orders"} envelope some other
+    Binance "algo order" endpoints (e.g. the TWAP/VP execution service) use.
+    A prior version of this method wrongly unwrapped a "orders" key that
+    doesn't exist here, which broke in production with
+    "'list' object has no attribute 'get'". Pin the pass-through behavior.
     """
     request.return_value = response(
         200,
-        {
-            "total": 1,
-            "orders": [
-                {"algoId": 1, "orderType": "STOP_MARKET", "symbol": "BTCUSDT"},
-            ],
-        },
+        [{"algoId": 1, "type": "STOP_MARKET", "symbol": "BTCUSDT"}],
     )
 
     orders = BinanceService("key", "secret").get_open_algo_orders("BTCUSDT")
 
-    assert orders == [{"algoId": 1, "orderType": "STOP_MARKET", "symbol": "BTCUSDT"}]
+    assert orders == [{"algoId": 1, "type": "STOP_MARKET", "symbol": "BTCUSDT"}]
 
 
 def _rules() -> SymbolRules:

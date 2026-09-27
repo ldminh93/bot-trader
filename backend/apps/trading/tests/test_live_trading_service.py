@@ -1,12 +1,12 @@
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from django.contrib.auth import get_user_model
 
 from apps.trading.models import Trade
-from apps.trading.services.binance_service import SymbolRules
+from apps.trading.services.binance_service import BinanceService, SymbolRules
 from apps.trading.services.live_trading_service import (
     ExistingExchangePosition,
     LiveTradingService,
@@ -244,13 +244,11 @@ def test_move_stop_loss_does_not_touch_take_profit_orders():
         min_notional=Decimal("5"),
     )
     service.client.mark_price.return_value = Decimal("100.00")
-    # Binance's real response field is "orderType", not "type" — client.get_open_algo_orders
-    # is the BinanceService method, which already unwraps the {"total", "orders"} envelope.
     service.client.get_open_algo_orders.return_value = [
-        {"algoId": "1", "orderType": "STOP_MARKET"},
-        {"algoId": "2", "orderType": "TAKE_PROFIT_MARKET"},
-        {"algoId": "3", "orderType": "TAKE_PROFIT_MARKET"},
-        {"algoId": "4", "orderType": "TRAILING_STOP_MARKET"},
+        {"algoId": "1", "type": "STOP_MARKET"},
+        {"algoId": "2", "type": "TAKE_PROFIT_MARKET"},
+        {"algoId": "3", "type": "TAKE_PROFIT_MARKET"},
+        {"algoId": "4", "type": "TRAILING_STOP_MARKET"},
     ]
 
     service._move_stop_loss(trade)
@@ -259,7 +257,67 @@ def test_move_stop_loss_does_not_touch_take_profit_orders():
     service.client.cancel_all_algo_orders.assert_not_called()
     calls = service.client.place_close_algo_order.call_args_list
     assert len(calls) == 1
-    assert calls[0].args[2] == "STOP_MARKET"
+
+
+@pytest.mark.django_db
+def test_move_stop_loss_against_real_binance_response_shape():
+    """
+    Guards the plumbing between BinanceService.get_open_algo_orders and
+    _move_stop_loss end to end. test_move_stop_loss_does_not_touch_take_profit_orders
+    above mocks LiveTradingService.client directly, so a mismatch between what
+    BinanceService.get_open_algo_orders actually returns and what
+    _move_stop_loss expects can't show up there. This test wires in a real
+    BinanceService (with only the HTTP layer stubbed) so that mismatch would
+    fail the test instead of failing silently (or crashing with an
+    AttributeError) against the live exchange.
+
+    Confirmed against the live account (2026-09-27): GET
+    /fapi/v1/openAlgoOrders returns a bare array, same as
+    /fapi/v1/openOrders — not the {"total", "orders"} envelope some other
+    Binance "algo order" endpoints (e.g. the TWAP/VP execution service) use.
+    An earlier version of this fix wrongly assumed the wrapped shape, which
+    broke this in production ("'list' object has no attribute 'get'").
+    """
+    trade = _open_trade(tp1_hit=False, tp2_hit=False)
+    service = LiveTradingService.__new__(LiveTradingService)
+    service.config = SimpleNamespace(symbol=trade.symbol, margin_type="isolated", leverage=trade.leverage)
+    service.client = BinanceService("key", "secret")
+
+    def fake_signed_request(method, path, params=None, base_url=None):
+        if method == "GET" and path == "/fapi/v1/openAlgoOrders":
+            return [
+                {"algoId": 1, "type": "STOP_MARKET", "symbol": "BTCUSDT"},
+                {"algoId": 2, "type": "TAKE_PROFIT_MARKET", "symbol": "BTCUSDT"},
+                {"algoId": 3, "type": "TAKE_PROFIT_MARKET", "symbol": "BTCUSDT"},
+                {"algoId": 4, "type": "TRAILING_STOP_MARKET", "symbol": "BTCUSDT"},
+            ]
+        if method == "DELETE" and path == "/fapi/v1/algoOrder":
+            return {"algoId": params["algoId"]}
+        if method == "POST" and path == "/fapi/v1/algoOrder":
+            return {"algoId": 5, **params}
+        raise AssertionError(f"unexpected signed request {method} {path}")
+
+    signed_request = Mock(side_effect=fake_signed_request)
+    with (
+        patch.object(service.client, "_signed_request", signed_request),
+        patch.object(
+            service.client,
+            "symbol_rules",
+            return_value=SymbolRules(
+                tick_size=Decimal("0.10"), step_size=Decimal("0.001"), min_notional=Decimal("5")
+            ),
+        ),
+        patch.object(service.client, "mark_price", return_value=Decimal("100.00")),
+    ):
+        service._move_stop_loss(trade)
+
+    delete_calls = [c for c in signed_request.call_args_list if c.args[0] == "DELETE"]
+    post_calls = [c for c in signed_request.call_args_list if c.args[0] == "POST"]
+    assert len(delete_calls) == 1
+    assert delete_calls[0].args[2] == {"symbol": "BTCUSDT", "algoId": 1}
+    assert len(post_calls) == 1
+    assert post_calls[0].args[2]["type"] == "STOP_MARKET"
+    assert post_calls[0].args[2]["closePosition"] == "true"
 
 
 @pytest.mark.django_db
