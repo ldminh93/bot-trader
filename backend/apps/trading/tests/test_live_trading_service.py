@@ -235,6 +235,11 @@ def test_move_stop_loss_does_not_touch_take_profit_orders():
     starving the TP3 trailing runner of the margin it was supposed to have.
     _move_stop_loss must only touch the STOP_MARKET leg, leaving whatever
     TP1/TP2/TP3 orders are already resting on Binance completely alone.
+
+    The leg is identified by closePosition=true, not by an order-type field
+    — Binance's exact field name/casing for that on this endpoint proved
+    unreliable (two different guesses both left the old SL uncancelled in
+    production, so the new SL collided with it: error -4130).
     """
     trade = _open_trade(tp1_hit=False, tp2_hit=False)
     service = _live_service(trade)
@@ -245,10 +250,10 @@ def test_move_stop_loss_does_not_touch_take_profit_orders():
     )
     service.client.mark_price.return_value = Decimal("100.00")
     service.client.get_open_algo_orders.return_value = [
-        {"algoId": "1", "type": "STOP_MARKET"},
-        {"algoId": "2", "type": "TAKE_PROFIT_MARKET"},
-        {"algoId": "3", "type": "TAKE_PROFIT_MARKET"},
-        {"algoId": "4", "type": "TRAILING_STOP_MARKET"},
+        {"algoId": "1", "type": "STOP_MARKET", "closePosition": True},
+        {"algoId": "2", "type": "TAKE_PROFIT_MARKET", "closePosition": False},
+        {"algoId": "3", "type": "TAKE_PROFIT_MARKET", "closePosition": False},
+        {"algoId": "4", "type": "TRAILING_STOP_MARKET", "closePosition": False},
     ]
 
     service._move_stop_loss(trade)
@@ -260,7 +265,8 @@ def test_move_stop_loss_does_not_touch_take_profit_orders():
 
 
 @pytest.mark.django_db
-def test_move_stop_loss_against_real_binance_response_shape():
+@pytest.mark.parametrize("close_position_value", [True, "true", "TRUE"])
+def test_move_stop_loss_against_real_binance_response_shape(close_position_value):
     """
     Guards the plumbing between BinanceService.get_open_algo_orders and
     _move_stop_loss end to end. test_move_stop_loss_does_not_touch_take_profit_orders
@@ -268,15 +274,18 @@ def test_move_stop_loss_against_real_binance_response_shape():
     BinanceService.get_open_algo_orders actually returns and what
     _move_stop_loss expects can't show up there. This test wires in a real
     BinanceService (with only the HTTP layer stubbed) so that mismatch would
-    fail the test instead of failing silently (or crashing with an
-    AttributeError) against the live exchange.
+    fail the test instead of failing silently (or crashing) against the live
+    exchange.
 
     Confirmed against the live account (2026-09-27): GET
-    /fapi/v1/openAlgoOrders returns a bare array, same as
-    /fapi/v1/openOrders — not the {"total", "orders"} envelope some other
-    Binance "algo order" endpoints (e.g. the TWAP/VP execution service) use.
-    An earlier version of this fix wrongly assumed the wrapped shape, which
-    broke this in production ("'list' object has no attribute 'get'").
+    /fapi/v1/openAlgoOrders returns a bare array, same as /fapi/v1/openOrders
+    — not the {"total", "orders"} envelope some other Binance "algo order"
+    endpoints (e.g. the TWAP/VP execution service) use. Two different guesses
+    at the per-order type field's name ("type", then "orderType") both left
+    the old SL order uncancelled in production, so _move_stop_loss now
+    identifies it by closePosition=true instead — parametrized here over
+    both a JSON boolean and string-"true"/"TRUE" representation, since which
+    one Binance actually sends back was never confirmed either.
     """
     trade = _open_trade(tp1_hit=False, tp2_hit=False)
     service = LiveTradingService.__new__(LiveTradingService)
@@ -286,10 +295,10 @@ def test_move_stop_loss_against_real_binance_response_shape():
     def fake_signed_request(method, path, params=None, base_url=None):
         if method == "GET" and path == "/fapi/v1/openAlgoOrders":
             return [
-                {"algoId": 1, "type": "STOP_MARKET", "symbol": "BTCUSDT"},
-                {"algoId": 2, "type": "TAKE_PROFIT_MARKET", "symbol": "BTCUSDT"},
-                {"algoId": 3, "type": "TAKE_PROFIT_MARKET", "symbol": "BTCUSDT"},
-                {"algoId": 4, "type": "TRAILING_STOP_MARKET", "symbol": "BTCUSDT"},
+                {"algoId": 1, "type": "STOP_MARKET", "closePosition": close_position_value, "symbol": "BTCUSDT"},
+                {"algoId": 2, "type": "TAKE_PROFIT_MARKET", "closePosition": False, "symbol": "BTCUSDT"},
+                {"algoId": 3, "type": "TAKE_PROFIT_MARKET", "closePosition": False, "symbol": "BTCUSDT"},
+                {"algoId": 4, "type": "TRAILING_STOP_MARKET", "closePosition": False, "symbol": "BTCUSDT"},
             ]
         if method == "DELETE" and path == "/fapi/v1/algoOrder":
             return {"algoId": params["algoId"]}

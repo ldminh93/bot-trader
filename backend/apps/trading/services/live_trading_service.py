@@ -331,8 +331,18 @@ class LiveTradingService:
             _safe_stop_price(trade.side, normalized_sl, mark_price, tick) / tick
         ).to_integral_value(rounding=ROUND_DOWN) * tick
 
+        # Filter by closePosition rather than an order-type field: Binance's
+        # exact field name/casing for this newer Algo Order endpoint has
+        # proven unreliable to pin down from docs (two earlier attempts at
+        # this filter — "type" and "orderType" — both left the resting SL
+        # order uncancelled, so the new SL below collided with it, error
+        # -4130). closePosition=true is unambiguous: it's this bot's own
+        # invariant that only the SL leg ever sets it (TP1/TP2 use an
+        # explicit quantity; TRAILING_STOP_MARKET rejects closePosition
+        # outright, see -4136 above), so it alone identifies the old SL
+        # order regardless of what Binance calls the type field.
         for order in self.client.get_open_algo_orders(self.config.symbol):
-            if order.get("type") == "STOP_MARKET":
+            if str(order.get("closePosition")).lower() == "true":
                 self.client.cancel_algo_order(self.config.symbol, order["algoId"])
 
         self.client.place_close_algo_order(
