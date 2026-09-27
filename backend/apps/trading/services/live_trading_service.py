@@ -63,6 +63,14 @@ class LiveTradingService:
                 f"{self.config.symbol} already has an open Binance position "
                 f"({existing_quantity}); additional entry skipped"
             )
+        # A prior trade's closePosition=true SL can survive on the exchange
+        # even after its position is gone (e.g. the position was closed
+        # manually rather than through close_trade/update_trade, which are
+        # the only paths that cancel it). Left resting, it collides with this
+        # entry's own closePosition SL below with Binance error -4130 ("An
+        # open stop or take profit order with GTE and closePosition in the
+        # direction is existing").
+        self.client.cancel_all_algo_orders(self.config.symbol)
         rules = self.client.symbol_rules(self.config.symbol)
         normalized_price, normalized_quantity = self.client.normalize_order(price, quantity, rules)
         self.client.set_margin_type(self.config.symbol, self.config.margin_type)
@@ -324,7 +332,7 @@ class LiveTradingService:
         ).to_integral_value(rounding=ROUND_DOWN) * tick
 
         for order in self.client.get_open_algo_orders(self.config.symbol):
-            if order.get("type") == "STOP_MARKET":
+            if order.get("orderType") == "STOP_MARKET":
                 self.client.cancel_algo_order(self.config.symbol, order["algoId"])
 
         self.client.place_close_algo_order(

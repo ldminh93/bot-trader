@@ -135,7 +135,10 @@ def test_live_entry_closes_position_when_protection_fails():
             (Decimal("105"), Decimal("110"), Decimal("115")),
         )
 
-    service.client.cancel_all_algo_orders.assert_called_once_with("BTCUSDT")
+    assert service.client.cancel_all_algo_orders.call_args_list == [
+        (("BTCUSDT",),),
+        (("BTCUSDT",),),
+    ]
     assert service.client.place_market_order.call_count == 2
     emergency_close = service.client.place_market_order.call_args_list[-1]
     assert emergency_close.args == ("BTCUSDT", "SELL", Decimal("0.100"))
@@ -241,11 +244,13 @@ def test_move_stop_loss_does_not_touch_take_profit_orders():
         min_notional=Decimal("5"),
     )
     service.client.mark_price.return_value = Decimal("100.00")
+    # Binance's real response field is "orderType", not "type" — client.get_open_algo_orders
+    # is the BinanceService method, which already unwraps the {"total", "orders"} envelope.
     service.client.get_open_algo_orders.return_value = [
-        {"algoId": "1", "type": "STOP_MARKET"},
-        {"algoId": "2", "type": "TAKE_PROFIT_MARKET"},
-        {"algoId": "3", "type": "TAKE_PROFIT_MARKET"},
-        {"algoId": "4", "type": "TRAILING_STOP_MARKET"},
+        {"algoId": "1", "orderType": "STOP_MARKET"},
+        {"algoId": "2", "orderType": "TAKE_PROFIT_MARKET"},
+        {"algoId": "3", "orderType": "TAKE_PROFIT_MARKET"},
+        {"algoId": "4", "orderType": "TRAILING_STOP_MARKET"},
     ]
 
     service._move_stop_loss(trade)
