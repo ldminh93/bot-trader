@@ -426,6 +426,26 @@ class Trade(models.Model):
 
     class Meta:
         ordering = ["-opened_at"]
+        indexes = [
+            # TradesView's unscoped "this user's trades, newest first" query
+            # only had the standalone user_id (FK) index to work with, so
+            # Postgres filtered by user then filesorted every matching row by
+            # opened_at. This composite lets it satisfy filter+sort in one
+            # index scan.
+            models.Index(fields=["user", "-opened_at"], name="trade_user_opened_at_idx"),
+            # Open-position checks (has_open_position, open_count, the bot
+            # loop's daily-loss/open-position lookups) filter on user+status
+            # without caring about order; a plain user_id index still forces
+            # a scan across all of that user's historical trades to find the
+            # (usually few) OPEN ones.
+            models.Index(fields=["user", "status"], name="trade_user_status_idx"),
+            # Calendar/date-scoped and range-scoped trade queries bucket
+            # CLOSED trades by closed_at. Paired with the range-comparison
+            # rewrite in TradesView (avoiding the __date cast, which a plain
+            # btree index can't be used through), this lets those queries hit
+            # the index instead of scanning the whole table.
+            models.Index(fields=["user", "closed_at"], name="trade_user_closed_at_idx"),
+        ]
 
 
 class TradeSnapshot(models.Model):

@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from django.conf import settings
@@ -768,9 +768,16 @@ class TradesView(APIView):
             # close date (when their PnL actually landed), everything else by
             # open date. Using opened_at for every status here made the
             # Trades page disagree with the Calendar's daily counts.
+            #
+            # Filtering with gte/lt on the raw datetime (rather than __date,
+            # which casts the column) lets Postgres actually use a plain
+            # index on closed_at/opened_at — a cast on the column defeats a
+            # btree index and forces a full scan.
+            day_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=dt_timezone.utc)
+            day_end = day_start + timedelta(days=1)
             trades = trades.filter(
-                Q(status=Trade.Status.CLOSED, closed_at__date=date)
-                | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__date=date))
+                Q(status=Trade.Status.CLOSED, closed_at__gte=day_start, closed_at__lt=day_end)
+                | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__gte=day_start, opened_at__lt=day_end))
             )
         elif is_range_scoped:
             # A range-scoped request (e.g. the Calendar page's currently-viewed
@@ -780,9 +787,11 @@ class TradesView(APIView):
             # Bucket the same way the Calendar does: closed trades by their
             # close date (when their PnL actually landed), everything else by
             # open date.
+            range_start = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=dt_timezone.utc)
+            range_end = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=dt_timezone.utc) + timedelta(days=1)
             trades = trades.filter(
-                Q(status=Trade.Status.CLOSED, closed_at__date__range=(date_from, date_to))
-                | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__date__range=(date_from, date_to)))
+                Q(status=Trade.Status.CLOSED, closed_at__gte=range_start, closed_at__lt=range_end)
+                | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__gte=range_start, opened_at__lt=range_end))
             )
 
         page_param = request.query_params.get("page")
