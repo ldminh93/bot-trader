@@ -14,7 +14,7 @@ import { useCurrentUser } from "@/lib/current-user-context";
 import type { Trade, TradeSnapshot, TradeStats } from "@/lib/types";
 import { formatCompact, formatNumber, pnlColor } from "@/lib/utils";
 
-const FILTER_KEYS = ["symbol", "side", "close_reason", "grade", "tag", "hour"] as const;
+const FILTER_KEYS = ["symbol", "side", "close_reason", "grade", "tag", "hour", "status"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
 
 const FILTER_LABELS: Record<FilterKey, string> = {
@@ -24,6 +24,7 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   grade: "Grade",
   tag: "Setup tag",
   hour: "Entry hour (UTC)",
+  status: "Status",
 };
 
 function todayLocalDate(): string {
@@ -55,6 +56,7 @@ function matchesFilters(trade: Trade, filters: Record<FilterKey, string>): boole
   }
   if (filters.grade && !(trade.setup_tags || []).includes(`grade:${filters.grade}`)) return false;
   if (filters.tag && !(trade.setup_tags || []).includes(filters.tag)) return false;
+  if (filters.status && trade.status !== filters.status) return false;
   if (filters.hour) {
     const hour = trade.opened_at ? new Date(trade.opened_at).getUTCHours() : -1;
     if (String(hour).padStart(2, "0") !== filters.hour) return false;
@@ -74,9 +76,13 @@ function computeDailyPnl(trades: Trade[]): { day: string; pnl: number }[] {
     .map(([day, pnl]) => ({ day, pnl }));
 }
 
+const PAGE_SIZE = 25;
+
 export function TradesConsole({ userId, username }: { userId?: number; username?: string } = {}) {
   const router = useRouter();
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [pageMeta, setPageMeta] = useState<{ count: number; totalPages: number }>({ count: 0, totalPages: 1 });
+  const [page, setPage] = useState(1);
   const [stats, setStats] = useState<TradeStats | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
@@ -89,6 +95,7 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
     grade: "",
     tag: "",
     hour: "",
+    status: "",
   });
   const { isStaff, loading: userLoading } = useCurrentUser();
 
@@ -109,18 +116,38 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
     api.stats(userId).then(setStats);
   }, [userId, isStaff]);
 
+  const activeFilters = FILTER_KEYS.filter((key) => filters[key]);
+  const isDateScoped = date !== "";
+  // Only the fully unscoped "browse everything" view can be paginated at the
+  // API level — the extra filters below (side/grade/tag/hour) aren't
+  // supported server-side yet, so those views still need the full matching
+  // set fetched client-side to compute correct filtered stats.
+  const usesServerPagination = !isDateScoped && activeFilters.length === 0;
+  const filtersKey = FILTER_KEYS.map((key) => filters[key]).join("|");
+
+  useEffect(() => {
+    setPage(1);
+  }, [date, userId, filtersKey]);
+
   useEffect(() => {
     if (userId && !isStaff) return;
     setLoading(true);
-    api.trades(undefined, date || undefined, undefined, userId).then((nextTrades) => {
-      setTrades(nextTrades);
-      setSelectedTradeId(nextTrades[0]?.id ?? null);
-      setLoading(false);
-    });
-  }, [date, userId, isStaff]);
-
-  const activeFilters = FILTER_KEYS.filter((key) => filters[key]);
-  const isDateScoped = date !== "";
+    if (usesServerPagination) {
+      api.tradesPage({ page, pageSize: PAGE_SIZE, userId }).then((data) => {
+        setTrades(data.results);
+        setPageMeta({ count: data.count, totalPages: data.total_pages });
+        setSelectedTradeId(data.results[0]?.id ?? null);
+        setLoading(false);
+      });
+    } else {
+      api.trades(undefined, date || undefined, undefined, userId).then((nextTrades) => {
+        setTrades(nextTrades);
+        setPageMeta({ count: nextTrades.length, totalPages: 1 });
+        setSelectedTradeId(nextTrades[0]?.id ?? null);
+        setLoading(false);
+      });
+    }
+  }, [date, userId, isStaff, usesServerPagination, page]);
 
   const filteredTrades = useMemo(
     () => (activeFilters.length ? trades.filter((trade) => matchesFilters(trade, filters)) : trades),
@@ -148,7 +175,11 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
 
   function clearFilters() {
     router.push(userId ? `/users/${userId}/trades?username=${encodeURIComponent(username ?? "")}` : "/trades");
-    setFilters({ symbol: "", side: "", close_reason: "", grade: "", tag: "", hour: "" });
+    setFilters({ symbol: "", side: "", close_reason: "", grade: "", tag: "", hour: "", status: "" });
+  }
+
+  function setFilter(key: FilterKey, value: string) {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   }
 
   const selectedTrade = filteredTrades.find((trade) => trade.id === selectedTradeId) ?? filteredTrades[0] ?? null;
@@ -200,6 +231,39 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
           >
             Today
           </button>
+          <span className="ml-2 font-semibold text-[var(--text)]">Side:</span>
+          <select
+            value={filters.side}
+            onChange={(e) => setFilter("side", e.target.value)}
+            className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] px-2 py-1 text-xs font-mono text-[var(--text)] focus:outline-none"
+          >
+            <option value="">All</option>
+            <option value="LONG">Long</option>
+            <option value="SHORT">Short</option>
+          </select>
+          <span className="font-semibold text-[var(--text)]">Grade:</span>
+          <select
+            value={filters.grade}
+            onChange={(e) => setFilter("grade", e.target.value)}
+            className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] px-2 py-1 text-xs font-mono text-[var(--text)] focus:outline-none"
+          >
+            <option value="">All</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+          <span className="font-semibold text-[var(--text)]">Status:</span>
+          <select
+            value={filters.status}
+            onChange={(e) => setFilter("status", e.target.value)}
+            className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--background)] px-2 py-1 text-xs font-mono text-[var(--text)] focus:outline-none"
+          >
+            <option value="">All</option>
+            <option value="OPEN">Open</option>
+            <option value="CLOSED">Closed</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
           {isDateScoped && (
             <button
               type="button"
@@ -248,7 +312,11 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
           <PanelHeader title="All trades" />
           <TradeTable
             trades={filteredTrades}
-            pageSize={25}
+            pageSize={PAGE_SIZE}
+            page={usesServerPagination ? page : undefined}
+            totalPages={usesServerPagination ? pageMeta.totalPages : undefined}
+            totalCount={usesServerPagination ? pageMeta.count : undefined}
+            onPageChange={usesServerPagination ? setPage : undefined}
             onSelect={(trade) => setSelectedTradeId(trade.id)}
             selectedTradeId={selectedTrade?.id ?? null}
           />

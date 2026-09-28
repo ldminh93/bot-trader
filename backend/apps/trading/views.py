@@ -743,6 +743,9 @@ def resolve_target_user(request):
 
 
 class TradesView(APIView):
+    DEFAULT_PAGE_SIZE = 25
+    MAX_PAGE_SIZE = 200
+
     def get(self, request):
         target_user, error = resolve_target_user(request)
         if error:
@@ -751,9 +754,17 @@ class TradesView(APIView):
         symbol = request.query_params.get("symbol")
         if symbol:
             trades = trades.filter(symbol=symbol.upper())
+
         date_re = r"\d{4}-\d{2}-\d{2}"
         date = request.query_params.get("date")
-        if date and re.fullmatch(date_re, date):
+        date_from = request.query_params.get("from")
+        date_to = request.query_params.get("to")
+        is_date_scoped = bool(date and re.fullmatch(date_re, date))
+        is_range_scoped = bool(
+            date_from and date_to and re.fullmatch(date_re, date_from) and re.fullmatch(date_re, date_to)
+        )
+
+        if is_date_scoped:
             # Bucket the same way the Calendar does: closed trades by their
             # close date (when their PnL actually landed), everything else by
             # open date. Using opened_at for every status here made the
@@ -762,10 +773,7 @@ class TradesView(APIView):
                 Q(status=Trade.Status.CLOSED, closed_at__date=date)
                 | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__date=date))
             )
-            return Response(TradeSerializer(trades, many=True).data)
-        date_from = request.query_params.get("from")
-        date_to = request.query_params.get("to")
-        if date_from and date_to and re.fullmatch(date_re, date_from) and re.fullmatch(date_re, date_to):
+        elif is_range_scoped:
             # A range-scoped request (e.g. the Calendar page's currently-viewed
             # month) wants every trade relevant to that period, not just the
             # 200 most recent overall — the flat cap below silently dropped
@@ -777,8 +785,40 @@ class TradesView(APIView):
                 Q(status=Trade.Status.CLOSED, closed_at__date__range=(date_from, date_to))
                 | (~Q(status=Trade.Status.CLOSED) & Q(opened_at__date__range=(date_from, date_to)))
             )
-            return Response(TradeSerializer(trades, many=True).data)
-        return Response(TradeSerializer(trades[:200], many=True).data)
+
+        page_param = request.query_params.get("page")
+        if page_param is None:
+            # Legacy shape (plain array) for callers that haven't opted into
+            # pagination yet: date/range-scoped requests still get every
+            # matching row, the fully unscoped "recent trades" request keeps
+            # the historical 200-row cap.
+            if is_date_scoped or is_range_scoped:
+                return Response(TradeSerializer(trades, many=True).data)
+            return Response(TradeSerializer(trades[:200], many=True).data)
+
+        try:
+            page = max(1, int(page_param))
+        except ValueError:
+            page = 1
+        try:
+            page_size = int(request.query_params.get("page_size", self.DEFAULT_PAGE_SIZE))
+        except ValueError:
+            page_size = self.DEFAULT_PAGE_SIZE
+        page_size = max(1, min(page_size, self.MAX_PAGE_SIZE))
+
+        count = trades.count()
+        start = (page - 1) * page_size
+        page_rows = trades[start : start + page_size]
+        total_pages = (count + page_size - 1) // page_size if count else 1
+        return Response(
+            {
+                "results": TradeSerializer(page_rows, many=True).data,
+                "count": count,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+            }
+        )
 
 
 class TradeSnapshotsView(APIView):

@@ -21,25 +21,43 @@ export function TradeTable({
   trades,
   limit,
   pageSize,
+  page: controlledPage,
+  totalPages: controlledTotalPages,
+  totalCount,
+  onPageChange,
   onSelect,
   selectedTradeId,
 }: {
   trades: Trade[];
   limit?: number;
   pageSize?: number;
+  /** Provide together with onPageChange to switch to server-driven pagination: `trades` is treated as just the current page's rows. */
+  page?: number;
+  totalPages?: number;
+  totalCount?: number;
+  onPageChange?: (page: number) => void;
   onSelect?: (trade: Trade) => void;
   selectedTradeId?: number | null;
 }) {
+  const isControlled = controlledPage !== undefined && onPageChange !== undefined;
   const source = limit ? trades.slice(0, limit) : trades;
-  const [page, setPage] = useState(1);
+  const [localPage, setLocalPage] = useState(1);
 
   useEffect(() => {
-    setPage(1);
+    setLocalPage(1);
   }, [trades]);
 
-  const totalPages = pageSize ? Math.max(1, Math.ceil(source.length / pageSize)) : 1;
-  const currentPage = Math.min(page, totalPages);
-  const rows = pageSize ? source.slice((currentPage - 1) * pageSize, currentPage * pageSize) : source;
+  const totalPages = isControlled ? Math.max(1, controlledTotalPages ?? 1) : pageSize ? Math.max(1, Math.ceil(source.length / pageSize)) : 1;
+  const currentPage = isControlled ? Math.min(controlledPage!, totalPages) : Math.min(localPage, totalPages);
+  const rows = isControlled ? source : pageSize ? source.slice((currentPage - 1) * pageSize, currentPage * pageSize) : source;
+  const rangeTotal = isControlled ? totalCount ?? source.length : source.length;
+  const showPagination = isControlled ? totalPages > 1 : Boolean(pageSize && source.length > pageSize);
+
+  function goToPage(next: number) {
+    const clamped = Math.max(1, Math.min(totalPages, next));
+    if (isControlled) onPageChange!(clamped);
+    else setLocalPage(clamped);
+  }
 
   if (!source.length) {
     return (
@@ -103,16 +121,17 @@ export function TradeTable({
           ))}
         </tbody>
       </table>
-      {pageSize && source.length > pageSize ? (
+      {showPagination ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] px-4 py-3 text-xs text-[var(--muted)]">
           <span>
-            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, source.length)} of {source.length} trades
+            Showing {(currentPage - 1) * (pageSize ?? rows.length) + 1}-{Math.min(currentPage * (pageSize ?? rows.length), rangeTotal)} of{" "}
+            {rangeTotal} trades
           </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               disabled={currentPage === 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => goToPage(currentPage - 1)}
               className="rounded-full border border-[var(--line)] px-2 py-1 font-semibold text-[var(--text)] disabled:opacity-40"
             >
               Prev
@@ -123,7 +142,7 @@ export function TradeTable({
             <button
               type="button"
               disabled={currentPage === totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => goToPage(currentPage + 1)}
               className="rounded-full border border-[var(--line)] px-2 py-1 font-semibold text-[var(--text)] disabled:opacity-40"
             >
               Next

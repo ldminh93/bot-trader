@@ -11,6 +11,7 @@ import type {
   LiveSyncHealth,
   MarketSnapshot,
   OpportunityItem,
+  PaginatedTrades,
   PauseAllResult,
   RemoveAllResult,
   ScanAllResult,
@@ -191,6 +192,27 @@ export const api = {
     if (userId) params.set("user_id", String(userId));
     const query = params.toString();
     return request<Trade[]>(`/trades${query ? `?${query}` : ""}`);
+  },
+  tradesPage: (params: {
+    page: number;
+    pageSize: number;
+    symbol?: string;
+    date?: string;
+    range?: { from: string; to: string };
+    userId?: number;
+  }) => {
+    const { page, pageSize, symbol, date, range, userId } = params;
+    const query = new URLSearchParams();
+    query.set("page", String(page));
+    query.set("page_size", String(pageSize));
+    if (symbol) query.set("symbol", symbol);
+    if (date) query.set("date", date);
+    if (range) {
+      query.set("from", range.from);
+      query.set("to", range.to);
+    }
+    if (userId) query.set("user_id", String(userId));
+    return request<PaginatedTrades>(`/trades?${query.toString()}`);
   },
   exportReplay: (tradeId: number) =>
     request<{ message: string }>("/trades/export-replay", { method: "POST", body: JSON.stringify({ trade_id: tradeId }) }),

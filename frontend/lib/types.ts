@@ -189,6 +189,14 @@ export interface Trade {
   closed_at: string | null;
 }
 
+export interface PaginatedTrades {
+  results: Trade[];
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export interface TradeSnapshot {
   id: number;
   trade: number;

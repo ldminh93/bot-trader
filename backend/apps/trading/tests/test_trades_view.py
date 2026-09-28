@@ -101,3 +101,42 @@ def test_trades_without_range_keeps_existing_200_cap_behavior():
 
     assert response.status_code == 200
     assert len(response.data) == 1
+
+
+@pytest.mark.django_db
+def test_trades_page_param_returns_paginated_shape():
+    """Passing ?page=... switches the response to a paginated object instead
+    of a raw array, so the Trades page can request one page at a time instead
+    of fetching everything up front."""
+    user = get_user_model().objects.create_user("paginated@example.com", password="secure-pass")
+    for i in range(30):
+        _trade(user, symbol=f"SYM{i}USDT")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.get("/api/trades?page=2&page_size=10")
+
+    assert response.status_code == 200
+    assert response.data["count"] == 30
+    assert response.data["page"] == 2
+    assert response.data["page_size"] == 10
+    assert response.data["total_pages"] == 3
+    assert len(response.data["results"]) == 10
+
+
+@pytest.mark.django_db
+def test_trades_page_param_exceeds_the_legacy_200_cap():
+    """Unlike the legacy unscoped response, paginated requests must be able to
+    reach trades beyond row 200 — that's the whole point of paginating
+    server-side instead of truncating."""
+    user = get_user_model().objects.create_user("beyond-cap@example.com", password="secure-pass")
+    for i in range(205):
+        _trade(user, symbol=f"SYM{i}USDT")
+    client = APIClient()
+    client.force_authenticate(user)
+
+    response = client.get("/api/trades?page=9&page_size=25")
+
+    assert response.status_code == 200
+    assert response.data["count"] == 205
+    assert len(response.data["results"]) == 5
