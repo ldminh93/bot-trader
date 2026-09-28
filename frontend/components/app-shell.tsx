@@ -4,7 +4,6 @@ import {
   CalendarBlank,
   ChartBar,
   ChartLineUp,
-  Coins,
   GearSix,
   ListBullets,
   Pulse,
@@ -25,15 +24,16 @@ import { cn } from "@/lib/utils";
 const navigation = [
   { href: "/dashboard", label: "Overview", icon: SquaresFour },
   { href: "/trades", label: "Trades", icon: ChartLineUp },
-  { href: "/top-movers", label: "Top Movers", icon: TrendUp },
-  { href: "/scanned", label: "Scanned", icon: Coins },
   { href: "/calendar", label: "Calendar", icon: CalendarBlank },
   { href: "/analytics", label: "Analytics", icon: ChartBar },
   { href: "/logs", label: "Logs", icon: ListBullets },
   { href: "/settings", label: "Settings", icon: GearSix },
 ];
 
-const adminNavigation = [{ href: "/users", label: "Users", icon: Users }];
+const adminNavigation = [
+  { href: "/top-movers", label: "Top Movers", icon: TrendUp },
+  { href: "/users", label: "Users", icon: Users },
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -80,7 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav
           className={cn(
             "grid gap-1 px-2 py-2 [padding-bottom:calc(env(safe-area-inset-bottom)+0.5rem)] lg:flex lg:flex-1 lg:flex-col lg:gap-1 lg:p-3",
-            isStaff ? "grid-cols-9" : "grid-cols-8",
+            isStaff ? "grid-cols-8" : "grid-cols-6",
           )}
         >
           {visibleNavigation.map((item) => {

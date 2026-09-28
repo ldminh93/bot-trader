@@ -695,6 +695,8 @@ class OpportunityScoreboardView(APIView):
 
 
 class MarketTopMoversView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
     def get(self, request):
         limit = min(int(request.query_params.get("limit", 20)), 50)
         quote_asset = request.query_params.get("quote", "USDT").upper()
@@ -702,19 +704,9 @@ class MarketTopMoversView(APIView):
         return Response(result)
 
 
-class MarketScannedTokensView(APIView):
-    def get(self, request):
-        quote_asset = request.query_params.get("quote", "USDT").upper()
-        symbols = set(
-            TradingBotConfig.objects.filter(user=request.user, is_running=True).values_list("symbol", flat=True)
-        )
-        if not symbols:
-            return Response({"tokens": []})
-        tokens = BinanceService().fetch_tickers_for_symbols(symbols, quote_asset=quote_asset)
-        return Response({"tokens": tokens})
-
-
 class AutoScannerSettingsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
     def get(self, request):
         settings_obj, _ = AutoScannerSettings.objects.get_or_create(user=request.user)
         return Response(AutoScannerSettingsSerializer(settings_obj).data)
@@ -728,6 +720,8 @@ class AutoScannerSettingsView(APIView):
 
 
 class AutoScannerSyncView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
     def post(self, request):
         result = sync_top_movers_to_scanner(request.user)
         return Response(result)

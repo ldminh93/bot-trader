@@ -14,7 +14,6 @@ import type {
   PauseAllResult,
   RemoveAllResult,
   ScanAllResult,
-  ScannedTokensResult,
   TopMoversResult,
   Trade,
   TradeSnapshot,
@@ -101,7 +100,10 @@ async function request<T>(
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.detail ?? body.message ?? "Request failed");
+    const fieldError = Object.values(body).find(
+      (value): value is string[] => Array.isArray(value) && typeof value[0] === "string",
+    )?.[0];
+    throw new Error(body.detail ?? body.message ?? fieldError ?? "Request failed");
   }
   return body as T;
 }
@@ -123,6 +125,11 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<CurrentUser>("/auth/me"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ detail: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
   userPerformance: (params?: { ordering?: string; search?: string }) => {
     const query = new URLSearchParams();
     if (params?.ordering) query.set("ordering", params.ordering);
@@ -169,8 +176,6 @@ export const api = {
   opportunities: () => request<OpportunityItem[]>("/market/opportunities"),
   topMovers: (limit = 20, quote = "USDT") =>
     request<TopMoversResult>(`/market/top-movers?limit=${limit}&quote=${quote}`),
-  scannedTokens: (quote = "USDT") =>
-    request<ScannedTokensResult>(`/market/scanned?quote=${quote}`),
   autoScannerSettings: () => request<AutoScannerSettings>("/scanner/auto-settings"),
   saveAutoScannerSettings: (body: Partial<AutoScannerSettings>) =>
     request<AutoScannerSettings>("/scanner/auto-settings", { method: "PUT", body: JSON.stringify(body) }),

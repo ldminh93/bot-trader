@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { Panel, PanelHeader } from "@/components/ui/panel";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
+import { useCurrentUser } from "@/lib/current-user-context";
 import type { AutoScannerSettings, AutoScannerSyncResult, TopMover, TopMoversResult } from "@/lib/types";
 import { formatCompact, formatNumber, formatPrice } from "@/lib/utils";
 
@@ -87,6 +88,17 @@ export function TopMoversConsole() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<AutoScannerSyncResult | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const { isStaff, loading: userLoading } = useCurrentUser();
+
+  useEffect(() => {
+    if (!getToken()) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!userLoading && !isStaff) {
+      window.location.href = "/dashboard";
+    }
+  }, [userLoading, isStaff]);
 
   useEffect(() => {
     const cfg = readMoversConfig();

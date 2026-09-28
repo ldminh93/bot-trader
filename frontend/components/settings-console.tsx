@@ -1,6 +1,6 @@
 "use client";
 
-import { DownloadSimple, FloppyDisk, Key, Plus, ShieldCheck, TrendDown, TrendUp, Trash, UploadSimple, Warning } from "@phosphor-icons/react";
+import { DownloadSimple, FloppyDisk, Key, LockKey, Plus, ShieldCheck, TrendDown, TrendUp, Trash, UploadSimple, Warning } from "@phosphor-icons/react";
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 
 import { PageFrame } from "@/components/page-frame";
@@ -67,6 +67,9 @@ export function SettingsConsole() {
   const [busy, setBusy] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [discordConfig, setDiscordConfig] = useState<DiscordAlertConfig | null>(null);
   const [discordWebhook, setDiscordWebhook] = useState("");
   const [message, setMessage] = useState("");
@@ -393,6 +396,24 @@ export function SettingsConsole() {
       setMessage("Credential encrypted and stored. Test the connection, then enable live mode for the coin you want to trade.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save credential");
+    }
+  }
+
+  async function changePassword(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirmation do not match.");
+      return;
+    }
+    try {
+      await api.changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("Password changed successfully.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to change password");
     }
   }
 
@@ -1132,6 +1153,46 @@ export function SettingsConsole() {
 
         <div className="grid min-w-0 content-start gap-4">
           <Panel className="min-w-0">
+            <PanelHeader title="Change password" />
+            <form onSubmit={changePassword} className="grid gap-4 p-4">
+              <Field label="Current password">
+                <input
+                  className={inputClass}
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="New password">
+                <input
+                  className={inputClass}
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Confirm new password">
+                <input
+                  className={inputClass}
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  required
+                />
+              </Field>
+              <div className="flex flex-wrap gap-2">
+                <Button><LockKey size={17} />Update password</Button>
+              </div>
+            </form>
+          </Panel>
+          <Panel className="min-w-0">
             <PanelHeader title="Binance API credential" />
             <form onSubmit={saveCredential} className="grid gap-4 p-4">
               <p className="text-sm leading-6 text-[var(--muted)]">
@@ -1159,34 +1220,36 @@ export function SettingsConsole() {
               </p>
             </div>
           </Panel>
-          <Panel className="min-w-0">
-            <PanelHeader title="Top Movers display" />
-            <div className="grid gap-3 p-4">
-              <p className="text-xs leading-5 text-[var(--muted)]">
-                Control which lists appear on the Top Movers page. Disabling a list hides it from view but does not affect scanning.
-              </p>
-              <Toggle
-                label={
-                  <span className="flex items-center gap-2">
-                    <TrendUp size={14} className="text-[var(--positive)]" />
-                    Show Gainers list
-                  </span>
-                }
-                checked={showGainers}
-                onChange={(value) => saveTopMoversConfig({ showGainers: value, showLosers })}
-              />
-              <Toggle
-                label={
-                  <span className="flex items-center gap-2">
-                    <TrendDown size={14} className="text-[var(--negative)]" />
-                    Show Losers list
-                  </span>
-                }
-                checked={showLosers}
-                onChange={(value) => saveTopMoversConfig({ showGainers, showLosers: value })}
-              />
-            </div>
-          </Panel>
+          {isStaff && (
+            <Panel className="min-w-0">
+              <PanelHeader title="Top Movers display" />
+              <div className="grid gap-3 p-4">
+                <p className="text-xs leading-5 text-[var(--muted)]">
+                  Control which lists appear on the Top Movers page. Disabling a list hides it from view but does not affect scanning.
+                </p>
+                <Toggle
+                  label={
+                    <span className="flex items-center gap-2">
+                      <TrendUp size={14} className="text-[var(--positive)]" />
+                      Show Gainers list
+                    </span>
+                  }
+                  checked={showGainers}
+                  onChange={(value) => saveTopMoversConfig({ showGainers: value, showLosers })}
+                />
+                <Toggle
+                  label={
+                    <span className="flex items-center gap-2">
+                      <TrendDown size={14} className="text-[var(--negative)]" />
+                      Show Losers list
+                    </span>
+                  }
+                  checked={showLosers}
+                  onChange={(value) => saveTopMoversConfig({ showGainers, showLosers: value })}
+                />
+              </div>
+            </Panel>
+          )}
           <Panel className="min-w-0">
             <PanelHeader title="Discord alerts" />
             <form onSubmit={saveDiscordAlerts} className="grid gap-4 p-4">

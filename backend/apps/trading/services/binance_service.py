@@ -474,11 +474,6 @@ class BinanceService:
 
         return {"gainers": gainers, "losers": losers}
 
-    def fetch_tickers_for_symbols(self, symbols: set[str], quote_asset: str = "USDT") -> list[dict]:
-        """Return 24hr ticker stats for a specific set of symbols, sorted by percent change."""
-        filtered = [t for t in self._fetch_24hr_tickers(quote_asset) if t["symbol"] in symbols]
-        return sorted(filtered, key=lambda x: x["price_change_percent"], reverse=True)
-
     def test_connection(self) -> dict:
         if not self.api_key:
             return {"connected": False, "message": "No API key configured"}
