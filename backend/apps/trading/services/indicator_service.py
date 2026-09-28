@@ -474,6 +474,13 @@ class IndicatorResult:
     volume_ma20: float
     swing_high: float
     swing_low: float
+    # Defaulted (unlike the fields above) so existing manual constructions —
+    # e.g. test fixtures built before RSI existed — keep working unchanged.
+    # 50.0 is neutral: it never trips an oversold/overbought gate on its own.
+    rsi: float = 50.0
+
+
+RSI_PERIOD = 14
 
 
 def _wilder(series: pd.Series, period: int) -> pd.Series:
@@ -534,6 +541,19 @@ def calculate_indicators(candles: list[dict], period: int = 14) -> IndicatorResu
     ).replace([np.inf, -np.inf], np.nan)
     frame["adx"] = _wilder(dx, period).fillna(0)
 
+    price_change = frame["close"].diff()
+    gain = price_change.clip(lower=0)
+    loss = (-price_change).clip(lower=0)
+    avg_gain = _wilder(gain, RSI_PERIOD)
+    avg_loss = _wilder(loss, RSI_PERIOD)
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - 100 / (1 + rs)
+    # avg_loss == 0: no losses in the window → RSI is 100, not undefined.
+    # avg_gain == 0 too (flat price) is the genuine "no data" case → neutral 50.
+    rsi = rsi.fillna(100.0)
+    rsi = rsi.mask((avg_gain == 0) & (avg_loss == 0), 50.0)
+    frame["rsi"] = rsi
+
     recent = frame.tail(20)
     row = frame.iloc[-1]
     enriched = frame.tail(120).replace({np.nan: None}).to_dict("records")
@@ -552,4 +572,5 @@ def calculate_indicators(candles: list[dict], period: int = 14) -> IndicatorResu
         volume_ma20=_finite(row["volume_ma20"]),
         swing_high=_finite(recent["high"].max()),
         swing_low=_finite(recent["low"].min()),
+        rsi=_finite(row["rsi"], default=50.0),
     )

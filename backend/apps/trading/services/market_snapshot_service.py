@@ -144,6 +144,13 @@ def evaluate_market_conditions(
         oi_values,
         extended_move_lookback_candles=config.extended_move_lookback_candles,
         extended_move_min_pct=float(config.extended_move_min_pct) / 100,
+        short_extended_move_lookback_candles=config.short_extended_move_lookback_candles,
+        short_extended_move_fresh_extreme_buffer_pct=(
+            float(config.short_extended_move_fresh_extreme_buffer_pct) / 100
+        ),
+        short_entry_score_threshold=config.short_entry_score_threshold,
+        short_funding_meaningful_threshold=float(config.short_funding_meaningful_threshold),
+        short_rsi_oversold_max=float(config.short_rsi_oversold_max),
     )
     trend_reasons = explain_trend_state(
         signal_indicators,

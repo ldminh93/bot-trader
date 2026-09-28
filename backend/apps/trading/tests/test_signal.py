@@ -718,3 +718,247 @@ def test_score_signal_short_unaffected_when_extended_move_gate_disabled():
     )
     assert signal.signal == "SHORT"
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SHORT-only tuning: fresh-extreme buffer, SHORT-only lookback override,
+# funding "meaningful" threshold, RSI-oversold gate, and asymmetric threshold.
+#
+# Crypto downtrends mean-revert far more violently than uptrends grind, so
+# these give SHORT a stricter bar without touching the LONG path at all.
+# Every one of these new score_signal params defaults to "no override" (0 /
+# 0.0), so every pre-existing test above keeps passing unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_long_signal_unaffected_by_short_only_overrides():
+    """
+    Regression guard: SHORT-only knobs must have zero effect on a LONG
+    evaluation, even set to extreme values that would obviously trip a SHORT
+    equivalent. LONG never reads these params, so the result must be
+    byte-for-byte identical to not passing them at all.
+    """
+    baseline = score_signal(
+        _long_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    with_short_overrides = score_signal(
+        _long_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+        short_extended_move_lookback_candles=999,
+        short_extended_move_fresh_extreme_buffer_pct=5.0,
+        short_entry_score_threshold=90,
+        short_funding_meaningful_threshold=0.01,
+        short_rsi_oversold_max=99.0,
+    )
+    assert with_short_overrides == baseline
+    assert baseline.signal == "LONG"
+
+
+def test_short_rsi_gate_does_not_affect_long():
+    """
+    The RSI-oversold gate only exists on the SHORT branch of score_signal —
+    a LONG setup with an extremely low (oversold) RSI has no equivalent gate
+    to trip and must still fire normally.
+    """
+    result = score_signal(
+        replace(_long_setup_indicators(), rsi=5.0),
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        oi_history=[10000.0, 10100.0, 10250.0, 10450.0],
+    )
+    assert result.signal == "LONG"
+
+
+# ── 1) Extended-move gate: fresh-extreme buffer ───────────────────────────────
+
+def test_extended_move_buffer_blocks_a_marginal_stop_hunt_undercut():
+    """
+    A 'fresh low' that undercuts the prior low by a fraction of a tick (a
+    stop-hunt wick during basing, not the dump actively continuing) is
+    allowed with no buffer (old behaviour) but blocked once a buffer is set.
+    """
+    candles = _dump_then_chop_candles()
+    candles[-1] = _candle(99.5, 99.6, 98.99, 99.4, volume=400)  # undercuts prior low (99.0) by ~0.01%
+
+    allowed = extended_move_block_reason("SHORT", candles, lookback=20, min_move_pct=0.10)
+    assert allowed is None
+
+    blocked = extended_move_block_reason(
+        "SHORT", candles, lookback=20, min_move_pct=0.10, fresh_extreme_buffer_pct=0.005,
+    )
+    assert blocked is not None
+    assert "fresh low" in blocked
+
+
+def test_extended_move_buffer_still_allows_a_meaningful_fresh_low():
+    """A real, meaningful fresh low (well beyond the buffer) is never blocked."""
+    candles = _dump_then_chop_candles()
+    candles[-1] = _candle(99.5, 99.6, 96.0, 96.5, volume=1200)  # breaks well below the chop low
+    reason = extended_move_block_reason(
+        "SHORT", candles, lookback=20, min_move_pct=0.10, fresh_extreme_buffer_pct=0.005,
+    )
+    assert reason is None
+
+
+# ── 2) Extended-move gate: SHORT-only lookback override ──────────────────────
+
+def _dump_then_long_chop(dump_len: int = 20, chop_len: int = 21) -> list[dict]:
+    """
+    Sharp dump followed by a long flat chop — long enough that the dump falls
+    completely outside a 20-candle lookback (only the flat chop remains
+    visible) but is still caught by a 40-candle one.
+    """
+    dump = [_candle(150 - i, 150 - i - 0.3, 150 - i - 1.5, 150 - i - 1.0, volume=1200) for i in range(dump_len)]
+    chop = [
+        _candle(99.2 + i * 0.01, 99.5 + i * 0.01, 99.0 + i * 0.01, 99.3 + i * 0.01, volume=400)
+        for i in range(chop_len)
+    ]
+    return dump + chop
+
+
+def test_extended_move_lookback_override_catches_a_dump_the_default_window_misses():
+    """A dump finished more than 20 candles ago is invisible to the shared
+    20-candle lookback (the chop alone is too small a move), but a longer
+    SHORT-only lookback still sees the completed dump."""
+    candles = _dump_then_long_chop()
+
+    within_default_window = extended_move_block_reason("SHORT", candles, lookback=20, min_move_pct=0.10)
+    assert within_default_window is None
+
+    within_longer_window = extended_move_block_reason("SHORT", candles, lookback=40, min_move_pct=0.10)
+    assert within_longer_window is not None
+    assert "already fell" in within_longer_window
+
+
+def test_score_signal_short_override_lookback_catches_dump_shared_lookback_missed():
+    """
+    Integration check: with a shared extended_move_lookback_candles too small
+    to see the dump, the SHORT-only override still catches it, proving the
+    override is actually wired up inside score_signal (not just the standalone
+    function).
+    """
+    dump = [_candle(150 - i, 150 - i + 0.3, 150 - i - 1.2, 150 - i - 1.0, volume=1200) for i in range(12)]
+    candles = _with_cumulative_cvd(dump) + short_pullback_candles(ma25=100.0, atr=1.0)
+
+    not_caught = score_signal(
+        replace(_short_setup_indicators(), candles=candles),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        extended_move_lookback_candles=5,  # too small: dump falls outside this window
+    )
+    assert not_caught.signal == "SHORT"
+
+    caught = score_signal(
+        replace(_short_setup_indicators(), candles=candles),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        extended_move_lookback_candles=5,
+        short_extended_move_lookback_candles=20,
+    )
+    assert caught.signal == "NO_TRADE"
+    assert "already fell" in caught.reasons[0]
+
+
+# ── 3) Funding rate: "meaningful" threshold for SHORT ─────────────────────────
+
+def test_short_funding_meaningful_threshold_downgrades_marginal_positive_funding():
+    """
+    A barely-positive funding rate (e.g. +0.02%) is normal baseline funding,
+    not a 'crowded long, ripe for a squeeze' signal. With
+    short_funding_meaningful_threshold raised, it scores the same as the
+    neutral acceptable-range case (+4) instead of the full 'crowded long'
+    bonus (+8).
+    """
+    marginal = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,  # positive, but below the 0.0003 meaningful bar
+        top_ratio_direction=-0.04,
+    )
+    marginal_gated = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        short_funding_meaningful_threshold=0.0003,
+    )
+    assert marginal.short_score > marginal_gated.short_score
+    assert any("positive" in reason for reason in marginal.reasons)
+    assert not any("positive" in reason for reason in marginal_gated.reasons)
+    assert any("acceptable range" in reason for reason in marginal_gated.reasons)
+
+
+# ── 4) SHORT-only RSI-oversold exhaustion gate ────────────────────────────────
+
+def test_short_rsi_oversold_gate_blocks_when_enabled():
+    """
+    RSI already oversold means the down move has likely already played out —
+    exactly the setup that snaps back into a losing bounce. Disabled by
+    default (0.0); blocks once short_rsi_oversold_max is set.
+    """
+    oversold_indicators = replace(_short_setup_indicators(), rsi=20.0)
+
+    unaffected = score_signal(
+        oversold_indicators,
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert unaffected.signal == "SHORT"
+
+    blocked = score_signal(
+        oversold_indicators,
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        short_rsi_oversold_max=25.0,
+    )
+    assert blocked.signal == "NO_TRADE"
+    assert "oversold" in blocked.reasons[0]
+
+
+# ── 5) Asymmetric entry-score threshold for SHORT ─────────────────────────────
+
+def test_short_entry_score_threshold_override_raises_the_bar():
+    """
+    A SHORT-only threshold override can require a higher score than LONG's
+    entry_score_threshold, without changing that shared threshold at all.
+    """
+    baseline = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert baseline.signal == "SHORT"
+
+    raised_threshold = baseline.short_score + 1
+    raised = score_signal(
+        _short_setup_indicators(),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        short_entry_score_threshold=raised_threshold,
+    )
+    assert raised.signal == "NO_TRADE"
+    assert f"below the {raised_threshold} entry threshold" in raised.reasons[0]
+

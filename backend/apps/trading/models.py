@@ -117,6 +117,49 @@ class TradingBotConfig(models.Model):
         "(e.g. shorting a coin that already dumped and is now just chopping near the low). "
         "0 = disabled.",
     )
+    # ── SHORT-only tuning ────────────────────────────────────────────────────
+    # Crypto downtrends behave asymmetrically to uptrends (fast dump, violent
+    # mean-reversion bounce/short-squeeze) vs. an uptrend's longer grind, so
+    # SHORT continuation entries have shown a structurally worse win rate
+    # than the mirrored LONG case. These fields only ever feed the SHORT
+    # branch of score_signal (see signal_service.py) — LONG entries are
+    # governed exclusively by the shared fields above and are unaffected by
+    # anything in this block.
+    short_entry_score_threshold = models.PositiveSmallIntegerField(
+        default=65,
+        help_text="SHORT-only override of entry_score_threshold — a higher bar to compensate for "
+        "SHORT's worse risk/reward (violent mean-reversion bounces). 0 = same threshold as LONG.",
+    )
+    short_extended_move_lookback_candles = models.PositiveSmallIntegerField(
+        default=40,
+        help_text="SHORT-only override of extended_move_lookback_candles. Dumps often take longer "
+        "to finish than the shared lookback catches, so SHORT gets a longer window by default. "
+        "0 = same lookback as LONG (extended_move_lookback_candles). Does not affect LONG.",
+    )
+    short_extended_move_fresh_extreme_buffer_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0.3,
+        help_text="SHORT-only: a 'fresh low' must undercut the prior low by at least this %% to "
+        "count as the dump still actively happening, instead of a marginal stop-hunt wick during "
+        "basing. 0 = any lower low counts (old behaviour). Does not affect LONG.",
+    )
+    short_funding_meaningful_threshold = models.DecimalField(
+        max_digits=8,
+        decimal_places=6,
+        default=0.0003,
+        help_text="SHORT-only: funding rate must exceed this (raw decimal, e.g. 0.0003 = 0.03%) to "
+        "score as 'crowded long, favours short'. A barely-positive funding rate is normal baseline, "
+        "not a squeeze signal. 0 = any positive funding counts (old behaviour). Does not affect LONG.",
+    )
+    short_rsi_oversold_max = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=25,
+        help_text="SHORT-only: block new SHORT entries when RSI(14) is at/below this value — an "
+        "already-oversold reading means the down move has likely already run its course, the same "
+        "setup that tends to bounce into a loss. 0 = disabled. Does not affect LONG.",
+    )
     is_running = models.BooleanField(default=False)
     auto_registered = models.BooleanField(
         default=False,

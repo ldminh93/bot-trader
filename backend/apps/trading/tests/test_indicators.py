@@ -39,6 +39,18 @@ def test_indicator_calculation_returns_complete_result():
     assert result.swing_high > result.swing_low
 
 
+def test_rsi_is_high_for_a_sustained_uptrend():
+    """A monotonic uptrend has no down candles, so RSI(14) should sit near 100."""
+    result = calculate_indicators(make_candles(direction=1.0))
+    assert result.rsi > 70
+
+
+def test_rsi_is_low_for_a_sustained_downtrend():
+    """A monotonic downtrend has no up candles, so RSI(14) should sit near 0."""
+    result = calculate_indicators(make_candles(direction=-1.0))
+    assert result.rsi < 30
+
+
 def test_requires_enough_candles():
     with pytest.raises(ValueError):
         calculate_indicators(make_candles(50))

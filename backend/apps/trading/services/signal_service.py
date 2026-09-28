@@ -40,6 +40,30 @@ MAX_ENTRY_DISTANCE_ATR = 1.0
 EXTENDED_MOVE_LOOKBACK_CANDLES = 20
 EXTENDED_MOVE_MIN_PCT = 0.10
 
+# ── SHORT-only tuning ───────────────────────────────────────────────────────
+# Crypto downtrends behave asymmetrically to uptrends: a dump is usually fast
+# and then mean-reverts hard (bounce buyers / short squeeze), whereas an
+# uptrend tends to grind for longer. Empirically this makes SHORT continuation
+# entries far more likely to be "chasing a move that's about to snap back"
+# than the mirrored LONG case. Every constant/param below is wired so its
+# default reproduces the EXACT prior behaviour (0 / 0.0 = "no override") —
+# real values are only supplied by the config layer for the SHORT call sites,
+# so the LONG path is byte-for-byte unaffected.
+#
+# 1) A "fresh low" during an already-extended dump must clear the prior low
+#    by a real margin, not a stop-hunt wick — see extended_move_block_reason.
+# 2) SHORT gets its own (typically higher) score threshold — see
+#    entry_score_threshold_for_state usage in score_signal below.
+# 3) Only meaningfully positive funding (not just >0) counts as "crowded
+#    long, favours short".
+# 4) A hard gate blocking SHORT when RSI is already oversold — shorting into
+#    an oversold reading is exactly the "dump already played out" case that
+#    tends to bounce.
+SHORT_EXTENDED_MOVE_FRESH_LOW_BUFFER_PCT = 0.0
+SHORT_ENTRY_SCORE_THRESHOLD_OVERRIDE = 0
+SHORT_FUNDING_MEANINGFUL_THRESHOLD = 0.0
+SHORT_RSI_OVERSOLD_MAX = 0.0
+
 # ── Score thresholds ───────────────────────────────────────────────────────────
 # Rescaled from the old 0-137 scoring system (default 85) to the current
 # 0-90 scale (see migration 0025_rescale_entry_score_threshold). Default is
@@ -148,6 +172,7 @@ def extended_move_block_reason(
     candles: list[dict],
     lookback: int = EXTENDED_MOVE_LOOKBACK_CANDLES,
     min_move_pct: float = EXTENDED_MOVE_MIN_PCT,
+    fresh_extreme_buffer_pct: float = 0.0,
 ) -> str | None:
     """
     Block chasing a move that already happened.
@@ -159,6 +184,15 @@ def extended_move_block_reason(
     near the extreme of a finished move, which is exactly the setup where
     MA7/MA25 have caught back up to price and would otherwise look like a
     fresh pullback.
+
+    ``fresh_extreme_buffer_pct`` (default 0.0, i.e. no change from the
+    original behaviour) requires the fresh extreme to clear the prior one by
+    at least this fraction, instead of accepting any undercut/overshoot no
+    matter how small. Without it, a single stop-hunt wick that pokes a
+    fraction of a tick past the prior extreme during an otherwise finished
+    move is enough to pass as "the move is still happening" — exactly the
+    false negative that let a SHORT chase a completed dump right before it
+    bounced.
     """
     if lookback <= 0 or min_move_pct <= 0:
         return None
@@ -173,7 +207,8 @@ def extended_move_block_reason(
         if prior_high <= 0:
             return None
         move_pct = (prior_high - current_low) / prior_high
-        if move_pct >= min_move_pct and current_low >= prior_low:
+        fresh_low_required = prior_low * (1 - fresh_extreme_buffer_pct)
+        if move_pct >= min_move_pct and current_low >= fresh_low_required:
             return (
                 f"SHORT entry blocked: price already fell {move_pct:.1%} over the last "
                 f"{lookback} candles without making a fresh low; avoid chasing a "
@@ -187,7 +222,8 @@ def extended_move_block_reason(
         if prior_low <= 0:
             return None
         move_pct = (current_high - prior_low) / prior_low
-        if move_pct >= min_move_pct and current_high <= prior_high:
+        fresh_high_required = prior_high * (1 + fresh_extreme_buffer_pct)
+        if move_pct >= min_move_pct and current_high <= fresh_high_required:
             return (
                 f"LONG entry blocked: price already rose {move_pct:.1%} over the last "
                 f"{lookback} candles without making a fresh high; avoid chasing a "
@@ -324,6 +360,16 @@ def score_signal(
     oi_history: list[float] | None = None,
     extended_move_lookback_candles: int = EXTENDED_MOVE_LOOKBACK_CANDLES,
     extended_move_min_pct: float = EXTENDED_MOVE_MIN_PCT,
+    # ── SHORT-only overrides (see "SHORT-only tuning" block above) ───────────
+    # Every default below reproduces the pre-existing behaviour exactly (0 /
+    # 0.0 = "no override"). Real, nonzero values are only ever supplied by
+    # the config layer for the SHORT branch — the LONG branch never reads
+    # these params, so LONG is unaffected regardless of what a caller passes.
+    short_extended_move_lookback_candles: int = 0,
+    short_extended_move_fresh_extreme_buffer_pct: float = SHORT_EXTENDED_MOVE_FRESH_LOW_BUFFER_PCT,
+    short_entry_score_threshold: int = SHORT_ENTRY_SCORE_THRESHOLD_OVERRIDE,
+    short_funding_meaningful_threshold: float = SHORT_FUNDING_MEANINGFUL_THRESHOLD,
+    short_rsi_oversold_max: float = SHORT_RSI_OVERSOLD_MAX,
 ) -> SignalResult:
     state = TrendState(trend_state)
     candles = signal_data.candles
@@ -501,7 +547,12 @@ def score_signal(
             short_score += 12
             short_reasons.append(f"open interest is accelerating (+{oi_accel:.6f})")
 
-        if funding_rate > 0:
+        # short_funding_meaningful_threshold defaults to 0.0, so this is
+        # `funding_rate > 0` unless the config layer raises the bar — a
+        # barely-positive funding rate (e.g. +0.02%) is normal baseline
+        # funding, not the "crowded long, ripe for a squeeze" signal this
+        # score is meant to reward.
+        if funding_rate > short_funding_meaningful_threshold:
             short_score += 8
             short_reasons.append(f"funding rate is positive ({funding_rate:.4%}); longs paying")
         elif SHORT_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= SHORT_FUNDING_ACCEPTABLE_RANGE[1]:
@@ -538,12 +589,35 @@ def score_signal(
             )
 
         # ── Hard Gate G3.5: extended-move gate ────────────────────────────────
+        # short_extended_move_lookback_candles (0 = no override) lets the
+        # config layer give SHORT a longer lookback than LONG's shared
+        # default — crypto dumps often take longer to finish than the shared
+        # 20-candle window catches, so a same-direction chase further back
+        # would otherwise slip through unnoticed on the SHORT side only.
+        effective_short_lookback = short_extended_move_lookback_candles or extended_move_lookback_candles
         extended_reason = extended_move_block_reason(
-            "SHORT", candles, extended_move_lookback_candles, extended_move_min_pct
+            "SHORT", candles, effective_short_lookback, extended_move_min_pct,
+            fresh_extreme_buffer_pct=short_extended_move_fresh_extreme_buffer_pct,
         )
         if extended_reason:
             return SignalResult(
                 "NO_TRADE", 0, short_score, [extended_reason], state.value, multiplier
+            )
+
+        # ── Hard Gate G3.6: SHORT-only oversold-exhaustion gate ───────────────
+        # short_rsi_oversold_max defaults to 0.0 (disabled). When the config
+        # layer enables it, a SHORT into an already-oversold RSI reading is
+        # blocked outright: that reading itself means the down move has
+        # likely already run its course, which is exactly the setup that
+        # tends to snap back into a losing bounce rather than continue.
+        if short_rsi_oversold_max > 0 and signal_data.rsi > 0 and signal_data.rsi <= short_rsi_oversold_max:
+            return SignalResult(
+                "NO_TRADE", 0, short_score,
+                [
+                    f"SHORT entry blocked: RSI {signal_data.rsi:.1f} is already oversold "
+                    f"(<= {short_rsi_oversold_max:.0f}); bounce risk is high"
+                ],
+                state.value, multiplier,
             )
 
         if pullback_entry_enabled:
@@ -595,13 +669,19 @@ def score_signal(
             if location_reason:
                 return SignalResult("NO_TRADE", 0, short_score, [location_reason], state.value, multiplier)
 
-        if short_score >= entry_score_threshold:
+        # short_entry_score_threshold (0 = no override) lets SHORT require a
+        # higher bar than LONG's entry_score_threshold to compensate for its
+        # structurally worse risk/reward (crypto downtrends mean-revert far
+        # more violently than uptrends grind), without touching the LONG
+        # threshold at all.
+        effective_short_threshold = short_entry_score_threshold or entry_score_threshold
+        if short_score >= effective_short_threshold:
             return SignalResult(
                 "SHORT", 0, short_score, short_reasons, state.value, multiplier
             )
         return SignalResult(
             "NO_TRADE", 0, short_score,
-            [f"SHORT score {short_score} is below the {entry_score_threshold} entry threshold"],
+            [f"SHORT score {short_score} is below the {effective_short_threshold} entry threshold"],
             state.value, multiplier,
         )
 

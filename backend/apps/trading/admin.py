@@ -104,6 +104,15 @@ class TradingBotConfigAdmin(admin.ModelAdmin):
                 "min_tf_alignment_score", "min_confidence_to_trade",
             ),
         }),
+        ("SHORT-only Filters (does not affect LONG)", {
+            "fields": (
+                "short_entry_score_threshold",
+                "short_extended_move_lookback_candles",
+                "short_extended_move_fresh_extreme_buffer_pct",
+                "short_funding_meaningful_threshold",
+                "short_rsi_oversold_max",
+            ),
+        }),
         ("Smart Features", {
             "fields": (
                 "auto_regime_enabled", "confidence_leverage_enabled",

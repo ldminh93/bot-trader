@@ -137,6 +137,41 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Extended-move threshold must be between 0% and 50%")
         return value
 
+    def validate_short_entry_score_threshold(self, value: int) -> int:
+        if value != 0 and (value < 20 or value > 90):
+            raise serializers.ValidationError(
+                "SHORT entry score threshold must be 0 (disabled) or between 20 and 90"
+            )
+        return value
+
+    def validate_short_extended_move_lookback_candles(self, value: int) -> int:
+        if value < 0 or value > 200:
+            raise serializers.ValidationError(
+                "SHORT extended-move lookback must be between 0 and 200 candles"
+            )
+        return value
+
+    def validate_short_extended_move_fresh_extreme_buffer_pct(self, value):
+        if value < 0 or value > 10:
+            raise serializers.ValidationError(
+                "SHORT fresh-extreme buffer must be between 0% and 10%"
+            )
+        return value
+
+    def validate_short_funding_meaningful_threshold(self, value):
+        if value < 0 or value > 0.01:
+            raise serializers.ValidationError(
+                "SHORT funding-meaningful threshold must be between 0 and 0.01 (1%)"
+            )
+        return value
+
+    def validate_short_rsi_oversold_max(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError(
+                "SHORT RSI oversold max must be between 0 and 100"
+            )
+        return value
+
 
 class AutoScannerSettingsSerializer(serializers.ModelSerializer):
     class Meta:
