@@ -246,7 +246,12 @@ export function TradesConsole({ userId, username }: { userId?: number; username?
         </div>
         <Panel className="min-w-0">
           <PanelHeader title="All trades" />
-          <TradeTable trades={filteredTrades} onSelect={(trade) => setSelectedTradeId(trade.id)} selectedTradeId={selectedTrade?.id ?? null} />
+          <TradeTable
+            trades={filteredTrades}
+            pageSize={25}
+            onSelect={(trade) => setSelectedTradeId(trade.id)}
+            selectedTradeId={selectedTrade?.id ?? null}
+          />
         </Panel>
         <Panel className="min-w-0">
           <PanelHeader

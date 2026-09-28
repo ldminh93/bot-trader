@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import type { Trade } from "@/lib/types";
 import { formatNumber, formatPrice, pnlColor } from "@/lib/utils";
 
@@ -18,16 +20,28 @@ function gradeBadgeClass(grade: string): string {
 export function TradeTable({
   trades,
   limit,
+  pageSize,
   onSelect,
   selectedTradeId,
 }: {
   trades: Trade[];
   limit?: number;
+  pageSize?: number;
   onSelect?: (trade: Trade) => void;
   selectedTradeId?: number | null;
 }) {
-  const rows = limit ? trades.slice(0, limit) : trades;
-  if (!rows.length) {
+  const source = limit ? trades.slice(0, limit) : trades;
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [trades]);
+
+  const totalPages = pageSize ? Math.max(1, Math.ceil(source.length / pageSize)) : 1;
+  const currentPage = Math.min(page, totalPages);
+  const rows = pageSize ? source.slice((currentPage - 1) * pageSize, currentPage * pageSize) : source;
+
+  if (!source.length) {
     return (
       <div className="grid min-h-40 place-items-center px-6 text-center">
         <div>
@@ -89,6 +103,34 @@ export function TradeTable({
           ))}
         </tbody>
       </table>
+      {pageSize && source.length > pageSize ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] px-4 py-3 text-xs text-[var(--muted)]">
+          <span>
+            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, source.length)} of {source.length} trades
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-full border border-[var(--line)] px-2 py-1 font-semibold text-[var(--text)] disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="font-mono">
+              Page {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="rounded-full border border-[var(--line)] px-2 py-1 font-semibold text-[var(--text)] disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
