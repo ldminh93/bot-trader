@@ -290,6 +290,7 @@ class TradingBotConfig(models.Model):
         "live_mode_requested",
         "max_open_positions",
         "position_margin_usdt",
+        "leverage",
         "confidence_leverage_enabled",
         "min_effective_leverage",
         "auto_suppress_losing_tags",

@@ -32,14 +32,14 @@ def test_mirror_adds_admin_coin_to_regular_user_with_their_own_defaults():
     admin = get_user_model().objects.create_user("mirror-admin@example.com", password="secure-pass", is_staff=True)
     regular = get_user_model().objects.create_user("mirror-regular@example.com", password="secure-pass")
     TradingBotConfig.objects.create(user=admin, symbol="BTCUSDT", leverage=25)
-    TradingBotConfig.objects.create(user=regular, symbol="ETHUSDT", position_margin_usdt=42)
+    TradingBotConfig.objects.create(user=regular, symbol="ETHUSDT", position_margin_usdt=42, leverage=7)
 
     result = mirror_admin_coins_to_regular_users()
 
     mirrored = TradingBotConfig.objects.get(user=regular, symbol="BTCUSDT")
     assert mirrored.admin_mirrored is True
     assert mirrored.position_margin_usdt == 42
-    assert mirrored.leverage == 10
+    assert mirrored.leverage == 7
     assert result["added"] == {regular.id: ["BTCUSDT"]}
     assert CoinCatalog.objects.filter(symbol="BTCUSDT").exists()
 

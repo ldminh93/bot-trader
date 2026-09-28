@@ -82,14 +82,15 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
     # every auto-added coin silently starts paper-only even when the operator
     # already has live trading enabled account-wide for every other coin.
     account_live_mode = TradingBotConfig.objects.filter(user=user, live_mode_requested=True).exists()
-    # position_margin_usdt, confidence_leverage_enabled, min_effective_leverage,
-    # and auto_suppress_losing_tags/symbols are account-wide (see
-    # TradingBotConfig.ACCOUNT_WIDE_FIELDS) — a newly auto-registered coin should
-    # match whatever every other coin already has, not a hardcoded per-coin
-    # default. account_wide_defaults() is empty only when this is the very first
-    # coin ever registered for the account, in which case the literal fallbacks
-    # below apply (10 USDT margin, auto-suppress-tags off since nothing has been
-    # reviewed by the operator yet).
+    # position_margin_usdt, leverage, confidence_leverage_enabled,
+    # min_effective_leverage, and auto_suppress_losing_tags/symbols are
+    # account-wide (see TradingBotConfig.ACCOUNT_WIDE_FIELDS) — a newly
+    # auto-registered coin should match whatever every other coin already has,
+    # not a hardcoded per-coin default. account_wide_defaults() is empty only
+    # when this is the very first coin ever registered for the account, in
+    # which case the literal fallbacks below apply (10 USDT margin, 3x
+    # leverage, auto-suppress-tags off since nothing has been reviewed by the
+    # operator yet).
     account_defaults = TradingBotConfig.account_wide_defaults(user)
 
     already_tracked = set(
@@ -138,7 +139,7 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 "require_ma7_slope_confirmation": True,
                 "require_funding_confirmation": True,
                 "position_margin_usdt": account_defaults.get("position_margin_usdt", 10),
-                "leverage": 3,
+                "leverage": account_defaults.get("leverage", 3),
                 "live_mode_requested": account_live_mode,
                 "confidence_leverage_enabled": account_defaults.get("confidence_leverage_enabled", True),
                 "min_effective_leverage": account_defaults.get("min_effective_leverage", 0),

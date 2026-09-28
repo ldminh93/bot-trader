@@ -155,8 +155,9 @@ def test_sync_leaves_new_coins_paper_only_when_no_live_coin_exists(mock_binance_
 @patch("apps.trading.services.auto_scanner_service.BinanceService")
 def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls, mock_log):
     """
-    position_margin_usdt, confidence_leverage_enabled, min_effective_leverage,
-    auto_suppress_losing_tags, and auto_suppress_losing_symbols are account-wide
+    position_margin_usdt, leverage, confidence_leverage_enabled,
+    min_effective_leverage, auto_suppress_losing_tags, and
+    auto_suppress_losing_symbols are account-wide
     (TradingBotConfig.ACCOUNT_WIDE_FIELDS): a freshly auto-registered coin must
     match whatever value the operator has already set on their other coins,
     instead of the auto-scanner's literal fallback defaults.
@@ -166,6 +167,7 @@ def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls
         user=user,
         symbol="ETHUSDT",
         position_margin_usdt=250,
+        leverage=20,
         confidence_leverage_enabled=False,
         min_effective_leverage=4,
         auto_suppress_losing_tags=True,
@@ -178,6 +180,7 @@ def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls
 
     config = TradingBotConfig.objects.get(user=user, symbol="BTCUSDT")
     assert config.position_margin_usdt == 250
+    assert config.leverage == 20
     assert config.confidence_leverage_enabled is False
     assert config.min_effective_leverage == 4
     assert config.auto_suppress_losing_tags is True

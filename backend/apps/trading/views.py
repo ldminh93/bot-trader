@@ -167,7 +167,6 @@ class BotConfigView(APIView):
             copy_fields = (
                 "timeframe_signal",
                 "timeframe_trend",
-                "leverage",
                 "margin_type",
                 "risk_per_trade_percent",
                 "daily_loss_limit_enabled",
@@ -196,11 +195,11 @@ class BotConfigView(APIView):
                 "paper_balance",
             )
             defaults = {field: getattr(source, field) for field in copy_fields}
-        # ACCOUNT_WIDE_FIELDS (position margin, confidence leverage, auto-suppress
-        # tags/symbols, live mode, max open positions) are shared account-wide, so a
-        # newly added coin always inherits the account's current value for these —
-        # not the value on whichever coin was picked as copy_from_symbol, and not
-        # this model's per-field default.
+        # ACCOUNT_WIDE_FIELDS (position margin, leverage, confidence leverage,
+        # auto-suppress tags/symbols, live mode, max open positions) are shared
+        # account-wide, so a newly added coin always inherits the account's current
+        # value for these — not the value on whichever coin was picked as
+        # copy_from_symbol, and not this model's per-field default.
         defaults.update(TradingBotConfig.account_wide_defaults(request.user))
         account_live_mode = TradingBotConfig.objects.filter(
             user=request.user,

@@ -131,8 +131,9 @@ def test_max_open_positions_is_shared_across_coin_configs():
 @pytest.mark.django_db
 def test_account_wide_strategy_fields_are_shared_across_coin_configs():
     """
-    position_margin_usdt, confidence_leverage_enabled, min_effective_leverage,
-    auto_suppress_losing_tags, and auto_suppress_losing_symbols are account-wide
+    position_margin_usdt, leverage, confidence_leverage_enabled,
+    min_effective_leverage, auto_suppress_losing_tags, and
+    auto_suppress_losing_symbols are account-wide
     (TradingBotConfig.ACCOUNT_WIDE_FIELDS): saving any of them on one coin must
     propagate to every other coin, same as max_open_positions/live_mode_requested.
     """
@@ -150,6 +151,7 @@ def test_account_wide_strategy_fields_are_shared_across_coin_configs():
         {
             "symbol": btc.symbol,
             "position_margin_usdt": "75",
+            "leverage": 15,
             "confidence_leverage_enabled": False,
             "min_effective_leverage": 5,
             "auto_suppress_losing_tags": False,
@@ -161,6 +163,7 @@ def test_account_wide_strategy_fields_are_shared_across_coin_configs():
     assert response.status_code == 200
     eth.refresh_from_db()
     assert eth.position_margin_usdt == 75
+    assert eth.leverage == 15
     assert eth.confidence_leverage_enabled is False
     assert eth.min_effective_leverage == 5
     assert eth.auto_suppress_losing_tags is False
