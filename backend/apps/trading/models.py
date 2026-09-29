@@ -110,12 +110,12 @@ class TradingBotConfig(models.Model):
     extended_move_min_pct = models.DecimalField(
         max_digits=5,
         decimal_places=2,
-        default=10,
+        default=20,
         help_text="Minimum price move %% over extended_move_lookback_candles that counts as an "
         "already-completed move. If reached and the current candle isn't making a fresh "
         "high/low in that direction, the entry is blocked as chasing a finished move "
         "(e.g. shorting a coin that already dumped and is now just chopping near the low). "
-        "0 = disabled.",
+        "Applies to both LONG and SHORT. 0 = disabled.",
     )
     # ── SHORT-only tuning ────────────────────────────────────────────────────
     # Crypto downtrends behave asymmetrically to uptrends (fast dump, violent

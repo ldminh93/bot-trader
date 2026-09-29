@@ -31,6 +31,8 @@ export interface BotConfig {
   use_closed_candle_confirmation: boolean;
   pullback_entry_enabled: boolean;
   max_entry_distance_atr: string;
+  extended_move_lookback_candles: number;
+  extended_move_min_pct: string;
   is_running: boolean;
   auto_registered: boolean;
   top_mover_side: "gainer" | "loser" | null;

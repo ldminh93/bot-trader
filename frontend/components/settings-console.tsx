@@ -826,6 +826,23 @@ export function SettingsConsole() {
                   Pullback mode waits when price is too far from MA7/MA25.
                 </span>
               </Field>
+              <Field label="Extended-move threshold (%)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="1"
+                  value={config.extended_move_min_pct}
+                  onChange={(event) => setConfig({ ...config, extended_move_min_pct: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Applies to both LONG and SHORT. If price already moved this % over the last{" "}
+                  {config.extended_move_lookback_candles} candles without the current candle making a
+                  fresh high/low, the entry is blocked as chasing a move that already played out.
+                  0 = disabled.
+                </span>
+              </Field>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
                 <Toggle label="Allow long" checked={config.enable_long} onChange={(value) => setConfig({ ...config, enable_long: value })} />
                 <Toggle label="Allow short" checked={config.enable_short} onChange={(value) => setConfig({ ...config, enable_short: value })} />
