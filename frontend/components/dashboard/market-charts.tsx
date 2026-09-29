@@ -327,7 +327,7 @@ export function PriceChart({
               }}
             />
             <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
-            <Bar isAnimationActive={false} dataKey="range" name="Candle" fill="#69727d" shape={<Candlestick />} isAnimationActive={false} />
+            <Bar isAnimationActive={false} dataKey="range" name="Candle" fill="#69727d" shape={<Candlestick />} />
             <Line isAnimationActive={false} type="monotone" dataKey="close" name="Close" stroke="#f2f3ee" strokeOpacity={0.35} strokeWidth={1} dot={false} />
             <Line isAnimationActive={false} type="monotone" dataKey="ma7" name="MA7" stroke="#f0b90b" strokeWidth={1.2} dot={false} />
             <Line isAnimationActive={false} type="monotone" dataKey="ma25" name="MA25" stroke="#55a3e8" strokeWidth={1.2} dot={false} />
