@@ -15,6 +15,9 @@ from .serializers import BotLogSerializer, MarketSnapshotSerializer, TradeSerial
 from .services.auto_scanner_service import log_scanner_event, sync_top_movers_to_scanner
 from .services.paper_trading_service import PaperTradingService
 from .services.live_trading_service import ExistingExchangePosition, LiveTradingService
+from .services.decision_ledger_service import GateCode, prune_old_decisions, record_rejection, record_taken
+from .services.outcome_service import resolve_outcomes
+from .services.excursion_service import update_excursion
 from .services.early_exit_service import (
     evaluate_early_exit,
     opposite_entry_has_new_candle_confirmation,
@@ -262,6 +265,8 @@ def process_config(config: TradingBotConfig) -> None:
                 float(config.trailing_atr_multiplier) if config.use_trailing_stop else 0,
                 follow_master=is_follower,
             )
+        # Diagnostics: extend the trade's best/worst excursion with this cycle's price.
+        update_excursion(open_trade, metrics["price"])
         # Log SL step events
         if open_trade.status == Trade.Status.OPEN and not passive_follower:
             price_now = float(metrics["price"])
@@ -349,6 +354,8 @@ def process_config(config: TradingBotConfig) -> None:
         return
 
     if signal.signal == "NO_TRADE":
+        if signal.blocked_gate:
+            record_rejection(config, evaluation, signal.blocked_gate)
         return
 
     if not config.user.is_staff:
@@ -381,6 +388,7 @@ def process_config(config: TradingBotConfig) -> None:
                     create_log(config, BotLog.Level.WARNING,
                         f"Circuit breaker: {losses} consecutive losses on {config.symbol}. "
                         f"New entries blocked for {remaining_h:.1f}h more.")
+                    record_rejection(config, evaluation, GateCode.CIRCUIT_BREAKER)
                     return
 
     if not opposite_entry_has_new_candle_confirmation(
@@ -394,9 +402,11 @@ def process_config(config: TradingBotConfig) -> None:
             BotLog.Level.INFO,
             "Opposite entry blocked until one newly closed signal candle confirms.",
         )
+        record_rejection(config, evaluation, GateCode.OPPOSITE_UNCONFIRMED)
         return
     if daily_loss_reached(config):
         create_log(config, BotLog.Level.WARNING, "Daily loss limit reached. New entries are blocked.")
+        record_rejection(config, evaluation, GateCode.DAILY_LOSS)
         return
     open_count = Trade.objects.filter(user=config.user, status=Trade.Status.OPEN).count()
     if open_count >= config.max_open_positions:
@@ -405,6 +415,7 @@ def process_config(config: TradingBotConfig) -> None:
             BotLog.Level.INFO,
             f"Maximum open positions reached ({open_count}/{config.max_open_positions}).",
         )
+        record_rejection(config, evaluation, GateCode.MAX_POSITIONS)
         return
 
     price = metrics["price"]
@@ -419,6 +430,7 @@ def process_config(config: TradingBotConfig) -> None:
                 f"Entry skipped: ATR ({atr_pct:.3f}% of price) is below the "
                 f"{float(config.atr_min_percent):.2f}% minimum — market is too quiet.",
             )
+            record_rejection(config, evaluation, GateCode.ATR_MIN)
             return
 
     # Regime filter — block entries in choppy or pullback conditions
@@ -431,6 +443,7 @@ def process_config(config: TradingBotConfig) -> None:
                 f"Entry skipped: regime is {regime.lower()} — signal TF trend is not strong enough "
                 f"(state:{snapshot.trend.lower()}).",
             )
+            record_rejection(config, evaluation, GateCode.REGIME_CHOPPY)
             return
 
     # MA-stack reversal is a counter-trend catch-the-knife pattern with its own
@@ -445,6 +458,7 @@ def process_config(config: TradingBotConfig) -> None:
             "Entry skipped: MA-stack reversal signal during HIGH_VOLATILITY regime — "
             "catching a reversal in a volatility spike is too risky for this pattern.",
         )
+        record_rejection(config, evaluation, GateCode.REVERSAL_HIGH_VOL)
         return
 
     # Auto-suppress setup tags with poor historical win rate
@@ -458,6 +472,7 @@ def process_config(config: TradingBotConfig) -> None:
                 f"Entry skipped: setup tag(s) {', '.join(bad_tags)} have <40% win rate "
                 f"over the last 20 trades.",
             )
+            record_rejection(config, evaluation, GateCode.SUPPRESSED_TAG)
             return
 
     # Auto-suppress symbols with poor historical win rate
@@ -467,6 +482,7 @@ def process_config(config: TradingBotConfig) -> None:
             BotLog.Level.INFO,
             f"Entry skipped: {config.symbol} has <40% win rate over its last 20 trades.",
         )
+        record_rejection(config, evaluation, GateCode.SUPPRESSED_SYMBOL)
         return
 
     # Minimum confidence filter — confidence_score is built from long/short_score
@@ -486,6 +502,7 @@ def process_config(config: TradingBotConfig) -> None:
                 f"Entry skipped: confidence {confidence_score} is below minimum "
                 f"{config.min_confidence_to_trade}.",
             )
+            record_rejection(config, evaluation, GateCode.MIN_CONFIDENCE)
             return
 
     # Volatility spike filter
@@ -495,6 +512,7 @@ def process_config(config: TradingBotConfig) -> None:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: ATR spike ({ratio:.2f}× ATR MA20) exceeds max "
                 f"{float(config.atr_spike_max_ratio):.1f}×.")
+            record_rejection(config, evaluation, GateCode.ATR_SPIKE)
             return
 
     # Funding rate filter
@@ -505,11 +523,13 @@ def process_config(config: TradingBotConfig) -> None:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: funding rate {funding:.6f} is too high for LONG "
                 f"(max {threshold:.6f}).")
+            record_rejection(config, evaluation, GateCode.FUNDING)
             return
         if signal.signal == "SHORT" and funding < -threshold:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: funding rate {funding:.6f} is too negative for SHORT "
                 f"(min -{threshold:.6f}).")
+            record_rejection(config, evaluation, GateCode.FUNDING)
             return
 
     # Multi-timeframe alignment score
@@ -519,6 +539,7 @@ def process_config(config: TradingBotConfig) -> None:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: TF alignment score {tf_score}/3 is below "
                 f"minimum {config.min_tf_alignment_score}.")
+            record_rejection(config, evaluation, GateCode.TF_ALIGNMENT)
             return
 
     # Re-entry cooldown after stop loss
@@ -541,6 +562,7 @@ def process_config(config: TradingBotConfig) -> None:
                 create_log(config, BotLog.Level.INFO,
                     f"Entry skipped: re-entry cooldown active after stop loss "
                     f"({remaining} candle(s) remaining).")
+                record_rejection(config, evaluation, GateCode.SL_COOLDOWN)
                 return
 
     # Volume spike filter — signal candle must show strong volume
@@ -550,6 +572,7 @@ def process_config(config: TradingBotConfig) -> None:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: signal candle volume ({volume_ratio:.2f}× MA20) is below "
                 f"the {float(config.volume_spike_multiplier):.1f}× spike minimum.")
+            record_rejection(config, evaluation, GateCode.VOLUME_SPIKE)
             return
 
     # MA7 slope filter — require trend momentum in signal direction
@@ -560,11 +583,13 @@ def process_config(config: TradingBotConfig) -> None:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: MA7 slope ({ma7_slope:+.4f}%/candle) is below "
                 f"minimum +{required:.4f}%/candle (trend too flat for LONG).")
+            record_rejection(config, evaluation, GateCode.MA7_SLOPE)
             return
         if signal.signal == "SHORT" and ma7_slope > -required:
             create_log(config, BotLog.Level.INFO,
                 f"Entry skipped: MA7 slope ({ma7_slope:+.4f}%/candle) is above "
                 f"-{required:.4f}%/candle (trend too flat for SHORT).")
+            record_rejection(config, evaluation, GateCode.MA7_SLOPE)
             return
 
     execution_payload = snapshot.payload
@@ -588,6 +613,7 @@ def process_config(config: TradingBotConfig) -> None:
         )
     if location_reason:
         create_log(config, BotLog.Level.INFO, f"Entry skipped: {location_reason}")
+        record_rejection(config, evaluation, GateCode.ENTRY_LOCATION)
         return
 
     use_live = bool(config.live_mode_requested and settings.ENABLE_LIVE_TRADING)
@@ -604,6 +630,7 @@ def process_config(config: TradingBotConfig) -> None:
                 f"Entry skipped: {config.symbol} already has an open Binance "
                 f"position ({existing_quantity}).",
             )
+            record_rejection(config, evaluation, GateCode.EXCHANGE_POSITION)
             return
         account_balance = live_service.client.account_balance()
     position_margin = (
@@ -618,6 +645,7 @@ def process_config(config: TradingBotConfig) -> None:
             f"Position margin {position_margin:.2f} USDT exceeds available balance "
             f"{account_balance:.2f} USDT.",
         )
+        record_rejection(config, evaluation, GateCode.MARGIN_INSUFFICIENT)
         return
 
     try:
@@ -641,6 +669,7 @@ def process_config(config: TradingBotConfig) -> None:
         )
     except RiskLimitExceeded as exc:
         create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")
+        record_rejection(config, evaluation, GateCode.RISK_LIMIT)
         return
     replay_payload = {
         "entry_timeframe": config.timeframe_signal,
@@ -703,6 +732,7 @@ def process_config(config: TradingBotConfig) -> None:
             )
         except ExistingExchangePosition as exc:
             create_log(config, BotLog.Level.INFO, f"Entry skipped: {exc}")
+            record_rejection(config, evaluation, GateCode.EXISTING_POSITION)
             return
         executed_price = float(order.get("avgPrice") or price)
         executed_quantity = Decimal(str(order.get("executedQty") or initial_quantity))
@@ -749,6 +779,8 @@ def process_config(config: TradingBotConfig) -> None:
         replay_payload,
     )
 
+    record_taken(config, evaluation, trade, plan)
+
     sizing_message = (
         f"{position_margin:.2f} USDT margin "
         f"({plan.risk_amount:.2f} USDT at stop)"
@@ -775,6 +807,19 @@ def cleanup_old_snapshots() -> None:
     cutoff = timezone.now() - timedelta(days=retention_days)
     deleted, _ = MarketSnapshot.objects.filter(created_at__lt=cutoff).delete()
     logger.info("Deleted %d stale MarketSnapshot rows (older than %d days)", deleted, retention_days)
+
+
+@shared_task
+def resolve_decision_outcomes() -> None:
+    """Fill 1h/4h/24h forward outcomes for signal-ledger rows (diagnostics only)."""
+    counts = resolve_outcomes()
+    logger.info("Signal decision outcomes: %s", counts)
+
+
+@shared_task
+def prune_signal_decisions() -> None:
+    deleted = prune_old_decisions()
+    logger.info("Pruned %d signal decisions past retention", deleted)
 
 
 @shared_task

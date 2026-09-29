@@ -41,6 +41,7 @@ from .services.binance_service import BinanceService
 from .services.coin_mirror_service import mirror_admin_coins_to_regular_users
 from .services.credential_service import decrypt_secret, encrypt_secret
 from .services.discord_alert_service import send_discord_alert
+from .services.diagnostics_service import MODES, WINDOW_FIELDS, build_diagnostics
 from .services.discord_alert_service import send_trade_replay_export
 from .services.health_service import build_live_sync_health
 from .services.live_trading_service import ExistingExchangePosition, LiveTradingDisabled, LiveTradingService
@@ -1126,3 +1127,35 @@ class SystemStatusView(APIView):
                 "binance_testnet": settings.BINANCE_TESTNET,
             }
         )
+
+
+class DiagnosticsView(APIView):
+    """Read-only gate/calibration/expectancy/exit-quality diagnostics for the
+    requesting user (spec 004). Never accepts a user parameter."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.localdate()
+        try:
+            end = (
+                datetime.strptime(request.query_params["end"], "%Y-%m-%d").date()
+                if request.query_params.get("end")
+                else today
+            )
+            start = (
+                datetime.strptime(request.query_params["start"], "%Y-%m-%d").date()
+                if request.query_params.get("start")
+                else end - timedelta(days=30)
+            )
+        except ValueError:
+            return Response({"detail": "start/end must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        if start > end:
+            return Response({"detail": "start must not be after end."}, status=status.HTTP_400_BAD_REQUEST)
+        mode = request.query_params.get("mode", "all")
+        if mode not in MODES:
+            return Response({"detail": "mode must be paper, live or all."}, status=status.HTTP_400_BAD_REQUEST)
+        window = request.query_params.get("window", "4h")
+        if window not in WINDOW_FIELDS:
+            return Response({"detail": "window must be 1h, 4h or 24h."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(build_diagnostics(request.user, start, end, mode, window))

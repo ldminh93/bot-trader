@@ -25,6 +25,13 @@ class MarketEvaluation:
     signal: SignalResult
 
 
+def _flag(reasons: list[str], gates: list[str], gate: str, reason: str) -> None:
+    """Record a confirmation-filter rejection reason together with its stable
+    gate code (diagnostics ledger); reasons keep their existing text."""
+    reasons.append(reason)
+    gates.append(gate)
+
+
 def _ma_slope_pct(candles: list, field: str, periods: int = 5) -> float:
     """Percent change of MA per candle over the last N periods (positive = rising)."""
     vals = [c[field] for c in candles[-periods:] if c.get(field) is not None]
@@ -168,12 +175,13 @@ def evaluate_market_conditions(
         # confirmation.
         is_ma_stack_reversal = signal.forced_stop_loss_percent is not None
         extra_reasons: list[str] = []
+        extra_gates: list[str] = []
         if (
             config.block_sideway_entries
             and not is_ma_stack_reversal
             and trend_state == TrendState.SIDEWAY
         ):
-            extra_reasons.append(
+            _flag(extra_reasons, extra_gates, "sideway_block",
                 f"{signal.signal} entry blocked: signal timeframe trend state is SIDEWAY"
             )
         if (
@@ -181,17 +189,17 @@ def evaluate_market_conditions(
             and not is_ma_stack_reversal
             and not _alignment_matches(signal.signal, higher_trend_state)
         ):
-            extra_reasons.append(
+            _flag(extra_reasons, extra_gates, "trend_alignment",
                 f"{signal.signal} requires {config.timeframe_trend} trend alignment"
             )
         if getattr(config, "require_confirmed_higher_tf", False) and not is_ma_stack_reversal:
             htf_val = higher_trend_state.value
             if signal.signal == "LONG" and htf_val != "CONFIRMED_UPTREND":
-                extra_reasons.append(
+                _flag(extra_reasons, extra_gates, "htf_confirm",
                     f"LONG requires confirmed {config.timeframe_trend} uptrend (current: {htf_val.replace('_', ' ').lower()})"
                 )
             elif signal.signal == "SHORT" and htf_val != "CONFIRMED_DOWNTREND":
-                extra_reasons.append(
+                _flag(extra_reasons, extra_gates, "htf_confirm",
                     f"SHORT requires confirmed {config.timeframe_trend} downtrend (current: {htf_val.replace('_', ' ').lower()})"
                 )
         if (
@@ -199,40 +207,41 @@ def evaluate_market_conditions(
             and not is_ma_stack_reversal
             and not _alignment_matches(signal.signal, bias_4h_state)
         ):
-            extra_reasons.append(
+            _flag(extra_reasons, extra_gates, "bias_4h",
                 f"{signal.signal} requires 4H trend alignment (4H state: {bias_4h_state.value})"
             )
         if config.require_open_interest_confirmation:
             if not metrics["open_interest_change_available"]:
-                extra_reasons.append("open interest confirmation is unavailable")
+                _flag(extra_reasons, extra_gates, "oi_confirm", "open interest confirmation is unavailable")
             elif metrics["open_interest_change_percent"] <= 0:
-                extra_reasons.append("open interest is not increasing")
+                _flag(extra_reasons, extra_gates, "oi_confirm", "open interest is not increasing")
         if config.require_volume_confirmation and signal_indicators.volume <= signal_indicators.volume_ma20:
-            extra_reasons.append("volume is not above volume MA20")
+            _flag(extra_reasons, extra_gates, "volume_confirm", "volume is not above volume MA20")
         if getattr(config, "require_ma7_slope_confirmation", False) and not is_ma_stack_reversal:
             ma7_series = [
                 row["ma7"] for row in signal_indicators.candles if row.get("ma7") is not None
             ]
             ma7_slope = calculate_slope(ma7_series)
             if signal.signal == "LONG" and ma7_slope <= 0:
-                extra_reasons.append("LONG requires MA7 slope to be positive")
+                _flag(extra_reasons, extra_gates, "ma7_slope_confirm", "LONG requires MA7 slope to be positive")
             elif signal.signal == "SHORT" and ma7_slope >= 0:
-                extra_reasons.append("SHORT requires MA7 slope to be negative")
+                _flag(extra_reasons, extra_gates, "ma7_slope_confirm", "SHORT requires MA7 slope to be negative")
         if getattr(config, "require_funding_confirmation", False):
             funding_rate = metrics["funding_rate"]
             if signal.signal == "LONG" and not (
                 LONG_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= LONG_FUNDING_ACCEPTABLE_RANGE[1]
             ):
-                extra_reasons.append("LONG requires funding to be within the acceptable band")
+                _flag(extra_reasons, extra_gates, "funding_confirm", "LONG requires funding to be within the acceptable band")
             elif signal.signal == "SHORT" and not (
                 SHORT_FUNDING_ACCEPTABLE_RANGE[0] <= funding_rate <= SHORT_FUNDING_ACCEPTABLE_RANGE[1]
             ):
-                extra_reasons.append("SHORT requires funding to be within the acceptable band")
+                _flag(extra_reasons, extra_gates, "funding_confirm", "SHORT requires funding to be within the acceptable band")
         if extra_reasons:
             signal = replace(
                 signal,
                 signal="NO_TRADE",
                 reasons=extra_reasons,
+                blocked_gate=extra_gates[0],
             )
 
     decision_reasons = signal.reasons

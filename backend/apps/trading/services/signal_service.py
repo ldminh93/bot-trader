@@ -123,6 +123,9 @@ class SignalResult:
     forced_stop_loss_percent: float | None = None
     forced_take_profit_1: float | None = None
     forced_take_profit_2: float | None = None
+    # Set on NO_TRADE results produced by a named hard gate; used only by the
+    # decision ledger (diagnostics) and never read by trading logic.
+    blocked_gate: str | None = None
 
 
 def entry_location_block_reason(
@@ -455,7 +458,7 @@ def score_signal(
                 else None
             )
             if location_reason:
-                return SignalResult("NO_TRADE", 0, 0, [location_reason], state.value, 0.0)
+                return SignalResult("NO_TRADE", 0, 0, [location_reason], state.value, 0.0, blocked_gate="entry_location")
             return SignalResult(
                 "LONG", 0, 0,
                 ["bullish reversal: 3 red candles then 2 green candles "
@@ -578,7 +581,7 @@ def score_signal(
                 "NO_TRADE", 0, short_score,
                 ["SHORT requires MA7 < MA25"],
                 state.value, multiplier,
-            )
+                blocked_gate="ma_alignment")
 
         # ── Hard Gate G3: macro direction ─────────────────────────────────────
         if signal_data.price >= signal_data.ma99:
@@ -586,7 +589,7 @@ def score_signal(
                 "NO_TRADE", 0, short_score,
                 ["SHORT requires price below MA99"],
                 state.value, multiplier,
-            )
+                blocked_gate="macro_direction")
 
         # ── Hard Gate G3.5: extended-move gate ────────────────────────────────
         # short_extended_move_lookback_candles (0 = no override) lets the
@@ -602,7 +605,7 @@ def score_signal(
         if extended_reason:
             return SignalResult(
                 "NO_TRADE", 0, short_score, [extended_reason], state.value, multiplier
-            )
+            , blocked_gate="extended_move")
 
         # ── Hard Gate G3.6: SHORT-only oversold-exhaustion gate ───────────────
         # short_rsi_oversold_max defaults to 0.0 (disabled). When the config
@@ -618,7 +621,7 @@ def score_signal(
                     f"(<= {short_rsi_oversold_max:.0f}); bounce risk is high"
                 ],
                 state.value, multiplier,
-            )
+                blocked_gate="rsi_oversold")
 
         if pullback_entry_enabled:
             eq = short_eq
@@ -632,7 +635,7 @@ def score_signal(
                         f"(price {signal_data.price:.4f}, MA25 {signal_data.ma25:.4f})"
                     ],
                     state.value, multiplier,
-                )
+                    blocked_gate="pullback_zone")
 
             # Hard Gate G7: rejection candle
             if not eq.has_rejection_candle:
@@ -643,7 +646,7 @@ def score_signal(
                         f"(upper wick ratio {eq.rejection_wick_ratio:.2f})"
                     ],
                     state.value, multiplier,
-                )
+                    blocked_gate="rejection_candle")
 
             # Score: volume pattern (only meaningful after pullback confirmed)
             if eq.vol_pullback_ratio < 0.85:
@@ -667,7 +670,7 @@ def score_signal(
                 max_entry_distance_atr,
             )
             if location_reason:
-                return SignalResult("NO_TRADE", 0, short_score, [location_reason], state.value, multiplier)
+                return SignalResult("NO_TRADE", 0, short_score, [location_reason], state.value, multiplier, blocked_gate="entry_location")
 
         # short_entry_score_threshold (0 = no override) lets SHORT require a
         # higher bar than LONG's entry_score_threshold to compensate for its
@@ -683,7 +686,7 @@ def score_signal(
             "NO_TRADE", 0, short_score,
             [f"SHORT score {short_score} is below the {effective_short_threshold} entry threshold"],
             state.value, multiplier,
-        )
+            blocked_gate="below_score_threshold")
 
     # ─────────────────────────────────────────────────────────────────────────
     # LONG path
@@ -750,7 +753,7 @@ def score_signal(
                 "NO_TRADE", long_score, 0,
                 ["LONG requires MA7 > MA25"],
                 state.value, multiplier,
-            )
+                blocked_gate="ma_alignment")
 
         # ── Hard Gate G3: macro direction ─────────────────────────────────────
         if signal_data.price <= signal_data.ma99:
@@ -758,7 +761,7 @@ def score_signal(
                 "NO_TRADE", long_score, 0,
                 ["LONG requires price above MA99"],
                 state.value, multiplier,
-            )
+                blocked_gate="macro_direction")
 
         # ── Hard Gate G3.5: extended-move gate ────────────────────────────────
         extended_reason = extended_move_block_reason(
@@ -767,7 +770,7 @@ def score_signal(
         if extended_reason:
             return SignalResult(
                 "NO_TRADE", long_score, 0, [extended_reason], state.value, multiplier
-            )
+            , blocked_gate="extended_move")
 
         if pullback_entry_enabled:
             eq = long_eq
@@ -780,7 +783,7 @@ def score_signal(
                         f"(price {signal_data.price:.4f}, MA25 {signal_data.ma25:.4f})"
                     ],
                     state.value, multiplier,
-                )
+                    blocked_gate="pullback_zone")
 
             if not eq.has_rejection_candle:
                 return SignalResult(
@@ -790,7 +793,7 @@ def score_signal(
                         f"(lower wick ratio {eq.rejection_wick_ratio:.2f})"
                     ],
                     state.value, multiplier,
-                )
+                    blocked_gate="rejection_candle")
 
             # Score: volume pattern (only meaningful after pullback confirmed)
             if eq.vol_pullback_ratio < 0.85:
@@ -813,7 +816,7 @@ def score_signal(
                 max_entry_distance_atr,
             )
             if location_reason:
-                return SignalResult("NO_TRADE", long_score, 0, [location_reason], state.value, multiplier)
+                return SignalResult("NO_TRADE", long_score, 0, [location_reason], state.value, multiplier, blocked_gate="entry_location")
 
         if long_score >= entry_score_threshold:
             return SignalResult(
@@ -823,7 +826,7 @@ def score_signal(
             "NO_TRADE", long_score, 0,
             [f"LONG score {long_score} is below the {entry_score_threshold} entry threshold"],
             state.value, multiplier,
-        )
+            blocked_gate="below_score_threshold")
 
     return SignalResult(
         "NO_TRADE", 0, 0,

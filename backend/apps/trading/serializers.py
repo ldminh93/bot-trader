@@ -198,7 +198,7 @@ class TradeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Trade
         fields = "__all__"
-        read_only_fields = ("user",)
+        read_only_fields = ("user", "r_multiple", "mfe_pct", "mae_pct", "mfe_r", "mae_r")
 
 
 class TradeSnapshotSerializer(serializers.ModelSerializer):

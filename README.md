@@ -124,11 +124,16 @@ Frontend:
 - `GET /api/market/snapshot?symbol=BTCUSDT`
 - `GET /api/trades`
 - `GET /api/trades/stats`
+- `GET /api/diagnostics?start=YYYY-MM-DD&end=YYYY-MM-DD&mode=all|paper|live&window=1h|4h|24h`
 - `GET /api/logs`
 - `POST /api/binance/credentials`
 - `GET /api/binance/connection-test`
 
 WebSocket updates are available at `/ws/bot/?token=<access-token>`.
+
+### Diagnostics
+
+Every entry decision the master (admin) account's bot makes is recorded in the `SignalDecision` ledger, either `taken` or rejected by a named gate. Celery beat fills in what the market did 1h / 4h / 24h later (`resolve_decision_outcomes`, every 5 minutes, real exchange candles only; outcomes stay `pending` if Binance is unreachable) and prunes rows older than 90 days (`prune_signal_decisions`, daily). Closed trades also store `r_multiple` and MFE/MAE (`mfe_r`, `mae_r`, `mfe_pct`, `mae_pct`). The `/diagnostics` page shows gate value, score and grade calibration, expectancy by setup tag and regime × side, and exit quality. It is read-only and never changes entry or exit behavior.
 
 ## Strategy implementation
 

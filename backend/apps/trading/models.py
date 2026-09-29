@@ -467,6 +467,16 @@ class Trade(models.Model):
 
     closed_at = models.DateTimeField(null=True, blank=True)
 
+    # Diagnostics (spec 004). All nullable: legacy trades have no excursion
+    # data and must read as "unavailable", never as zero. MFE/MAE are both
+    # non-negative magnitudes (best / worst move against entry), in percent of
+    # entry price and in multiples of the initial risk per unit.
+    r_multiple = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    mfe_pct = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    mae_pct = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True)
+    mfe_r = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    mae_r = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+
     class Meta:
         ordering = ["-opened_at"]
         indexes = [
@@ -534,3 +544,51 @@ class BotLog(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class SignalDecision(models.Model):
+    """One entry decision for a symbol/side candidate in a bot cycle — either
+    TAKEN or rejected by a named gate (see decision_ledger_service.GateCode).
+    Forward outcomes (1h/4h/24h) are filled in later by outcome_service so a
+    gate's value (would the blocked entry have won?) can be measured."""
+
+    TAKEN = "taken"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="signal_decisions")
+    config = models.ForeignKey(
+        TradingBotConfig, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    symbol = models.CharField(max_length=24)
+    side = models.CharField(max_length=8)
+    result = models.CharField(max_length=40)
+    is_paper = models.BooleanField(default=True)
+    score = models.SmallIntegerField(default=0)
+    confidence = models.SmallIntegerField(default=0)
+    grade = models.CharField(max_length=2, blank=True, default="")
+    regime = models.CharField(max_length=24, blank=True, default="")
+    setup_tags = models.JSONField(default=list, blank=True)
+    price = models.DecimalField(max_digits=24, decimal_places=10)
+    ref_stop = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
+    ref_tp1 = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
+    levels_source = models.CharField(max_length=12, default="none")
+    signal_candle_ts = models.BigIntegerField(default=0)
+    trade = models.ForeignKey(
+        Trade, on_delete=models.SET_NULL, null=True, blank=True, related_name="decisions"
+    )
+    outcome_1h = models.JSONField(default=dict, blank=True)
+    outcome_4h = models.JSONField(default=dict, blank=True)
+    outcome_24h = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["config", "side", "result", "signal_candle_ts"],
+                name="signal_decision_dedupe_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="sigdec_user_created_idx"),
+            models.Index(fields=["user", "result", "-created_at"], name="sigdec_user_result_idx"),
+        ]

@@ -138,6 +138,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.trading.tasks.cleanup_old_snapshots",
         "schedule": 86400.0,  # once per day
     },
+    "resolve-decision-outcomes": {
+        "task": "apps.trading.tasks.resolve_decision_outcomes",
+        # Grouped per symbol/interval (few kline requests per run); a Binance
+        # ban just leaves outcomes pending until the next run.
+        "schedule": 300.0,
+    },
+    "prune-signal-decisions": {
+        "task": "apps.trading.tasks.prune_signal_decisions",
+        "schedule": 86400.0,
+    },
 }
 
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() == "true"

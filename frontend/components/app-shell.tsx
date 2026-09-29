@@ -9,6 +9,7 @@ import {
   Pulse,
   SignOut,
   SquaresFour,
+  Stethoscope,
   TrendUp,
   Users,
 } from "@phosphor-icons/react";
@@ -26,6 +27,7 @@ const navigation = [
   { href: "/trades", label: "Trades", icon: ChartLineUp },
   { href: "/calendar", label: "Calendar", icon: CalendarBlank },
   { href: "/analytics", label: "Analytics", icon: ChartBar },
+  { href: "/diagnostics", label: "Diagnostics", icon: Stethoscope },
   { href: "/logs", label: "Logs", icon: ListBullets },
   { href: "/settings", label: "Settings", icon: GearSix },
 ];

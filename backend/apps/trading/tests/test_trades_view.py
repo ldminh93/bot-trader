@@ -140,3 +140,16 @@ def test_trades_page_param_exceeds_the_legacy_200_cap():
     assert response.status_code == 200
     assert response.data["count"] == 205
     assert len(response.data["results"]) == 5
+
+
+@pytest.mark.django_db
+def test_trades_expose_read_only_r_and_excursion_fields_null_for_legacy():
+    user = get_user_model().objects.create_user("metrics@example.com", password="secure-pass")
+    _trade(user, status=Trade.Status.OPEN)   # no initial stop, no excursion data yet
+    client = APIClient()
+    client.force_authenticate(user)
+
+    row = client.get("/api/trades").json()[0]
+
+    for field in ("r_multiple", "mfe_pct", "mae_pct", "mfe_r", "mae_r"):
+        assert field in row and row[field] is None

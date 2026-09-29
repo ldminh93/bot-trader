@@ -420,3 +420,51 @@ export interface UserPerformanceEntry {
 export interface UserPerformanceResult {
   results: UserPerformanceEntry[];
 }
+
+export type DiagnosticsMode = "all" | "paper" | "live";
+export type DiagnosticsWindow = "1h" | "4h" | "24h";
+
+export interface DiagnosticsGateRow {
+  gate: string;
+  blocked: number;
+  resolved: number;
+  would_win_pct: number | null;
+  would_lose_pct: number | null;
+  undecided_pct: number | null;
+  net_r: number | null;
+  low_sample: boolean;
+}
+
+export interface DiagnosticsTradeRow {
+  label: string;
+  trades: number;
+  win_rate: number | null;
+  avg_r: number | null;
+  expectancy_r: number | null;
+  low_sample: boolean;
+}
+
+export interface Diagnostics {
+  range: { start: string; end: string };
+  mode: DiagnosticsMode;
+  window: DiagnosticsWindow;
+  min_sample: number;
+  gates: DiagnosticsGateRow[];
+  calibration: { by_score_bucket: DiagnosticsTradeRow[]; by_grade: DiagnosticsTradeRow[] };
+  expectancy: { by_tag: DiagnosticsTradeRow[]; by_regime_side: DiagnosticsTradeRow[] };
+  exit_quality: {
+    trades_with_excursion: number;
+    avg_giveback_r: number | null;
+    stopped_trades: number;
+    stopped_after_favorable_pct: number | null;
+    winners_avg_mae_r: number | null;
+    losers_avg_mfe_r: number | null;
+    low_sample: boolean;
+  };
+  data_notes: {
+    decisions_total: number;
+    trades_total: number;
+    excursion_granularity: string;
+    score_metric: string;
+  };
+}

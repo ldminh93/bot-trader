@@ -320,6 +320,7 @@ def test_no_pullback_blocks_short_entry():
     )
     assert signal.signal == "NO_TRADE"
     assert "pullback zone" in signal.reasons[0]
+    assert signal.blocked_gate == "pullback_zone"
 
 
 def test_no_rejection_candle_blocks_short_entry():
@@ -336,6 +337,7 @@ def test_no_rejection_candle_blocks_short_entry():
     )
     assert signal.signal == "NO_TRADE"
     assert "rejection candle" in signal.reasons[0]
+    assert signal.blocked_gate == "rejection_candle"
 
 
 def test_no_rejection_candle_blocks_long_entry():
@@ -351,6 +353,7 @@ def test_no_rejection_candle_blocks_long_entry():
     )
     assert signal.signal == "NO_TRADE"
     assert "rejection candle" in signal.reasons[0]
+    assert signal.blocked_gate == "rejection_candle"
 
 
 def test_pullback_gate_skipped_when_disabled():
@@ -962,3 +965,29 @@ def test_short_entry_score_threshold_override_raises_the_bar():
     assert raised.signal == "NO_TRADE"
     assert f"below the {raised_threshold} entry threshold" in raised.reasons[0]
 
+
+def test_blocked_gate_is_none_on_a_taken_signal():
+    signal = score_signal(
+        replace(_short_setup_indicators(), candles=short_pullback_candles()),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+    )
+    assert signal.signal == "SHORT"
+    assert signal.blocked_gate is None
+
+
+def test_below_threshold_result_carries_score_and_gate():
+    signal = score_signal(
+        replace(_short_setup_indicators(), candles=short_pullback_candles()),
+        trend_state=TrendState.CONFIRMED_DOWNTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=0.0002,
+        top_ratio_direction=-0.04,
+        entry_score_threshold=100,
+        short_entry_score_threshold=100,
+    )
+    assert signal.signal == "NO_TRADE"
+    assert signal.blocked_gate == "below_score_threshold"
+    assert signal.short_score > 0

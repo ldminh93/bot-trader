@@ -5,6 +5,7 @@ from .models import (
     BotLog,
     CoinCatalog,
     MarketSnapshot,
+    SignalDecision,
     Trade,
     TradingBotConfig,
     UserBinanceCredential,
@@ -165,3 +166,16 @@ class BotLogAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at",)
     date_hierarchy = "created_at"
 
+
+@admin.register(SignalDecision)
+class SignalDecisionAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "user", "symbol", "side", "result", "score", "grade", "regime", "is_paper")
+    list_filter = ("result", "side", "is_paper", "symbol")
+    search_fields = ("user__username", "symbol")
+    date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

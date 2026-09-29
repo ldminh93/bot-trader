@@ -6,6 +6,9 @@ import type {
   BotLog,
   CoinCatalogEntry,
   CurrentUser,
+  Diagnostics,
+  DiagnosticsMode,
+  DiagnosticsWindow,
   DiscordAlertConfig,
   KillSwitchResult,
   LiveSyncHealth,
@@ -220,6 +223,8 @@ export const api = {
     request<TradeSnapshot[]>(`/trades/snapshots?trade_id=${tradeId}`),
   stats: (userId?: number) =>
     request<TradeStats>(`/trades/stats${userId ? `?user_id=${userId}` : ""}`),
+  diagnostics: (start: string, end: string, mode: DiagnosticsMode, window: DiagnosticsWindow) =>
+    request<Diagnostics>(`/diagnostics?${new URLSearchParams({ start, end, mode, window }).toString()}`),
   logs: () => request<BotLog[]>("/logs"),
   saveCredential: (apiKey: string, apiSecret: string) =>
     request("/binance/credentials", {

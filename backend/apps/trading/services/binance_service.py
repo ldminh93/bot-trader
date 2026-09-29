@@ -282,6 +282,50 @@ class BinanceService:
         candles = _with_singleflight_cache(cache_key, _KLINES_CACHE_TTL_SECONDS, fetch)
         return candles if candles is not None else self._mock_klines(symbol, interval, limit)
 
+    def fetch_klines_range(
+        self, symbol: str, interval: str, start_ms: int, end_ms: int
+    ) -> list[dict] | None:
+        """Real exchange candles for [start_ms, end_ms], oldest first.
+
+        Unlike fetch_klines this never falls back to mock data and bypasses
+        the shared cache: it feeds diagnostics, where fabricated candles would
+        silently corrupt results. Returns None on any failure (ban, HTTP or
+        parse error) so callers can leave the work pending and retry.
+        """
+        candles: list[dict] = []
+        cursor = int(start_ms)
+        try:
+            for _ in range(10):  # 10 x 1500 candles is far beyond any window we request
+                rows = self._get(
+                    "/fapi/v1/klines",
+                    {
+                        "symbol": symbol.upper(),
+                        "interval": interval,
+                        "startTime": cursor,
+                        "endTime": int(end_ms),
+                        "limit": 1500,
+                    },
+                )
+                if not rows:
+                    break
+                candles.extend(
+                    {
+                        "timestamp": row[0],
+                        "close_timestamp": row[6],
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                    }
+                    for row in rows
+                )
+                if len(rows) < 1500:
+                    break
+                cursor = int(rows[-1][6]) + 1
+        except Exception:
+            return None
+        return candles
+
     def market_metrics(self, symbol: str, period: str = "15m") -> dict:
         cache_key = f"binance:metrics:{symbol}:{period}"
         statistics_period = {

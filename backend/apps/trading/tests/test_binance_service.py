@@ -303,3 +303,37 @@ def test_fetch_klines_dedupes_concurrent_requests_for_same_symbol(get, fake_redi
     assert len(results) == 8
     assert all(r == results[0] for r in results)
 
+
+
+def _kline_row(open_time):
+    return [open_time, "1", "2", "0.5", "1.5", "10", open_time + 59999, "0", "0", "5", "0", "0"]
+
+
+@patch("apps.trading.services.binance_service.httpx.get")
+def test_fetch_klines_range_returns_real_candles(get, fake_redis):
+    get.return_value = response(200, [_kline_row(1000), _kline_row(61000)])
+
+    candles = BinanceService().fetch_klines_range("BTCUSDT", "1m", 0, 200000)
+
+    assert [c["timestamp"] for c in candles] == [1000, 61000]
+    assert candles[0]["high"] == 2.0 and candles[0]["low"] == 0.5
+    params = get.call_args.kwargs["params"]
+    assert params["startTime"] == 0 and params["endTime"] == 200000
+
+
+@patch("apps.trading.services.binance_service.httpx.get")
+def test_fetch_klines_range_returns_none_instead_of_mock_on_failure(get, fake_redis):
+    get.side_effect = binance_service_module.httpx.ConnectError("down")
+
+    assert BinanceService().fetch_klines_range("BTCUSDT", "1m", 0, 200000) is None
+
+
+@patch("apps.trading.services.binance_service.httpx.get")
+def test_fetch_klines_range_paginates_full_pages(get, fake_redis):
+    full = [_kline_row(i * 60000) for i in range(1500)]
+    get.side_effect = [response(200, full), response(200, [_kline_row(1500 * 60000)])]
+
+    candles = BinanceService().fetch_klines_range("BTCUSDT", "1m", 0, 10**9)
+
+    assert len(candles) == 1501
+    assert get.call_args_list[1].kwargs["params"]["startTime"] == full[-1][6] + 1
