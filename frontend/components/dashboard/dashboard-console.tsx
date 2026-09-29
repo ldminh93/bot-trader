@@ -641,6 +641,9 @@ export function DashboardConsole() {
                         {item.signal.replaceAll("_", " ")}
                       </span>
                       <span className="font-mono text-[var(--muted)]">{item.score}</span>
+                      <span className={`font-bold ${item.trend.includes("UPTREND") ? "text-[var(--positive)]" : item.trend.includes("DOWNTREND") ? "text-[var(--negative)]" : "text-[var(--muted)]"}`}>
+                        {item.trend.includes("UPTREND") ? "▲" : item.trend.includes("DOWNTREND") ? "▼" : "▬"} {item.trend.replaceAll("_", " ").toLowerCase()}
+                      </span>
                       <span className="truncate text-[var(--muted)]">
                         {item.regime_label} / {item.alignment}{item.is_stale ? " · stale" : ""}
                       </span>

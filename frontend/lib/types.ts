@@ -286,6 +286,8 @@ export interface OpportunityItem {
   confidence_score: number;
   regime: string;
   regime_label: string;
+  trend: string;
+  higher_trend: string;
   alignment: "aligned" | "counter" | "unknown";
   long_score: number;
   short_score: number;
