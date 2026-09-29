@@ -21,10 +21,12 @@ import { Panel, PanelHeader } from "@/components/ui/panel";
 import { useDashboard } from "@/hooks/use-dashboard";
 import { useLiveKlines } from "@/hooks/use-live-klines";
 import { api } from "@/lib/api";
-import type { BacktestResult, BotConfig, LiveSyncHealth, OpportunityItem, TrendState } from "@/lib/types";
+import type { BacktestResult, BotConfig, Candle, LiveSyncHealth, OpportunityItem, TrendState } from "@/lib/types";
 import { formatCompact, formatNumber, formatPrice, pnlColor } from "@/lib/utils";
 
-const SIGNAL_TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
+// Stable reference: a fresh `[]` each render would re-trigger useLiveKlines' seed effect.
+const EMPTY_CANDLES: Candle[] = [];
+const SIGNAL_TIMEFRAMES =["1m", "3m", "5m", "15m", "30m", "1h", "4h"];
 const LEVERAGE_OPTIONS = [1, 3, 5, 10, 20];
 // Mirrors the backend's run-active-bots Celery Beat interval
 // (backend/config/settings.py CELERY_BEAT_SCHEDULE) — purely cosmetic.
@@ -73,7 +75,7 @@ export function DashboardConsole() {
   const [opportunities, setOpportunities] = useState<OpportunityItem[]>([]);
   const [binanceBalance, setBinanceBalance] = useState<number | null>(null);
   const { config, setConfig, setSnapshot, snapshot, trades, stats, logs, loading, error, refresh } = useDashboard(symbol);
-  const liveCandles = useLiveKlines(symbol, config?.timeframe_signal ?? null, snapshot?.payload.candles ?? []);
+  const liveCandles = useLiveKlines(symbol, config?.timeframe_signal ?? null, snapshot?.payload.candles ?? EMPTY_CANDLES);
   const [nextCycle, setNextCycle] = useState(BOT_CYCLE_SECONDS);
   const cycleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -642,6 +644,11 @@ export function DashboardConsole() {
                       <span className="truncate text-[var(--muted)]">
                         {item.regime_label} / {item.alignment}{item.is_stale ? " · stale" : ""}
                       </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-mono">
+                      <span className="text-[var(--muted)]">Delta <span className={`font-bold ${pnlColor(item.delta)}`}>{formatCompact(item.delta)}</span></span>
+                      <span className="text-[var(--muted)]">CVD <span className={`font-bold ${pnlColor(item.cvd)}`}>{formatCompact(item.cvd)}</span></span>
+                      <span className="text-[var(--muted)]">OI <span className={`font-bold ${pnlColor(item.open_interest_change_percent)}`}>{formatCompact(item.open_interest)} ({formatNumber(item.open_interest_change_percent)}%)</span></span>
                     </div>
                   </button>
                 ))}

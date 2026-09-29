@@ -289,6 +289,10 @@ export interface OpportunityItem {
   alignment: "aligned" | "counter" | "unknown";
   long_score: number;
   short_score: number;
+  delta: number;
+  cvd: number;
+  open_interest: number;
+  open_interest_change_percent: number;
   is_running: boolean;
   is_stale: boolean;
   age_seconds: number | null;

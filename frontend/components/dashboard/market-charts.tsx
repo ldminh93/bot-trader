@@ -327,11 +327,11 @@ export function PriceChart({
               }}
             />
             <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
-            <Bar dataKey="range" name="Candle" fill="#69727d" shape={<Candlestick />} isAnimationActive={false} />
-            <Line type="monotone" dataKey="close" name="Close" stroke="#f2f3ee" strokeOpacity={0.35} strokeWidth={1} dot={false} />
-            <Line type="monotone" dataKey="ma7" name="MA7" stroke="#f0b90b" strokeWidth={1.2} dot={false} />
-            <Line type="monotone" dataKey="ma25" name="MA25" stroke="#55a3e8" strokeWidth={1.2} dot={false} />
-            <Line type="monotone" dataKey="ma99" name="MA99" stroke="#d175d8" strokeWidth={1.2} dot={false} />
+            <Bar isAnimationActive={false} dataKey="range" name="Candle" fill="#69727d" shape={<Candlestick />} isAnimationActive={false} />
+            <Line isAnimationActive={false} type="monotone" dataKey="close" name="Close" stroke="#f2f3ee" strokeOpacity={0.35} strokeWidth={1} dot={false} />
+            <Line isAnimationActive={false} type="monotone" dataKey="ma7" name="MA7" stroke="#f0b90b" strokeWidth={1.2} dot={false} />
+            <Line isAnimationActive={false} type="monotone" dataKey="ma25" name="MA25" stroke="#55a3e8" strokeWidth={1.2} dot={false} />
+            <Line isAnimationActive={false} type="monotone" dataKey="ma99" name="MA99" stroke="#d175d8" strokeWidth={1.2} dot={false} />
             {position && positionCandle && (
               <ReferenceDot
                 x={positionCandle.timestamp}
@@ -367,8 +367,8 @@ export function FlowChart({ candles }: { candles: Candle[] }) {
         <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={38} fontSize={10} />
         <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} tickFormatter={(value) => formatNumber(value, 0)} />
         <Tooltip contentStyle={tooltipStyle} />
-        <Bar dataKey="delta" name="Delta" fill="#f0b90b" opacity={0.65} />
-        <Line type="monotone" dataKey="cvd" name="CVD" stroke="#43c987" dot={false} strokeWidth={1.4} />
+        <Bar isAnimationActive={false} dataKey="delta" name="Delta" fill="#f0b90b" opacity={0.65} />
+        <Line isAnimationActive={false} type="monotone" dataKey="cvd" name="CVD" stroke="#43c987" dot={false} strokeWidth={1.4} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -390,8 +390,8 @@ export function TradeFlowChart({
         <XAxis dataKey="time" stroke="#69727d" tickLine={false} axisLine={false} minTickGap={38} fontSize={10} />
         <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} tickFormatter={(value) => formatNumber(value, 0)} />
         <Tooltip contentStyle={tooltipStyle} />
-        <Bar dataKey="delta" name="Delta" fill="#f0b90b" opacity={0.65} />
-        <Line type="monotone" dataKey="cvd" name="CVD" stroke="#43c987" dot={false} strokeWidth={1.4} />
+        <Bar isAnimationActive={false} dataKey="delta" name="Delta" fill="#f0b90b" opacity={0.65} />
+        <Line isAnimationActive={false} type="monotone" dataKey="cvd" name="CVD" stroke="#43c987" dot={false} strokeWidth={1.4} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -416,7 +416,7 @@ export function ProfitChart({ stats }: { stats: TradeStats }) {
         <XAxis dataKey="day" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
         <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
         <Tooltip contentStyle={tooltipStyle} />
-        <Area type="monotone" dataKey="cumulative" name="Cumulative PnL" stroke="#43c987" fill="url(#profitFill)" strokeWidth={1.5} />
+        <Area isAnimationActive={false} type="monotone" dataKey="cumulative" name="Cumulative PnL" stroke="#43c987" fill="url(#profitFill)" strokeWidth={1.5} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -430,7 +430,7 @@ export function DailyPnlChart({ stats }: { stats: TradeStats }) {
         <XAxis dataKey="day" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
         <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
         <Tooltip contentStyle={tooltipStyle} />
-        <Bar dataKey="pnl" name="Daily PnL" fill="#f0b90b" />
+        <Bar isAnimationActive={false} dataKey="pnl" name="Daily PnL" fill="#f0b90b" />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -469,7 +469,7 @@ export function WinRateSparkline({ trades }: { trades: Trade[] }) {
         <XAxis dataKey="trade" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} label={{ value: "trade #", position: "insideBottomRight", offset: -4, fontSize: 9, fill: "#69727d" }} />
         <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
         <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, `Rolling ${WINDOW}-trade win rate`]} />
-        <Area type="monotone" dataKey="winRate" name={`Rolling ${WINDOW}-trade win rate`} stroke="#55a3e8" fill="url(#wrFill)" strokeWidth={1.5} dot={false} />
+        <Area isAnimationActive={false} type="monotone" dataKey="winRate" name={`Rolling ${WINDOW}-trade win rate`} stroke="#55a3e8" fill="url(#wrFill)" strokeWidth={1.5} dot={false} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -518,10 +518,10 @@ export function PnlAttributionChart({ trades }: { trades: Trade[] }) {
         <YAxis stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} />
         <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [formatNumber(Number(v)), name]} />
         <Legend wrapperStyle={{ fontSize: 10, color: "#929aa4" }} />
-        <Bar dataKey="tp" name="Take profit" stackId="pnl" fill="#43c987" />
-        <Bar dataKey="early" name="Early exit" stackId="pnl" fill="#f0b90b" />
-        <Bar dataKey="manual" name="Manual" stackId="pnl" fill="#55a3e8" />
-        <Bar dataKey="sl" name="Stop loss" stackId="pnl" fill="#f06464" radius={[0, 0, 2, 2]} />
+        <Bar isAnimationActive={false} dataKey="tp" name="Take profit" stackId="pnl" fill="#43c987" />
+        <Bar isAnimationActive={false} dataKey="early" name="Early exit" stackId="pnl" fill="#f0b90b" />
+        <Bar isAnimationActive={false} dataKey="manual" name="Manual" stackId="pnl" fill="#55a3e8" />
+        <Bar isAnimationActive={false} dataKey="sl" name="Stop loss" stackId="pnl" fill="#f06464" radius={[0, 0, 2, 2]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -545,8 +545,8 @@ export function PositioningChart({
         <YAxis yAxisId="oi" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} tickFormatter={(value) => formatNumber(value, 0)} />
         <YAxis yAxisId="funding" orientation="right" stroke="#69727d" tickLine={false} axisLine={false} fontSize={10} tickFormatter={(value) => `${formatNumber(value, 3)}%`} />
         <Tooltip contentStyle={tooltipStyle} />
-        <Line yAxisId="oi" type="monotone" dataKey="open_interest" name="Open interest" stroke="#55a3e8" dot={false} strokeWidth={1.4} />
-        <Bar yAxisId="funding" dataKey="funding_percent" name="Funding %" fill="#f0b90b" opacity={0.55} />
+        <Line isAnimationActive={false} yAxisId="oi" type="monotone" dataKey="open_interest" name="Open interest" stroke="#55a3e8" dot={false} strokeWidth={1.4} />
+        <Bar isAnimationActive={false} yAxisId="funding" dataKey="funding_percent" name="Funding %" fill="#f0b90b" opacity={0.55} />
       </ComposedChart>
     </ResponsiveContainer>
   );
