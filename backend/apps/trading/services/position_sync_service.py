@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import ROUND_UP, Decimal
 
 from django.conf import settings
 
@@ -296,6 +296,40 @@ def _open_follower_trade(
 
     if quantity <= 0:
         return
+
+    if live_service:
+        # A follower's own balance/margin can size the mirrored order under
+        # Binance's MIN_NOTIONAL (it is checked after rounding down to the lot
+        # step). Raise it to the smallest valid size when the account can
+        # afford that margin, otherwise skip with a clear reason instead of
+        # failing in place_entry.
+        rules = live_service.client.symbol_rules(follower_config.symbol)
+        entry_decimal = Decimal(str(entry_price))
+        _, normalized_quantity = live_service.client.normalize_order(
+            entry_decimal, quantity, rules, skip_min_notional=True
+        )
+        if normalized_quantity * entry_decimal < rules.min_notional:
+            min_quantity = (rules.min_notional / entry_decimal / rules.step_size).to_integral_value(
+                rounding=ROUND_UP
+            ) * rules.step_size
+            required_margin = float(min_quantity * entry_decimal) / effective_leverage
+            if required_margin > account_balance:
+                _log(
+                    follower_config,
+                    BotLog.Level.WARNING,
+                    f"Position sync skipped: {follower_config.symbol} minimum order "
+                    f"{float(rules.min_notional):.2f} USDT needs {required_margin:.2f} USDT "
+                    f"margin at x{effective_leverage}, above available balance "
+                    f"{account_balance:.2f} USDT.",
+                )
+                return
+            _log(
+                follower_config,
+                BotLog.Level.INFO,
+                f"Position sync: size raised to Binance minimum notional "
+                f"({float(rules.min_notional):.2f} USDT).",
+            )
+            quantity = min_quantity
 
     plan = _FollowerPlan(
         quantity=quantity,
