@@ -1,6 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
 from decimal import ROUND_UP, Decimal
 
 from django.conf import settings
+from django.db import connection
 
 from ..models import BotLog, Trade, TradingBotConfig
 from .discord_alert_service import send_discord_alert
@@ -24,6 +26,28 @@ def _log(
     send_discord_alert(config.user, config.symbol, level, message)
 
 
+def _run_parallel(jobs: list) -> None:
+    """Run one zero-argument callable per follower concurrently, so every
+    follower's Binance round trips overlap instead of queueing behind each
+    other (the Nth follower used to enter/exit N follower-durations late).
+    Each job handles its own exceptions.
+    """
+    if len(jobs) <= 1:
+        for job in jobs:
+            job()
+        return
+
+    def _run(job) -> None:
+        try:
+            job()
+        finally:
+            # Worker threads get their own DB connection; release it.
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        list(pool.map(_run, jobs))
+
+
 def sync_master_close_to_followers(master_config: TradingBotConfig, master_trade: Trade) -> None:
     """Mirror the admin's just-closed trade to every regular user's matching
     open trade on the same symbol, so followers close at exactly the same
@@ -36,12 +60,7 @@ def sync_master_close_to_followers(master_config: TradingBotConfig, master_trade
         status=Trade.Status.OPEN,
     ).select_related("user")
 
-    for follower_trade in follower_trades:
-        follower_config = TradingBotConfig.objects.filter(
-            user=follower_trade.user, symbol=follower_trade.symbol
-        ).first()
-        if not follower_config:
-            continue
+    def _close_one(follower_config, follower_trade):
         try:
             _close_follower_trade(follower_config, follower_trade, master_trade)
         except Exception as exc:
@@ -49,6 +68,16 @@ def sync_master_close_to_followers(master_config: TradingBotConfig, master_trade
                 follower_config, BotLog.Level.ERROR, f"Position close sync from admin failed: {exc}",
                 category=BotLog.Category.TRADE,
             )
+
+    jobs = []
+    for follower_trade in follower_trades:
+        follower_config = TradingBotConfig.objects.filter(
+            user=follower_trade.user, symbol=follower_trade.symbol
+        ).first()
+        if not follower_config:
+            continue
+        jobs.append(lambda c=follower_config, t=follower_trade: _close_one(c, t))
+    _run_parallel(jobs)
 
 
 def _close_follower_trade(
@@ -100,12 +129,7 @@ def sync_master_sl_update_to_followers(master_config: TradingBotConfig, master_t
         status=Trade.Status.OPEN,
     ).select_related("user")
 
-    for follower_trade in follower_trades:
-        follower_config = TradingBotConfig.objects.filter(
-            user=follower_trade.user, symbol=follower_trade.symbol
-        ).first()
-        if not follower_config:
-            continue
+    def _sync_one(follower_config, follower_trade):
         try:
             _sync_follower_sl(follower_config, follower_trade, master_trade)
         except Exception as exc:
@@ -113,6 +137,16 @@ def sync_master_sl_update_to_followers(master_config: TradingBotConfig, master_t
                 follower_config, BotLog.Level.ERROR, f"Stop-loss sync from admin failed: {exc}",
                 category=BotLog.Category.TRADE,
             )
+
+    jobs = []
+    for follower_trade in follower_trades:
+        follower_config = TradingBotConfig.objects.filter(
+            user=follower_trade.user, symbol=follower_trade.symbol
+        ).first()
+        if not follower_config:
+            continue
+        jobs.append(lambda c=follower_config, t=follower_trade: _sync_one(c, t))
+    _run_parallel(jobs)
 
 
 def _sync_follower_sl(
@@ -198,6 +232,25 @@ def sync_master_trade_to_followers(
         is_running=True,
     ).select_related("user")
 
+    def _open_one(follower_config):
+        try:
+            _open_follower_trade(
+                follower_config,
+                side,
+                entry_price,
+                master_plan,
+                risk_per_unit,
+                open_reason,
+                setup_tags,
+                replay_payload,
+            )
+        except Exception as exc:
+            _log(
+                follower_config, BotLog.Level.ERROR, f"Position sync from admin failed: {exc}",
+                category=BotLog.Category.TRADE,
+            )
+
+    jobs = []
     for follower_config in followers:
         if Trade.objects.filter(
             user=follower_config.user,
@@ -225,22 +278,8 @@ def sync_master_trade_to_followers(
             )
             continue
 
-        try:
-            _open_follower_trade(
-                follower_config,
-                side,
-                entry_price,
-                master_plan,
-                risk_per_unit,
-                open_reason,
-                setup_tags,
-                replay_payload,
-            )
-        except Exception as exc:
-            _log(
-                follower_config, BotLog.Level.ERROR, f"Position sync from admin failed: {exc}",
-                category=BotLog.Category.TRADE,
-            )
+        jobs.append(lambda c=follower_config: _open_one(c))
+    _run_parallel(jobs)
 
 
 def _open_follower_trade(

@@ -118,6 +118,7 @@ class LiveTradingService:
         tick = tick_size or rules.tick_size
         step = step_size or rules.step_size
         mark_price = self.client.mark_price(self.config.symbol)
+
         normalized_stop = (
             Decimal(str(stop_loss)) / tick
         ).to_integral_value(rounding=ROUND_DOWN) * tick

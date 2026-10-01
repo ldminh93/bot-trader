@@ -338,6 +338,8 @@ class TradingBotConfig(models.Model):
         "min_effective_leverage",
         "auto_suppress_losing_tags",
         "auto_suppress_losing_symbols",
+        "enable_long",
+        "enable_short",
     )
 
     class Meta:
