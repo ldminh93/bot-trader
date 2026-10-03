@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -981,7 +982,32 @@ class BacktestView(APIView):
 class LogsView(APIView):
     def get(self, request):
         logs = BotLog.objects.filter(user=request.user)
-        return Response(BotLogSerializer(logs[:200], many=True).data)
+        params = request.query_params
+        # Filter in the DB so TRADE logs aren't pushed out of the newest-N
+        # window by high-volume SCANNER/SYSTEM rows.
+        category = params.get("category", "").upper()
+        if category in BotLog.Category.values:
+            logs = logs.filter(category=category)
+        level = params.get("level", "").upper()
+        if level in BotLog.Level.values:
+            logs = logs.filter(level=level)
+        if params.get("symbol"):
+            logs = logs.filter(symbol=params["symbol"].upper())
+        # ISO timestamps (the client sends its local day boundaries).
+        start = parse_datetime(params.get("from", ""))
+        if start:
+            logs = logs.filter(created_at__gte=start if timezone.is_aware(start) else timezone.make_aware(start))
+        end = parse_datetime(params.get("to", ""))
+        if end:
+            logs = logs.filter(created_at__lt=end if timezone.is_aware(end) else timezone.make_aware(end))
+        if params.get("before_id", "").isdigit():
+            logs = logs.filter(id__lt=int(params["before_id"]))
+        try:
+            limit = int(params.get("limit", 200))
+        except ValueError:
+            limit = 200
+        limit = max(1, min(limit, 1000))
+        return Response(BotLogSerializer(logs.order_by("-id")[:limit], many=True).data)
 
 
 def build_block_reason_stats(user) -> list[dict]:

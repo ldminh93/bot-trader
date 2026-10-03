@@ -225,7 +225,14 @@ export const api = {
     request<TradeStats>(`/trades/stats${userId ? `?user_id=${userId}` : ""}`),
   diagnostics: (start: string, end: string, mode: DiagnosticsMode, window: DiagnosticsWindow) =>
     request<Diagnostics>(`/diagnostics?${new URLSearchParams({ start, end, mode, window }).toString()}`),
-  logs: () => request<BotLog[]>("/logs"),
+  logs: (params?: { category?: string; level?: string; before_id?: number; limit?: number; from?: string; to?: string }) => {
+    const query = new URLSearchParams();
+    Object.entries(params ?? {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== "" && value !== "ALL") query.set(key, String(value));
+    });
+    const qs = query.toString();
+    return request<BotLog[]>(qs ? `/logs?${qs}` : "/logs");
+  },
   saveCredential: (apiKey: string, apiSecret: string) =>
     request("/binance/credentials", {
       method: "POST",
