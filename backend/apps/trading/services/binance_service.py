@@ -194,12 +194,16 @@ class SymbolRules:
 
 
 class BinanceAPIError(RuntimeError):
-    def __init__(self, status_code: int, code: int | None, message: str) -> None:
+    def __init__(
+        self, status_code: int, code: int | None, message: str, endpoint: str | None = None
+    ) -> None:
         self.status_code = status_code
         self.code = code
         self.message = message
+        self.endpoint = endpoint
         code_label = f" {code}" if code is not None else ""
-        super().__init__(f"Binance API error{code_label}: {message}")
+        endpoint_label = f" [{endpoint}]" if endpoint else ""
+        super().__init__(f"Binance API error{code_label}{endpoint_label}: {message}")
 
 
 class BinanceService:
@@ -251,6 +255,7 @@ class BinanceService:
                 response.status_code,
                 error.get("code"),
                 error.get("msg") or response.reason_phrase,
+                endpoint=f"{method} {path} {(params or {}).get('symbol', '')}".strip(),
             )
         return response.json()
 
