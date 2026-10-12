@@ -137,6 +137,21 @@ class TradingBotConfigSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Extended-move threshold must be between 0% and 50%")
         return value
 
+    def validate_macro_extension_max_pct(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("MA99 extension limit must be between 0% and 100%")
+        return value
+
+    def validate_long_window_move_lookback_candles(self, value: int) -> int:
+        if value < 0 or value > 200:
+            raise serializers.ValidationError("Long-window lookback must be between 0 and 200 candles")
+        return value
+
+    def validate_long_window_move_min_pct(self, value):
+        if value < 0 or value > 50:
+            raise serializers.ValidationError("Long-window threshold must be between 0% and 50%")
+        return value
+
     def validate_short_entry_score_threshold(self, value: int) -> int:
         if value != 0 and (value < 20 or value > 90):
             raise serializers.ValidationError(

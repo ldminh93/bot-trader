@@ -40,6 +40,22 @@ MAX_ENTRY_DISTANCE_ATR = 1.0
 EXTENDED_MOVE_LOOKBACK_CANDLES = 20
 EXTENDED_MOVE_MIN_PCT = 0.10
 
+# ── Late-entry gates ───────────────────────────────────────────────────────────
+# The 20-candle extended-move window above only sees a pump/dump that finished
+# within the last few hours. A move that completed 30+ candles ago has
+# scrolled out of it, leaving only the flat consolidation — so price chopping
+# near the top/bottom of a long run still passes as a "pullback to MA25".
+# Two extra gates close that hole; both default to 0 (= disabled) here so
+# direct score_signal callers are unaffected, real values come from the config.
+#
+# 1) Macro extension: price is already more than X% away from MA99 in the
+#    trade's direction — the trend is mature, the entry is late.
+# 2) Long-window move: the same fresh-extreme rule as extended_move_block_reason
+#    but over a much longer lookback (e.g. 72 candles) and a lower threshold.
+MACRO_EXTENSION_MAX_PCT = 0.0
+LONG_WINDOW_MOVE_LOOKBACK_CANDLES = 0
+LONG_WINDOW_MOVE_MIN_PCT = 0.0
+
 # ── SHORT-only tuning ───────────────────────────────────────────────────────
 # Crypto downtrends behave asymmetrically to uptrends: a dump is usually fast
 # and then mean-reverts hard (bounce buyers / short squeeze), whereas an
@@ -236,6 +252,38 @@ def extended_move_block_reason(
     return f"Unsupported entry side: {side}"
 
 
+def macro_extension_block_reason(
+    side: str,
+    price: float,
+    ma99: float,
+    max_extension_pct: float = MACRO_EXTENSION_MAX_PCT,
+) -> str | None:
+    """
+    Block entries when price is already stretched far from MA99 in the trade's
+    direction (LONG: far above, SHORT: far below) — a mature trend, so the
+    entry is chasing rather than catching a fresh move.
+    """
+    if max_extension_pct <= 0 or ma99 <= 0:
+        return None
+    if side == "LONG":
+        extension = (price - ma99) / ma99
+        if extension > max_extension_pct:
+            return (
+                f"LONG entry blocked: price is {extension:.1%} above MA99 "
+                f"(max {max_extension_pct:.1%}); trend already extended"
+            )
+        return None
+    if side == "SHORT":
+        extension = (ma99 - price) / ma99
+        if extension > max_extension_pct:
+            return (
+                f"SHORT entry blocked: price is {extension:.1%} below MA99 "
+                f"(max {max_extension_pct:.1%}); trend already extended"
+            )
+        return None
+    return f"Unsupported entry side: {side}"
+
+
 def _pre_pullback_series(series: list[float], pullback_candles: int) -> list[float]:
     """
     Slice a series to end right before the pullback bounce began.
@@ -363,6 +411,9 @@ def score_signal(
     oi_history: list[float] | None = None,
     extended_move_lookback_candles: int = EXTENDED_MOVE_LOOKBACK_CANDLES,
     extended_move_min_pct: float = EXTENDED_MOVE_MIN_PCT,
+    macro_extension_max_pct: float = MACRO_EXTENSION_MAX_PCT,
+    long_window_move_lookback_candles: int = LONG_WINDOW_MOVE_LOOKBACK_CANDLES,
+    long_window_move_min_pct: float = LONG_WINDOW_MOVE_MIN_PCT,
     # ── SHORT-only overrides (see "SHORT-only tuning" block above) ───────────
     # Every default below reproduces the pre-existing behaviour exactly (0 /
     # 0.0 = "no override"). Real, nonzero values are only ever supplied by
@@ -607,6 +658,23 @@ def score_signal(
                 "NO_TRADE", 0, short_score, [extended_reason], state.value, multiplier
             , blocked_gate="extended_move")
 
+        # ── Hard Gate G3.55: late-entry gates (macro extension, long window) ──
+        late_reason = macro_extension_block_reason(
+            "SHORT", signal_data.price, signal_data.ma99, macro_extension_max_pct
+        )
+        if late_reason:
+            return SignalResult(
+                "NO_TRADE", 0, short_score, [late_reason], state.value, multiplier,
+                blocked_gate="macro_extension")
+        late_reason = extended_move_block_reason(
+            "SHORT", candles, long_window_move_lookback_candles, long_window_move_min_pct,
+            fresh_extreme_buffer_pct=short_extended_move_fresh_extreme_buffer_pct,
+        )
+        if late_reason:
+            return SignalResult(
+                "NO_TRADE", 0, short_score, [late_reason], state.value, multiplier,
+                blocked_gate="long_window_move")
+
         # ── Hard Gate G3.6: SHORT-only oversold-exhaustion gate ───────────────
         # short_rsi_oversold_max defaults to 0.0 (disabled). When the config
         # layer enables it, a SHORT into an already-oversold RSI reading is
@@ -771,6 +839,22 @@ def score_signal(
             return SignalResult(
                 "NO_TRADE", long_score, 0, [extended_reason], state.value, multiplier
             , blocked_gate="extended_move")
+
+        # ── Hard Gate G3.55: late-entry gates (macro extension, long window) ──
+        late_reason = macro_extension_block_reason(
+            "LONG", signal_data.price, signal_data.ma99, macro_extension_max_pct
+        )
+        if late_reason:
+            return SignalResult(
+                "NO_TRADE", long_score, 0, [late_reason], state.value, multiplier,
+                blocked_gate="macro_extension")
+        late_reason = extended_move_block_reason(
+            "LONG", candles, long_window_move_lookback_candles, long_window_move_min_pct
+        )
+        if late_reason:
+            return SignalResult(
+                "NO_TRADE", long_score, 0, [late_reason], state.value, multiplier,
+                blocked_gate="long_window_move")
 
         if pullback_entry_enabled:
             eq = long_eq

@@ -11,6 +11,8 @@ class GateCode:
     MA_ALIGNMENT = "ma_alignment"
     MACRO_DIRECTION = "macro_direction"
     EXTENDED_MOVE = "extended_move"
+    MACRO_EXTENSION = "macro_extension"
+    LONG_WINDOW_MOVE = "long_window_move"
     RSI_OVERSOLD = "rsi_oversold"
     PULLBACK_ZONE = "pullback_zone"
     REJECTION_CANDLE = "rejection_candle"

@@ -843,6 +843,36 @@ export function SettingsConsole() {
                   0 = disabled.
                 </span>
               </Field>
+              <Field label="Max distance from MA99 (%)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={config.macro_extension_max_pct}
+                  onChange={(event) => setConfig({ ...config, macro_extension_max_pct: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Blocks LONG when price is this far above MA99 (SHORT: below). Stops late entries
+                  after the trend has already run. 0 = disabled.
+                </span>
+              </Field>
+              <Field label="Long-window move threshold (%)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="1"
+                  value={config.long_window_move_min_pct}
+                  onChange={(event) => setConfig({ ...config, long_window_move_min_pct: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  Same rule as above but over the last {config.long_window_move_lookback_candles}{" "}
+                  candles, catching pumps/dumps that finished hours ago. 0 = disabled.
+                </span>
+              </Field>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
                 <Toggle label="Allow long" checked={config.enable_long} onChange={(value) => setConfig({ ...config, enable_long: value })} />
                 <Toggle label="Allow short" checked={config.enable_short} onChange={(value) => setConfig({ ...config, enable_short: value })} />

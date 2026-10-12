@@ -33,6 +33,9 @@ export interface BotConfig {
   max_entry_distance_atr: string;
   extended_move_lookback_candles: number;
   extended_move_min_pct: string;
+  macro_extension_max_pct: string;
+  long_window_move_lookback_candles: number;
+  long_window_move_min_pct: string;
   is_running: boolean;
   auto_registered: boolean;
   top_mover_side: "gainer" | "loser" | null;

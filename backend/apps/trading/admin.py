@@ -99,6 +99,8 @@ class TradingBotConfigAdmin(admin.ModelAdmin):
                 "require_funding_confirmation",
                 "pullback_entry_enabled", "max_entry_distance_atr",
                 "extended_move_lookback_candles", "extended_move_min_pct",
+                "macro_extension_max_pct",
+                "long_window_move_lookback_candles", "long_window_move_min_pct",
                 "atr_min_percent", "atr_spike_max_ratio",
                 "volume_spike_multiplier", "ma_slope_min_pct",
                 "funding_rate_threshold", "sl_cooldown_candles",

@@ -151,6 +151,9 @@ def evaluate_market_conditions(
         oi_values,
         extended_move_lookback_candles=config.extended_move_lookback_candles,
         extended_move_min_pct=float(config.extended_move_min_pct) / 100,
+        macro_extension_max_pct=float(config.macro_extension_max_pct) / 100,
+        long_window_move_lookback_candles=config.long_window_move_lookback_candles,
+        long_window_move_min_pct=float(config.long_window_move_min_pct) / 100,
         short_extended_move_lookback_candles=config.short_extended_move_lookback_candles,
         short_extended_move_fresh_extreme_buffer_pct=(
             float(config.short_extended_move_fresh_extreme_buffer_pct) / 100

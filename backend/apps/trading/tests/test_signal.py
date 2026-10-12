@@ -5,6 +5,7 @@ from apps.trading.services.signal_service import (
     DEFAULT_ENTRY_SCORE_THRESHOLD,
     entry_location_block_reason,
     extended_move_block_reason,
+    macro_extension_block_reason,
     score_signal,
 )
 from apps.trading.services.trend_service import TrendState
@@ -991,3 +992,54 @@ def test_below_threshold_result_carries_score_and_gate():
     assert signal.signal == "NO_TRADE"
     assert signal.blocked_gate == "below_score_threshold"
     assert signal.short_score > 0
+
+
+# ── Late-entry gates: macro extension + long-window move ─────────────────────
+
+def test_macro_extension_blocks_long_far_above_ma99():
+    reason = macro_extension_block_reason("LONG", price=113.0, ma99=100.0, max_extension_pct=0.10)
+    assert reason is not None and "above MA99" in reason
+
+
+def test_macro_extension_allows_long_within_limit_and_when_disabled():
+    assert macro_extension_block_reason("LONG", 108.0, 100.0, 0.10) is None
+    assert macro_extension_block_reason("LONG", 150.0, 100.0, 0.0) is None
+
+
+def test_macro_extension_blocks_short_far_below_ma99():
+    reason = macro_extension_block_reason("SHORT", price=85.0, ma99=100.0, max_extension_pct=0.10)
+    assert reason is not None and "below MA99" in reason
+
+
+def test_score_signal_blocks_late_long_via_macro_extension():
+    indicators = replace(_long_setup_indicators(), ma99=90.0)  # price 100.8 is 12% above
+    kwargs = dict(
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+    )
+    assert score_signal(indicators, **kwargs).signal == "LONG"
+    blocked = score_signal(indicators, macro_extension_max_pct=0.10, **kwargs)
+    assert blocked.signal == "NO_TRADE"
+    assert blocked.blocked_gate == "macro_extension"
+
+
+def test_score_signal_blocks_late_long_via_long_window_move():
+    """A pump that finished beyond the short window is still caught by the long one."""
+    pump = [_candle(80 + i, 80 + i + 1.2, 80 + i - 0.3, 80 + i + 1.0, volume=1200) for i in range(15)]
+    candles = _with_cumulative_cvd(pump) + long_pullback_candles(ma25=100.0, atr=1.0)
+    indicators = replace(_long_setup_indicators(), candles=candles)
+    kwargs = dict(
+        trend_state=TrendState.CONFIRMED_UPTREND,
+        open_interest_change_percent=1.2,
+        funding_rate=-0.0001,
+        top_ratio_direction=0.04,
+        extended_move_lookback_candles=5,  # too short to see the pump
+    )
+    assert score_signal(indicators, **kwargs).signal == "LONG"
+    blocked = score_signal(
+        indicators, long_window_move_lookback_candles=20, long_window_move_min_pct=0.12, **kwargs
+    )
+    assert blocked.signal == "NO_TRADE"
+    assert blocked.blocked_gate == "long_window_move"

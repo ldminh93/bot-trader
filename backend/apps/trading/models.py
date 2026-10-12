@@ -117,6 +117,27 @@ class TradingBotConfig(models.Model):
         "(e.g. shorting a coin that already dumped and is now just chopping near the low). "
         "Applies to both LONG and SHORT. 0 = disabled.",
     )
+    macro_extension_max_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=10,
+        help_text="Block entries when price is already more than this %% away from MA99 in the "
+        "trade's direction (LONG: above, SHORT: below) — the trend is mature and the entry is "
+        "late, even if price is back at MA25 after consolidating. 0 = disabled.",
+    )
+    long_window_move_lookback_candles = models.PositiveSmallIntegerField(
+        default=72,
+        help_text="Second, longer lookback for the already-completed-move check (see "
+        "long_window_move_min_pct). Catches pumps/dumps that finished too long ago for "
+        "extended_move_lookback_candles to see. 0 = disabled.",
+    )
+    long_window_move_min_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=12,
+        help_text="Minimum price move %% over long_window_move_lookback_candles that counts as an "
+        "already-completed move; same fresh-extreme rule as extended_move_min_pct. 0 = disabled.",
+    )
     # ── SHORT-only tuning ────────────────────────────────────────────────────
     # Crypto downtrends behave asymmetrically to uptrends (fast dump, violent
     # mean-reversion bounce/short-squeeze) vs. an uptrend's longer grind, so

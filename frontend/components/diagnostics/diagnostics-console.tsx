@@ -17,6 +17,8 @@ const GATE_LABELS: Record<string, string> = {
   pullback_zone: "Not in MA25 pullback zone",
   rejection_candle: "No rejection candle",
   extended_move: "Extended move (chasing)",
+  macro_extension: "Too far from MA99 (late)",
+  long_window_move: "Long-window move (late)",
   rsi_oversold: "RSI oversold (SHORT)",
   ma_alignment: "MA alignment",
   macro_direction: "Macro direction (MA99)",
