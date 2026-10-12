@@ -456,6 +456,45 @@ export interface DiagnosticsTradeRow {
   low_sample: boolean;
 }
 
+export interface ExcursionPoint {
+  id: number;
+  symbol: string;
+  side: string;
+  mfe_r: number;
+  mae_r: number;
+  r: number | null;
+  outcome: "win" | "loss" | "flat";
+  close_reason: string;
+}
+
+export type LevelSweepPopulation = "all" | "taken";
+
+export interface LevelSweepCell {
+  stop_atr: number;
+  target_r: number;
+  samples: number;
+  decided: number;
+  win_rate: number | null;
+  ambiguous_pct: number | null;
+  open_pct: number | null;
+  expectancy_r: number | null;
+  worst_case_r: number | null;
+  low_sample: boolean;
+}
+
+export interface LevelSweep {
+  window: DiagnosticsWindow;
+  population: LevelSweepPopulation;
+  min_sample: number;
+  stops_atr: number[];
+  targets_r: number[];
+  fee_round_trip_pct: number;
+  samples: number;
+  skipped_no_atr: number;
+  cells: LevelSweepCell[];
+  best: { stop_atr: number; target_r: number } | null;
+}
+
 export interface Diagnostics {
   range: { start: string; end: string };
   mode: DiagnosticsMode;
@@ -473,6 +512,7 @@ export interface Diagnostics {
     winners_avg_mae_r: number | null;
     losers_avg_mfe_r: number | null;
     low_sample: boolean;
+    points: ExcursionPoint[];
   };
   data_notes: {
     decisions_total: number;

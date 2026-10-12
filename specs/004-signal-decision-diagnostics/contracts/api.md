@@ -78,6 +78,29 @@
 
 **Errors**: `401` unauthenticated; `400` invalid date/mode/window with `{"detail": "..."}`.
 
+- `exit_quality.points`: up to 1000 most recent closed trades with excursion data, `{id, symbol, side, mfe_r, mae_r, r, outcome: win|loss|flat, close_reason}`, for the MAE × MFE scatter.
+
+## `GET /api/diagnostics/levels`
+
+Stop × target sweep. Same `start`/`end`/`mode` params; `window` defaults to `24h`; `population=all|taken` (default `all`).
+
+```json
+{
+  "window": "24h", "population": "all", "min_sample": 30,
+  "stops_atr": [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5],
+  "targets_r": [0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0],
+  "fee_round_trip_pct": 0.1, "samples": 812, "skipped_no_atr": 40,
+  "cells": [{"stop_atr": 1.0, "target_r": 1.5, "samples": 812, "decided": 640, "win_rate": 44.1,
+             "ambiguous_pct": 6.2, "open_pct": 15.0, "expectancy_r": 0.04, "worst_case_r": -0.03, "low_sample": false}],
+  "best": {"stop_atr": 1.0, "target_r": 1.5}
+}
+```
+
+- Each resolved window's `max_adv_pct` / `max_fav_pct` is replayed against stop = `stop_atr × ATR` and target = `target_r × stop`. Win: only the target reached; loss: only the stop; `ambiguous`: both (order unknown); `open`: neither (excluded from win rate and expectancy).
+- `expectancy_r` is per decided trade in R of that stop, minus the round-trip fee expressed in R. `worst_case_r` also counts every ambiguous sample as a loss.
+- ATR comes from `SignalDecision.atr` (recorded from migration 0048 on), or is implied by default reference levels (stop distance ÷ 1.5). Planner-level rows without a stored ATR are counted in `skipped_no_atr`.
+- `best` is the highest-expectancy cell with ≥ `min_sample` decided samples and ≤ 25% ambiguous; `null` when none qualifies.
+
 ## Existing endpoints
 
 Trade serializer (`GET /api/trades`) gains read-only `r_multiple`, `mfe_r`, `mae_r`, `mfe_pct`, `mae_pct` (nullable). No other existing contract changes.

@@ -10,7 +10,11 @@ import type {
   DiagnosticsMode,
   DiagnosticsTradeRow,
   DiagnosticsWindow,
+  LevelSweep,
+  LevelSweepPopulation,
 } from "@/lib/types";
+
+import { ExcursionScatter, LevelHeatmap } from "./level-charts";
 
 const GATE_LABELS: Record<string, string> = {
   below_score_threshold: "Score below threshold",
@@ -265,6 +269,27 @@ export function DiagnosticsConsole() {
     void load();
   }, [load]);
 
+  // The sweep replays every resolved decision, so it loads separately and never blocks the page.
+  const [population, setPopulation] = useState<LevelSweepPopulation>("all");
+  const [sweep, setSweep] = useState<LevelSweep | null>(null);
+  const [sweepError, setSweepError] = useState("");
+  const latestSweep = useRef(0);
+
+  useEffect(() => {
+    const ticket = ++latestSweep.current;
+    api
+      .levelSweep(start, end, mode, window_, population)
+      .then((result) => {
+        if (ticket !== latestSweep.current) return;
+        setSweep(result);
+        setSweepError("");
+      })
+      .catch((reason) => {
+        if (ticket !== latestSweep.current) return;
+        setSweepError(reason instanceof Error ? reason.message : "Unable to load level sweep");
+      });
+  }, [start, end, mode, window_, population]);
+
   const min = data?.min_sample ?? 30;
   const empty = data !== null && data.data_notes.decisions_total === 0 && data.data_notes.trades_total === 0;
   const control = "rounded border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-xs";
@@ -336,6 +361,29 @@ export function DiagnosticsConsole() {
 
             <Section title="Exit quality" hint="MFE = best move in favor, MAE = worst move against, both in R">
               <ExitQuality data={data.exit_quality} min={min} />
+            </Section>
+
+            <Section title="Trade excursion" hint="One point per closed trade — where did winners and losers travel before exiting?">
+              <ExcursionScatter points={data.exit_quality.points ?? []} />
+            </Section>
+
+            <Section title="Stop × target sweep" hint="Replays recorded outcomes at the selected window against every level pair">
+              <div className="flex items-center gap-2 border-b border-[var(--line)] px-3 py-2 text-xs">
+                <label className="flex items-center gap-1" title="All candidates includes blocked entries — a much larger sample than taken entries alone">
+                  Population
+                  <select className={control} value={population} onChange={(e) => setPopulation(e.target.value as LevelSweepPopulation)}>
+                    <option value="all">all candidates</option>
+                    <option value="taken">taken entries</option>
+                  </select>
+                </label>
+              </div>
+              {sweepError ? (
+                <div className="p-3 text-xs text-[#ff9b9b]">{sweepError}</div>
+              ) : sweep ? (
+                <LevelHeatmap data={sweep} />
+              ) : (
+                <div className="m-3 h-40 animate-pulse rounded bg-[var(--surface)]" />
+              )}
             </Section>
 
             <p className="text-[10px] text-[var(--muted)]">

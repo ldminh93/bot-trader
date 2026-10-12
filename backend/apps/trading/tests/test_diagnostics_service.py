@@ -109,6 +109,19 @@ def test_baseline_is_null_without_taken_entries(user):
 
 
 @pytest.mark.django_db
+def test_exit_quality_points_for_scatter(user):
+    _trade(user, 10, r=1.5, mfe_r=2.0, mae_r=0.3)
+    _trade(user, -5, r=-1.0, mfe_r=0.8, mae_r=1.0, reason="stop loss")
+    _trade(user, 3, r=0.5)                     # no excursion -> not plotted
+    start, end = _window()
+    points = build_diagnostics(user, start, end)["exit_quality"]["points"]
+    assert len(points) == 2
+    loss = next(p for p in points if p["outcome"] == "loss")
+    assert loss["mfe_r"] == 0.8 and loss["mae_r"] == 1.0 and loss["r"] == -1.0
+    assert loss["close_reason"] == "stop loss"
+
+
+@pytest.mark.django_db
 def test_calibration_buckets_and_grades(user):
     _trade(user, 10, r=1.0, confidence=72, grade="A")
     _trade(user, -5, r=-1.0, confidence=78, grade="A")

@@ -43,6 +43,7 @@ from .services.coin_mirror_service import mirror_admin_coins_to_regular_users
 from .services.credential_service import decrypt_secret, encrypt_secret
 from .services.discord_alert_service import send_discord_alert
 from .services.diagnostics_service import MODES, WINDOW_FIELDS, build_diagnostics
+from .services.level_sweep_service import POPULATIONS, build_level_sweep
 from .services.discord_alert_service import send_trade_replay_export
 from .services.health_service import build_live_sync_health
 from .services.live_trading_service import ExistingExchangePosition, LiveTradingDisabled, LiveTradingService
@@ -1162,26 +1163,51 @@ class DiagnosticsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        today = timezone.localdate()
-        try:
-            end = (
-                datetime.strptime(request.query_params["end"], "%Y-%m-%d").date()
-                if request.query_params.get("end")
-                else today
-            )
-            start = (
-                datetime.strptime(request.query_params["start"], "%Y-%m-%d").date()
-                if request.query_params.get("start")
-                else end - timedelta(days=30)
-            )
-        except ValueError:
-            return Response({"detail": "start/end must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-        if start > end:
-            return Response({"detail": "start must not be after end."}, status=status.HTTP_400_BAD_REQUEST)
-        mode = request.query_params.get("mode", "all")
-        if mode not in MODES:
-            return Response({"detail": "mode must be paper, live or all."}, status=status.HTTP_400_BAD_REQUEST)
-        window = request.query_params.get("window", "4h")
-        if window not in WINDOW_FIELDS:
-            return Response({"detail": "window must be 1h, 4h or 24h."}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(build_diagnostics(request.user, start, end, mode, window))
+        params = _diagnostics_params(request, default_window="4h")
+        if isinstance(params, Response):
+            return params
+        return Response(build_diagnostics(request.user, *params))
+
+
+class LevelSweepView(APIView):
+    """Stop × target sweep over recorded decision outcomes for the requesting
+    user. Same start/end/mode/window parameters as /diagnostics, plus
+    population=all|taken."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        params = _diagnostics_params(request, default_window="24h")
+        if isinstance(params, Response):
+            return params
+        population = request.query_params.get("population", "all")
+        if population not in POPULATIONS:
+            return Response({"detail": "population must be all or taken."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(build_level_sweep(request.user, *params, population=population))
+
+
+def _diagnostics_params(request, *, default_window: str):
+    """(start, end, mode, window) from the query string, or a 400 Response."""
+    today = timezone.localdate()
+    try:
+        end = (
+            datetime.strptime(request.query_params["end"], "%Y-%m-%d").date()
+            if request.query_params.get("end")
+            else today
+        )
+        start = (
+            datetime.strptime(request.query_params["start"], "%Y-%m-%d").date()
+            if request.query_params.get("start")
+            else end - timedelta(days=30)
+        )
+    except ValueError:
+        return Response({"detail": "start/end must be YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+    if start > end:
+        return Response({"detail": "start must not be after end."}, status=status.HTTP_400_BAD_REQUEST)
+    mode = request.query_params.get("mode", "all")
+    if mode not in MODES:
+        return Response({"detail": "mode must be paper, live or all."}, status=status.HTTP_400_BAD_REQUEST)
+    window = request.query_params.get("window", default_window)
+    if window not in WINDOW_FIELDS:
+        return Response({"detail": "window must be 1h, 4h or 24h."}, status=status.HTTP_400_BAD_REQUEST)
+    return start, end, mode, window

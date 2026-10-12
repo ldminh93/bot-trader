@@ -11,6 +11,8 @@ import type {
   DiagnosticsWindow,
   DiscordAlertConfig,
   KillSwitchResult,
+  LevelSweep,
+  LevelSweepPopulation,
   LiveSyncHealth,
   MarketSnapshot,
   OpportunityItem,
@@ -225,6 +227,8 @@ export const api = {
     request<TradeStats>(`/trades/stats${userId ? `?user_id=${userId}` : ""}`),
   diagnostics: (start: string, end: string, mode: DiagnosticsMode, window: DiagnosticsWindow) =>
     request<Diagnostics>(`/diagnostics?${new URLSearchParams({ start, end, mode, window }).toString()}`),
+  levelSweep: (start: string, end: string, mode: DiagnosticsMode, window: DiagnosticsWindow, population: LevelSweepPopulation) =>
+    request<LevelSweep>(`/diagnostics/levels?${new URLSearchParams({ start, end, mode, window, population }).toString()}`),
   logs: (params?: { category?: string; level?: string; before_id?: number; limit?: number; from?: string; to?: string }) => {
     const query = new URLSearchParams();
     Object.entries(params ?? {}).forEach(([key, value]) => {

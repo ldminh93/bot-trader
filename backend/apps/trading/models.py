@@ -594,6 +594,9 @@ class SignalDecision(models.Model):
     ref_stop = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
     ref_tp1 = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
     levels_source = models.CharField(max_length=12, default="none")
+    # Signal-timeframe ATR at decision time, so forward outcomes can be replayed
+    # against any stop distance (diagnostics level sweep). Null on older rows.
+    atr = models.DecimalField(max_digits=24, decimal_places=10, null=True, blank=True)
     signal_candle_ts = models.BigIntegerField(default=0)
     trade = models.ForeignKey(
         Trade, on_delete=models.SET_NULL, null=True, blank=True, related_name="decisions"

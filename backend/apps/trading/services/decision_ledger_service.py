@@ -82,10 +82,9 @@ def _candidate_side_and_score(signal) -> tuple[str | None, int]:
 def _store(config, evaluation, *, side, score, result, trade=None, stop=None, tp1=None, source=None):
     payload = evaluation.snapshot.payload or {}
     price = float(evaluation.metrics["price"])
+    atr = getattr(evaluation.indicators, "atr", None)
     if stop is None or tp1 is None:
-        stop, tp1, source = default_reference_levels(
-            side, price, getattr(evaluation.indicators, "atr", None)
-        )
+        stop, tp1, source = default_reference_levels(side, price, atr)
     candle_ts = _candle_ts(evaluation)
     defaults = {
         "user": config.user,
@@ -100,6 +99,7 @@ def _store(config, evaluation, *, side, score, result, trade=None, stop=None, tp
         "ref_stop": stop,
         "ref_tp1": tp1,
         "levels_source": source or "none",
+        "atr": float(atr) if atr and float(atr) > 0 else None,
         "trade": trade,
     }
     try:

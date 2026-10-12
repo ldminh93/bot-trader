@@ -16,6 +16,7 @@ from .excursion_service import compute_r_multiple
 MIN_SAMPLE = 30
 SCORE_BUCKET_SIZE = 10
 FAVORABLE_R = 0.5  # a stopped trade that was at least this far in profit first
+MAX_SCATTER_POINTS = 1000
 WINDOW_FIELDS = {"1h": "outcome_1h", "4h": "outcome_4h", "24h": "outcome_24h"}
 STRUCTURAL_TAG_PREFIXES = ("grade:", "confidence:", "regime:")
 MODES = {"paper", "live", "all"}
@@ -161,7 +162,26 @@ def _exit_quality(trades: list[Trade]) -> dict:
         "winners_avg_mae_r": _mean([float(t.mae_r) for t in winners]),
         "losers_avg_mfe_r": _mean([float(t.mfe_r) for t in losers]),
         "low_sample": len(with_excursion) < MIN_SAMPLE,
+        "points": _excursion_points(with_excursion),
     }
+
+
+def _excursion_points(trades: list[Trade]) -> list[dict]:
+    """One point per trade for the MAE × MFE scatter, most recent first."""
+    recent = sorted(trades, key=lambda t: t.closed_at or t.opened_at, reverse=True)[:MAX_SCATTER_POINTS]
+    return [
+        {
+            "id": t.id,
+            "symbol": t.symbol,
+            "side": t.side,
+            "mfe_r": round(float(t.mfe_r), 3),
+            "mae_r": round(float(t.mae_r), 3),
+            "r": round(r, 3) if (r := _trade_r(t)) is not None else None,
+            "outcome": "win" if float(t.realized_pnl) > 0 else "loss" if float(t.realized_pnl) < 0 else "flat",
+            "close_reason": t.close_reason or "",
+        }
+        for t in recent
+    ]
 
 
 def _bounds(start: date, end: date):
