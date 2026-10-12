@@ -873,6 +873,22 @@ export function SettingsConsole() {
                   candles, catching pumps/dumps that finished hours ago. 0 = disabled.
                 </span>
               </Field>
+              <Field label="SHORT RSI oversold max">
+                <input
+                  className={inputClass}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={config.short_rsi_oversold_max}
+                  onChange={(event) => setConfig({ ...config, short_rsi_oversold_max: event.target.value })}
+                />
+                <span className="font-normal leading-5 text-[var(--muted)]">
+                  SHORT only: blocks new SHORT entries when RSI(14) is at or below this value. Lower
+                  lets more oversold shorts through. Check &quot;RSI oversold (SHORT)&quot; on the
+                  Diagnostics page before changing. 0 = disabled.
+                </span>
+              </Field>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
                 <Toggle label="Allow long" checked={config.enable_long} onChange={(value) => setConfig({ ...config, enable_long: value })} />
                 <Toggle label="Allow short" checked={config.enable_short} onChange={(value) => setConfig({ ...config, enable_short: value })} />

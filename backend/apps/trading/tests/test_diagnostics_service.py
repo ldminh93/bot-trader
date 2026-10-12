@@ -87,6 +87,28 @@ def test_taken_decisions_are_not_gates_and_window_selects_outcome(user):
 
 
 @pytest.mark.django_db
+def test_baseline_measures_taken_entries_with_trader_sign(user):
+    _decision(user, "taken", "tp1", stop=98, tp1=104)   # +2R earned
+    _decision(user, "taken", "sl")                      # -1R
+    _decision(user, "taken", "sl")                      # -1R
+    _decision(user, "taken", "none", status="pending")
+    _decision(user, "funding", "sl")
+    start, end = _window()
+    baseline = build_diagnostics(user, start, end)["baseline"]
+    assert baseline["gate"] == "taken" and baseline["blocked"] == 4 and baseline["resolved"] == 3
+    assert baseline["would_win_pct"] == 33.3 and baseline["would_lose_pct"] == 66.7
+    assert baseline["net_r"] == 0.0
+    assert baseline["low_sample"] is True
+
+
+@pytest.mark.django_db
+def test_baseline_is_null_without_taken_entries(user):
+    _decision(user, "funding", "sl")
+    start, end = _window()
+    assert build_diagnostics(user, start, end)["baseline"] is None
+
+
+@pytest.mark.django_db
 def test_calibration_buckets_and_grades(user):
     _trade(user, 10, r=1.0, confidence=72, grade="A")
     _trade(user, -5, r=-1.0, confidence=78, grade="A")

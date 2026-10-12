@@ -90,40 +90,54 @@ def _rows(groups: dict[str, list[Trade]], sort_by_label: bool = False) -> list[d
     return sorted(rows, key=lambda r: r["trades"], reverse=True)
 
 
+def _outcome_row(label: str, items: list[SignalDecision], field: str, *, blocked: bool) -> dict:
+    """First-hit outcome stats for a group of decisions.
+
+    net_r is signed from the gate's point of view when ``blocked`` (losers
+    avoided minus winners missed) and from the trader's point of view
+    otherwise (R earned by the entries that were taken).
+    """
+    resolved = [d for d in items if (getattr(d, field) or {}).get("status") == "resolved"]
+    wins = losses = 0
+    win_r = 0.0
+    for d in resolved:
+        hit = getattr(d, field).get("first_hit")
+        if hit == "sl":
+            losses += 1
+        elif hit == "tp1":
+            wins += 1
+            risk = abs(float(d.price) - float(d.ref_stop)) if d.ref_stop is not None else 0.0
+            reward = abs(float(d.ref_tp1) - float(d.price)) if d.ref_tp1 is not None else 0.0
+            win_r += (reward / risk) if risk else 1.0
+    net_r = losses - win_r if blocked else win_r - losses
+    undecided = len(resolved) - wins - losses
+    return {
+        "gate": label,
+        "blocked": len(items),
+        "resolved": len(resolved),
+        "would_win_pct": _pct(wins, len(resolved)),
+        "would_lose_pct": _pct(losses, len(resolved)),
+        "undecided_pct": _pct(undecided, len(resolved)),
+        "net_r": round(net_r, 2) if resolved else None,
+        "low_sample": len(resolved) < MIN_SAMPLE,
+    }
+
+
 def _gate_rows(decisions: list[SignalDecision], window: str) -> list[dict]:
     field = WINDOW_FIELDS[window]
     by_gate: dict[str, list[SignalDecision]] = defaultdict(list)
     for decision in decisions:
         by_gate[decision.result].append(decision)
-    rows = []
-    for gate, items in by_gate.items():
-        resolved = [d for d in items if (getattr(d, field) or {}).get("status") == "resolved"]
-        wins = losses = 0
-        net_r = 0.0
-        for d in resolved:
-            hit = getattr(d, field).get("first_hit")
-            if hit == "sl":
-                losses += 1
-                net_r += 1.0  # loss avoided: +1R saved
-            elif hit == "tp1":
-                wins += 1
-                risk = abs(float(d.price) - float(d.ref_stop)) if d.ref_stop is not None else 0.0
-                reward = abs(float(d.ref_tp1) - float(d.price)) if d.ref_tp1 is not None else 0.0
-                net_r -= (reward / risk) if risk else 1.0  # win missed
-        undecided = len(resolved) - wins - losses
-        rows.append(
-            {
-                "gate": gate,
-                "blocked": len(items),
-                "resolved": len(resolved),
-                "would_win_pct": _pct(wins, len(resolved)),
-                "would_lose_pct": _pct(losses, len(resolved)),
-                "undecided_pct": _pct(undecided, len(resolved)),
-                "net_r": round(net_r, 2) if resolved else None,
-                "low_sample": len(resolved) < MIN_SAMPLE,
-            }
-        )
+    rows = [_outcome_row(gate, items, field, blocked=True) for gate, items in by_gate.items()]
     return sorted(rows, key=lambda r: r["blocked"], reverse=True)
+
+
+def _baseline_row(decisions: list[SignalDecision], window: str) -> dict | None:
+    """Same first-hit measure for entries the bot took, so each gate's would-win %
+    can be compared against what passing every gate actually achieves."""
+    if not decisions:
+        return None
+    return _outcome_row(SignalDecision.TAKEN, decisions, WINDOW_FIELDS[window], blocked=False)
 
 
 def _exit_quality(trades: list[Trade]) -> dict:
@@ -170,6 +184,7 @@ def build_diagnostics(user, start: date, end: date, mode: str = "all", window: s
 
     trades = list(trades_qs)
     decisions = list(decisions_qs)
+    taken = [d for d in decisions if d.result == SignalDecision.TAKEN]
     rejected = [d for d in decisions if d.result != SignalDecision.TAKEN]
 
     buckets: dict[str, list[Trade]] = defaultdict(list)
@@ -193,6 +208,7 @@ def build_diagnostics(user, start: date, end: date, mode: str = "all", window: s
         "window": window,
         "min_sample": MIN_SAMPLE,
         "gates": _gate_rows(rejected, window),
+        "baseline": _baseline_row(taken, window),
         "calibration": {
             "by_score_bucket": _rows(buckets, sort_by_label=True),
             "by_grade": _rows(grades, sort_by_label=True),

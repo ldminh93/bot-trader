@@ -36,6 +36,7 @@ export interface BotConfig {
   macro_extension_max_pct: string;
   long_window_move_lookback_candles: number;
   long_window_move_min_pct: string;
+  short_rsi_oversold_max: string;
   is_running: boolean;
   auto_registered: boolean;
   top_mover_side: "gainer" | "loser" | null;
@@ -461,6 +462,7 @@ export interface Diagnostics {
   window: DiagnosticsWindow;
   min_sample: number;
   gates: DiagnosticsGateRow[];
+  baseline: DiagnosticsGateRow | null;
   calibration: { by_score_bucket: DiagnosticsTradeRow[]; by_grade: DiagnosticsTradeRow[] };
   expectancy: { by_tag: DiagnosticsTradeRow[]; by_regime_side: DiagnosticsTradeRow[] };
   exit_quality: {

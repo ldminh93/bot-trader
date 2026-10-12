@@ -108,8 +108,16 @@ function Empty({ text }: { text: string }) {
   return <div className="grid min-h-20 place-items-center px-3 text-center text-xs text-[var(--muted)]">{text}</div>;
 }
 
-function GateTable({ rows, min }: { rows: DiagnosticsGateRow[]; min: number }) {
-  if (!rows.length) {
+function winDelta(row: DiagnosticsGateRow, baseline: DiagnosticsGateRow | null) {
+  if (row.would_win_pct === null || baseline?.would_win_pct == null) return dash;
+  const delta = row.would_win_pct - baseline.would_win_pct;
+  // Blocked entries winning more often than taken ones means the gate is filtering out the better setups.
+  const cls = delta > 0 ? "text-[var(--negative)]" : delta < 0 ? "text-[var(--positive)]" : "";
+  return <span className={`font-mono ${cls}`}>{delta > 0 ? "+" : ""}{delta.toFixed(0)} pts</span>;
+}
+
+function GateTable({ rows, baseline, min }: { rows: DiagnosticsGateRow[]; baseline: DiagnosticsGateRow | null; min: number }) {
+  if (!rows.length && !baseline) {
     return <Empty text="No rejected entries recorded in this range yet. Decisions appear as the bot evaluates candidates." />;
   }
   return (
@@ -123,10 +131,26 @@ function GateTable({ rows, min }: { rows: DiagnosticsGateRow[]; min: number }) {
             <th className={th} title="First take-profit reached before the stop — the gate blocked a winner">Would win</th>
             <th className={th} title="Stop reached first — the gate blocked a loser">Would lose</th>
             <th className={th} title="Both levels in one candle, or neither reached">Undecided</th>
-            <th className={th} title="Positive: the gate saved R by blocking losers. Negative: it cost R by blocking winners.">Net R</th>
+            <th className={th} title="Would-win % minus the taken-entries baseline. Positive (red): the gate blocks setups that win more often than the ones it lets through.">Win vs taken</th>
+            <th className={th} title="Positive: the gate saved R by blocking losers. Negative: it cost R by blocking winners. Baseline row: R earned by taken entries.">Net R</th>
           </tr>
         </thead>
         <tbody>
+          {baseline ? (
+            <tr className="border-b border-[var(--line)] bg-[var(--surface)]">
+              <td className="px-3 py-2 text-left font-semibold" title="Entries that passed every gate, judged by the same first-hit rule">
+                Taken entries (baseline)
+                <LowSample show={baseline.low_sample} min={min} />
+              </td>
+              <td className="px-3 py-2 text-right font-mono">{baseline.blocked}</td>
+              <td className="px-3 py-2 text-right font-mono">{baseline.resolved}</td>
+              <td className="px-3 py-2 text-right">{pct(baseline.would_win_pct)}</td>
+              <td className="px-3 py-2 text-right">{pct(baseline.would_lose_pct)}</td>
+              <td className="px-3 py-2 text-right">{pct(baseline.undecided_pct)}</td>
+              <td className="px-3 py-2 text-right">{dash}</td>
+              <td className="px-3 py-2 text-right">{rValue(baseline.net_r)}</td>
+            </tr>
+          ) : null}
           {rows.map((row) => (
             <tr key={row.gate} className="border-b border-[var(--line)] last:border-0">
               <td className="px-3 py-2 text-left">
@@ -138,6 +162,7 @@ function GateTable({ rows, min }: { rows: DiagnosticsGateRow[]; min: number }) {
               <td className="px-3 py-2 text-right">{pct(row.would_win_pct)}</td>
               <td className="px-3 py-2 text-right">{pct(row.would_lose_pct)}</td>
               <td className="px-3 py-2 text-right">{pct(row.undecided_pct)}</td>
+              <td className="px-3 py-2 text-right">{winDelta(row, baseline)}</td>
               <td className="px-3 py-2 text-right">{rValue(row.net_r)}</td>
             </tr>
           ))}
@@ -291,7 +316,7 @@ export function DiagnosticsConsole() {
             ) : null}
 
             <Section title="Gate value" hint="Would the blocked entries have won? Judged at the selected outcome window">
-              <GateTable rows={data.gates} min={min} />
+              <GateTable rows={data.gates} baseline={data.baseline ?? null} min={min} />
             </Section>
 
             <div className="grid gap-4 lg:grid-cols-2">

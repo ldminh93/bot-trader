@@ -33,6 +33,16 @@
       "low_sample": false
     }
   ],
+  "baseline": {
+    "gate": "taken",
+    "blocked": 40,
+    "resolved": 34,
+    "would_win_pct": 47.1,
+    "would_lose_pct": 41.2,
+    "undecided_pct": 11.7,
+    "net_r": 2.0,
+    "low_sample": false
+  },
   "calibration": {
     "by_score_bucket": [{"label": "60-69", "trades": 14, "win_rate": 50.0, "avg_r": 0.42, "low_sample": true}],
     "by_grade": [{"label": "A", "trades": 9, "win_rate": 66.7, "avg_r": 0.9, "low_sample": true}]
@@ -62,6 +72,7 @@
 - Fields whose inputs are unavailable are `null`, never `0`.
 - Stop-tightness evidence: `winners_avg_mae_r` is the average heat (MAE, in R) winners took before working — well below 1R means a tighter stop was viable; `losers_avg_mfe_r` is how far losers went in favor first. `stopped_after_favorable_pct` is the share of stopped trades that were at least +0.5R first.
 - Gate `net_r`: +1R per blocked entry whose stop was reached first (loss avoided); −(reward ÷ risk) R per blocked entry whose TP1 was reached first (win missed); ambiguous/none count 0. `null` when nothing resolved.
+- `baseline`: the same first-hit measure over `taken` decisions (same row shape; `blocked` = entries taken). Its `net_r` uses the trader's sign: +(reward ÷ risk) R per TP1-first, −1R per stop-first. Compare each gate's `would_win_pct` against it. `null` when no entries were taken in range.
 - `by_score_bucket` buckets the entry **confidence score** in 10-point bands.
 - Empty data returns all sections as empty arrays / nulls with `data_notes` totals of 0 (frontend shows the empty state).
 

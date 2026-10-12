@@ -38,7 +38,7 @@ def test_bad_parameters_return_400(client, query):
 def test_response_shape_matches_contract(client):
     body = client.get("/api/diagnostics").json()
     assert set(body) == {
-        "range", "mode", "window", "min_sample", "gates", "calibration", "expectancy",
+        "range", "mode", "window", "min_sample", "gates", "baseline", "calibration", "expectancy",
         "exit_quality", "data_notes",
     }
     assert set(body["calibration"]) == {"by_score_bucket", "by_grade"}
