@@ -258,6 +258,13 @@ class TradingBotConfig(models.Model):
         default=0,
         help_text="Block entries below this confidence score. 0 = disabled.",
     )
+    allow_grade_d_entries = models.BooleanField(
+        default=True,
+        help_text="When off, new entries graded D (confidence less than 8 points above the entry "
+        "threshold after regime/alignment adjustments) are skipped. Applies to mirrored follower "
+        "entries too. Account-wide: applies to every scanner coin, kept in sync across all of a "
+        "user's configs.",
+    )
     auto_suppress_losing_symbols = models.BooleanField(
         default=False,
         help_text="Block entries on this symbol when its last 20+ closed trades have <40% win rate. "
@@ -361,6 +368,7 @@ class TradingBotConfig(models.Model):
         "auto_suppress_losing_symbols",
         "enable_long",
         "enable_short",
+        "allow_grade_d_entries",
     )
 
     class Meta:

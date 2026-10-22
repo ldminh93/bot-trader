@@ -57,6 +57,7 @@ export interface BotConfig {
   auto_suppress_losing_tags: boolean;
   auto_suppress_losing_symbols: boolean;
   min_confidence_to_trade: number;
+  allow_grade_d_entries: boolean;
 }
 
 export interface Candle {

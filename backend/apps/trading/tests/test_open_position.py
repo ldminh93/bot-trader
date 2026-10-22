@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.trading.models import MarketSnapshot, Trade, TradingBotConfig
+from apps.trading.models import MarketSnapshot, SignalDecision, Trade, TradingBotConfig
 from apps.trading.services.indicator_service import IndicatorResult
 from apps.trading.services.market_snapshot_service import MarketEvaluation
 from apps.trading.services.signal_service import SignalResult
@@ -274,3 +274,58 @@ def test_admin_entry_mirrors_to_a_running_follower(mock_snapshot, mock_broadcast
     assert Trade.objects.filter(
         user=follower, symbol=config.symbol, status=Trade.Status.OPEN
     ).exists()
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.broadcast_user_update")
+@patch("apps.trading.tasks.collect_market_snapshot")
+def test_grade_d_entry_skipped_when_disabled(mock_snapshot, mock_broadcast):
+    admin = User.objects.create_user("admin-grade-d-off@example.com", password="secure-pass", is_staff=True)
+    config = _make_config(admin, allow_grade_d_entries=False)
+    evaluation = _favorable_evaluation(config)
+    evaluation.snapshot.payload["trade_grade"] = "D"
+    mock_snapshot.return_value = evaluation
+
+    process_config(config)
+
+    assert not Trade.objects.filter(user=admin, symbol=config.symbol).exists()
+    assert SignalDecision.objects.filter(user=admin, result="grade_d").exists()
+
+
+@pytest.mark.django_db
+@patch("apps.trading.tasks.broadcast_user_update")
+@patch("apps.trading.tasks.collect_market_snapshot")
+def test_grade_d_entry_still_opens_by_default_and_other_grades_unaffected(mock_snapshot, mock_broadcast):
+    admin = User.objects.create_user("admin-grade-d-on@example.com", password="secure-pass", is_staff=True)
+    allowed = _make_config(admin)
+    evaluation = _favorable_evaluation(allowed)
+    evaluation.snapshot.payload["trade_grade"] = "D"
+    mock_snapshot.return_value = evaluation
+    process_config(allowed)
+    assert Trade.objects.filter(user=admin, symbol="BTCUSDT").exists()
+
+    graded_c = _make_config(admin, symbol="ETHUSDT", allow_grade_d_entries=False)
+    evaluation = _favorable_evaluation(graded_c)
+    evaluation.snapshot.payload["trade_grade"] = "C"
+    mock_snapshot.return_value = evaluation
+    process_config(graded_c)
+    assert Trade.objects.filter(user=admin, symbol="ETHUSDT").exists()
+
+
+@pytest.mark.django_db
+@patch("apps.trading.services.position_sync_service.broadcast_user_update")
+@patch("apps.trading.tasks.broadcast_user_update")
+@patch("apps.trading.tasks.collect_market_snapshot")
+def test_follower_with_grade_d_disabled_skips_mirrored_grade_d_trade(mock_snapshot, mock_broadcast, mock_follower_broadcast):
+    admin = User.objects.create_user("admin-grade-d-mirror@example.com", password="secure-pass", is_staff=True)
+    config = _make_config(admin)
+    follower = User.objects.create_user("follower-grade-d@example.com", password="secure-pass", is_staff=False)
+    _make_config(follower, allow_grade_d_entries=False)
+    evaluation = _favorable_evaluation(config)
+    evaluation.snapshot.payload["trade_grade"] = "D"
+    mock_snapshot.return_value = evaluation
+
+    process_config(config)
+
+    assert Trade.objects.filter(user=admin, symbol=config.symbol, status=Trade.Status.OPEN).exists()
+    assert not Trade.objects.filter(user=follower, symbol=config.symbol).exists()

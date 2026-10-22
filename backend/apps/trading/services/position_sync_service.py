@@ -277,6 +277,16 @@ def sync_master_trade_to_followers(
                 "Position sync skipped: daily loss limit reached.",
             )
             continue
+        if (
+            not follower_config.allow_grade_d_entries
+            and str((replay_payload or {}).get("trade_grade", "D")).upper() == "D"
+        ):
+            _log(
+                follower_config,
+                BotLog.Level.INFO,
+                "Position sync skipped: setup is grade D and grade D entries are disabled.",
+            )
+            continue
 
         jobs.append(lambda c=follower_config: _open_one(c))
     _run_parallel(jobs)

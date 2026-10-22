@@ -894,6 +894,19 @@ export function SettingsConsole() {
                 <Toggle label="Allow short" checked={config.enable_short} onChange={(value) => setConfig({ ...config, enable_short: value })} />
                 <Toggle label="Trailing stop" checked={config.use_trailing_stop} onChange={(value) => setConfig({ ...config, use_trailing_stop: value })} />
               </div>
+              <div className="sm:col-span-2">
+                <Toggle
+                  label="Allow grade D entries"
+                  checked={config.allow_grade_d_entries ?? true}
+                  onChange={(value) => setConfig({ ...config, allow_grade_d_entries: value })}
+                />
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  Account-wide: applies to every scanner coin. Turn off to skip setups graded{" "}
+                  <strong className="text-[var(--text)]">D</strong> (confidence less than 8 points above the entry threshold
+                  after regime and alignment adjustments). Mirrored follower entries respect each account&apos;s own setting.
+                  Check &quot;Calibration by grade&quot; on the Diagnostics page to confirm D is losing before turning it off.
+                </p>
+              </div>
               <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
                 <Toggle
                   label="Trend alignment"

@@ -156,12 +156,14 @@ def test_account_wide_strategy_fields_are_shared_across_coin_configs():
             "min_effective_leverage": 5,
             "auto_suppress_losing_tags": False,
             "auto_suppress_losing_symbols": True,
+            "allow_grade_d_entries": False,
         },
         format="json",
     )
 
     assert response.status_code == 200
     eth.refresh_from_db()
+    assert eth.allow_grade_d_entries is False
     assert eth.position_margin_usdt == 75
     assert eth.leverage == 15
     assert eth.confidence_leverage_enabled is False

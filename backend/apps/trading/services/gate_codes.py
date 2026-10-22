@@ -38,6 +38,7 @@ class GateCode:
     SUPPRESSED_TAG = "suppressed_tag"
     SUPPRESSED_SYMBOL = "suppressed_symbol"
     MIN_CONFIDENCE = "min_confidence"
+    GRADE_D = "grade_d"
     ATR_SPIKE = "atr_spike"
     FUNDING = "funding"
     TF_ALIGNMENT = "tf_alignment"

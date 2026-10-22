@@ -38,6 +38,7 @@ const GATE_LABELS: Record<string, string> = {
   suppressed_tag: "Losing setup tag suppressed",
   suppressed_symbol: "Losing symbol suppressed",
   min_confidence: "Below minimum confidence",
+  grade_d: "Grade D disabled",
   funding: "Funding rate",
   tf_alignment: "Timeframe alignment score",
   sl_cooldown: "Re-entry cooldown after SL",

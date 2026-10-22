@@ -505,6 +505,17 @@ def process_config(config: TradingBotConfig) -> None:
             record_rejection(config, evaluation, GateCode.MIN_CONFIDENCE)
             return
 
+    if not config.allow_grade_d_entries:
+        trade_grade = str(snapshot.payload.get("trade_grade", "D")).upper()
+        if trade_grade == "D":
+            create_log(
+                config,
+                BotLog.Level.INFO,
+                "Entry skipped: setup is grade D and grade D entries are disabled.",
+            )
+            record_rejection(config, evaluation, GateCode.GRADE_D)
+            return
+
     # Volatility spike filter
     if float(config.atr_spike_max_ratio) > 0 and signal_indicators.atr_ma20 > 0:
         ratio = signal_indicators.atr / signal_indicators.atr_ma20
