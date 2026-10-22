@@ -378,7 +378,9 @@ class TradingBotConfig(models.Model):
 
     @classmethod
     def account_wide_defaults(cls, user) -> dict:
-        existing = cls.objects.filter(user=user).first()
+        # The most recently saved coin carries the operator's latest choice;
+        # an arbitrary row could be one that was seeded with a stale value.
+        existing = cls.objects.filter(user=user).order_by("-updated_at", "-pk").first()
         if not existing:
             return {}
         return {field: getattr(existing, field) for field in cls.ACCOUNT_WIDE_FIELDS}

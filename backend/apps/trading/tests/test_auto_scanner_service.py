@@ -172,6 +172,8 @@ def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls
         min_effective_leverage=4,
         auto_suppress_losing_tags=True,
         auto_suppress_losing_symbols=True,
+        allow_grade_d_entries=False,
+        enable_short=False,
     )
     mock_binance_cls.return_value.fetch_klines.return_value = _candles()
     mock_binance_cls.return_value.fetch_top_movers.return_value = _movers("BTCUSDT")
@@ -185,6 +187,10 @@ def test_sync_inherits_account_wide_settings_from_existing_coin(mock_binance_cls
     assert config.min_effective_leverage == 4
     assert config.auto_suppress_losing_tags is True
     assert config.auto_suppress_losing_symbols is True
+    # Regression: these were missing from the sync's hand-picked list, so every
+    # auto-registered coin re-allowed grade D entries and shorts.
+    assert config.allow_grade_d_entries is False
+    assert config.enable_short is False
 
 
 @pytest.mark.django_db

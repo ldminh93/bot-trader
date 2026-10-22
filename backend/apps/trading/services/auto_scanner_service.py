@@ -138,19 +138,23 @@ def sync_top_movers_to_scanner(user, top_n: int | None = None, quote_asset: str 
                 "require_confirmed_higher_tf": True,
                 "require_ma7_slope_confirmation": True,
                 "require_funding_confirmation": True,
-                "position_margin_usdt": account_defaults.get("position_margin_usdt", 10),
-                "leverage": account_defaults.get("leverage", 3),
-                "live_mode_requested": account_live_mode,
-                "confidence_leverage_enabled": account_defaults.get("confidence_leverage_enabled", True),
-                "min_effective_leverage": account_defaults.get("min_effective_leverage", 0),
+                "position_margin_usdt": 10,
+                "leverage": 3,
                 # These two default to True on the model for manually-configured
                 # coins, but a freshly auto-registered top-mover coin hasn't been
                 # reviewed by the operator yet — don't silently gate/restrict it
                 # with settings they never chose, unless the account already has
                 # a shared preference set from other coins.
-                "auto_suppress_losing_tags": account_defaults.get("auto_suppress_losing_tags", False),
-                "auto_suppress_losing_symbols": account_defaults.get("auto_suppress_losing_symbols", False),
+                "auto_suppress_losing_tags": False,
+                "auto_suppress_losing_symbols": False,
                 "daily_loss_limit_enabled": False,
+                # Every ACCOUNT_WIDE_FIELDS value overrides the first-coin
+                # fallbacks above, so a field added to that tuple can never be
+                # silently left at its model default on auto-registered coins
+                # (that is how allow_grade_d_entries/enable_long/enable_short
+                # were missed).
+                **account_defaults,
+                "live_mode_requested": account_live_mode,
             },
         )
         if created:
